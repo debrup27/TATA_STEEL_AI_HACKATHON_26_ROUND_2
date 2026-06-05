@@ -32,33 +32,33 @@ The system must enable the following outcomes for maintenance engineers in a ste
 
 ### 🟥 Phase 1: Core Functional Requirements
 
- 1. [ ] Contextual Reasoning Engine (LLM/SLM)
+  [ ] Contextual Reasoning Engine (LLM/SLM)
     * [ ] Integrate a Large Language Model (LLM) or Small Language Model (SLM) for deep technical reasoning.
     * [ ] *Extra Merit:* Create or fine-tune a domain-specific model optimized for industrial maintenance.
     * [ ] Allow use of publicly available APIs.
 
- 2. [ ] Knowledge Integration (RAG Pipeline)
+  [ ] Knowledge Integration (RAG Pipeline)
     * [ ] Ingest and index technical equipment manuals.
     * [ ] Ingest and index standard operating procedures (SOPs).
     * [ ] Index historical maintenance records.
     * [ ] Index failure reports and operational logs.
 
- 3. [ ] Natural Language Interaction
+  [ ] Natural Language Interaction
     * [ ] Support natural language queries from maintenance engineers.
     * [ ] Build multi-turn conversation support in a context-aware manner.
 
- 4. [ ] Explainable Recommendations
+  [ ] Explainable Recommendations
     * [ ] Ensure outputs are explainable and traceable to relevant input data, historical records, rules, or documentation wherever possible.
 
- 5. [ ] Abnormality Detection and Failure Prediction
+  [ ] Abnormality Detection and Failure Prediction
     * [ ] Dynamic abnormality detection module for sensor streams.
     * [ ] Early warning generation framework.
     * [ ] Failure prediction for critical equipment.
 
- 6. [ ] Feedback-Driven Improvement
+  [ ] Feedback-Driven Improvement
     * [ ] Capture user corrections, confirmations, or outcomes to continuously improve future recommendations and learning from historical data.
 
- 7. [ ] Real-Time Alerting Capability
+  [ ] Real-Time Alerting Capability
     * [ ] Generate real-time abnormal alert reports.
     * [ ] Send user-specific notifications where relevant.
 
@@ -66,7 +66,7 @@ The system must enable the following outcomes for maintenance engineers in a ste
 
 ### 🟨 Phase 2: Ingestion and Output Pipelines
 
- 1. [ ] Expected Inputs
+  [ ] Expected Inputs
 
     * **Operational and Failure Inputs**
       * [ ] Equipment delay logs.
@@ -92,7 +92,7 @@ The system must enable the following outcomes for maintenance engineers in a ste
       * [ ] Scenario-based learning or troubleshooting prompts.
       * [ ] Follow-up queries in a multi-turn conversational format.
 
- 2. [ ] Expected Outputs
+  [ ] Expected Outputs
 
     * **Diagnostic and Predictive Outputs**
       * [ ] Probable fault diagnosis.
