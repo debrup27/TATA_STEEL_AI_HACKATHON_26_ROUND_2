@@ -32,7 +32,7 @@ The system must enable the following outcomes for maintenance engineers in a ste
 
 ### 🟥 Phase 1: Core Functional Requirements
 
- 1. Contextual Reasoning Engine (LLM/SLM) - [x]
+ 1. Contextual Reasoning Engine (LLM/SLM) [x]
     * Integrate a Large Language Model (LLM) or Small Language Model (SLM) for deep technical reasoning. - [ ]
     * *Extra Merit:* Create or fine-tune a domain-specific model optimized for industrial maintenance. - [ ]
     * Allow use of publicly available APIs. - [ ]
