@@ -121,6 +121,7 @@ export default function PageTransition({ children }: { children: React.ReactNode
       pendingHref.current = href;
       setWashProgress(0);
       setPhase("covering");
+      window.dispatchEvent(new CustomEvent("page-transition-start", { detail: { href } }));
     };
 
     document.addEventListener("click", handleClick, true); // capture phase
@@ -172,6 +173,7 @@ export default function PageTransition({ children }: { children: React.ReactNode
       } else {
         setPhase("idle");
         setWashProgress(0);
+        window.dispatchEvent(new CustomEvent("page-transition-complete"));
       }
     };
 
@@ -213,8 +215,12 @@ export default function PageTransition({ children }: { children: React.ReactNode
                   transition={{ delay: 0.22, duration: 0.35 }}
                 >
                   <span
-                    className="text-white/90 font-bold tracking-[0.38em] text-sm uppercase select-none"
-                    style={{ fontFamily: "var(--font-questrial), sans-serif" }}
+                    className="font-bold tracking-[0.38em] text-sm uppercase select-none"
+                    style={{
+                      fontFamily: "var(--font-questrial), sans-serif",
+                      color: "#ffffff",
+                      textShadow: "0 2px 12px rgba(0,0,0,0.3)",
+                    }}
                   >
                     Loading
                   </span>

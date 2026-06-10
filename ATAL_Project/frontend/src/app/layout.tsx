@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import PageTransition from "../components/PageTransition";
+import PillNav from "../components/PillNav";
 
 const questrial = localFont({
   src: "../../public/fonts/Questrial-Regular.ttf",
@@ -17,6 +18,12 @@ export const metadata: Metadata = {
   },
 };
 
+const navItems = [
+  { label: "Home", href: "/" },
+  { label: "Sansad", href: "/sansad" },
+  { label: "Manas", href: "/manas" },
+];
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,6 +35,15 @@ export default function RootLayout({
       className={`${questrial.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <PillNav
+          logo="/short_form_logo.png"
+          logoAlt="ATAL Logo"
+          items={navItems}
+          baseColor="#ffffff"
+          pillColor="#1b253c"
+          hoveredPillTextColor="#1b253c"
+          pillTextColor="#ffffff"
+        />
         <PageTransition>{children}</PageTransition>
       </body>
     </html>

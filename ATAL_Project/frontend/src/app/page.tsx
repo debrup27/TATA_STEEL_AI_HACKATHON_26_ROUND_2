@@ -31,7 +31,7 @@ const blurRevealVariants: Variants = {
 const textLogos: LogoItem[] = [
   { text: "ATAL Sansad", href: "/sansad" },
   { text: "✦", isSeparator: true },
-  { text: "ATAL Manas" },
+  { text: "ATAL Manas", href: "/manas" },
   { text: "✦", isSeparator: true },
 ];
 
