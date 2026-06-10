@@ -1,12 +1,14 @@
 "use client";
 
-import React from "react";
-import { motion, Variants } from "framer-motion";
+import React, { useRef } from "react";
+import { motion, Variants, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
+import Link from "next/link";
 import AnimatedGradientBackground from "../components/AnimatedGradientBackground";
 import { GLSLHills } from "../components/GLSLHills";
 import LogoLoop from "../animations/LogoLoop";
 import ClickSpark from "../components/ClickSpark";
+import AtalDisplayModal from "../components/AtalDisplayModal";
 
 // Short, custom transition animation for the website content
 const blurRevealVariants: Variants = {
@@ -27,13 +29,30 @@ const blurRevealVariants: Variants = {
 };
 
 const textLogos = [
-  { text: "ATAL Sansad" },
+  { text: "ATAL Sansad", href: "/sansad" },
   { text: "✦", isSeparator: true },
   { text: "ATAL Manas" },
   { text: "✦", isSeparator: true },
 ];
 
 export default function Home() {
+  const bottomSectionRef = useRef<HTMLDivElement>(null);
+
+  const { scrollYProgress } = useScroll({
+    target: bottomSectionRef,
+    offset: ["start end", "end end"]
+  });
+
+  // Left hand translation & rotation:
+  // Starts off-screen left (-1100px), slides in to point at the modal (250px) as we scroll down to the bottom of the page.
+  const leftX = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [-1100, 250, 250]);
+  const leftRotate = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [-15, 0, 0]);
+
+  // Right hand translation & rotation:
+  // Starts off-screen right (1100px), slides in to point at the modal (-2px) as we scroll down to the bottom of the page.
+  const rightX = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [1100, -250, -250]);
+  const rightRotate = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [15, 0, 0]);
+
   return (
     <ClickSpark
       sparkColor="#f97316"
@@ -41,7 +60,7 @@ export default function Home() {
       sparkRadius={20}
       sparkCount={8}
       duration={400}
-      className="relative min-h-screen w-full bg-white overflow-y-auto overflow-x-hidden flex flex-col scroll-smooth"
+      className="relative min-h-screen w-full bg-white flex flex-col scroll-smooth overflow-x-hidden"
     >
       {/* Hero Section: Take up viewport height and render 3D asset */}
       <div className="relative h-screen min-h-[600px] w-full flex flex-col items-center justify-center overflow-hidden flex-shrink-0">
@@ -84,9 +103,11 @@ export default function Home() {
         <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-b from-transparent via-[#FAFAFA]/70 to-[#FAFAFA] backdrop-blur-[3px] z-30 pointer-events-none" />
       </div>
 
-      {/* Bottom Section: Clean Light Gray Background containing the Text Carousel Ticker */}
-      <div className="relative w-full bg-[#FAFAFA] py-20 px-6 flex flex-col items-center justify-center flex-shrink-0">
-        <div className="w-full max-w-6xl mx-auto flex flex-col items-center gap-4">
+      <div
+        ref={bottomSectionRef}
+        className="relative w-full bg-[#FAFAFA] py-20 px-6 flex flex-col items-center justify-center flex-shrink-0 overflow-hidden"
+      >
+        <div className="w-full max-w-6xl mx-auto flex flex-col items-center gap-4 relative z-20">
           <div className="flex flex-col items-center">
             <Image
               src="/motif.png"
@@ -95,14 +116,13 @@ export default function Home() {
               height={160}
               className="w-32 h-auto object-contain opacity-65 select-none pointer-events-none"
             />
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
+            <Link
+              href="/sansad"
               style={{ fontFamily: "var(--font-questrial), sans-serif" }}
-              className="text-[10px] tracking-[0.3em] uppercase font-bold text-zinc-400 hover:text-zinc-900 transition-colors duration-300 select-none cursor-pointer -mt-3"
+              className="text-[10px] tracking-[0.3em] uppercase font-bold text-zinc-400 hover:text-blue-600 transition-colors duration-300 select-none cursor-pointer -mt-3"
             >
               Strategic Forums
-            </a>
+            </Link>
             {/* Divider: Line, gem (✦), and another line in the same row as requested */}
             <div className="flex items-center gap-3 w-40 justify-center mt-3">
               <div className="h-px bg-zinc-300/80 flex-grow" />
@@ -123,6 +143,35 @@ export default function Home() {
               pauseOnHover={true}
               ariaLabel="ATAL Programs Ticker"
             />
+          </div>
+
+          {/* Custom Display Modal Component with Relative Container and Parallax Hands */}
+          <div className="w-full mt-10 relative">
+            {/* Left Parallax Hand */}
+            <motion.div
+              style={{ x: leftX, rotate: leftRotate, y: "-50%" }}
+              className="absolute right-full mr-6 top-1/2 w-[700px] lg:w-[1000px] h-auto pointer-events-none z-10 origin-right hidden md:block"
+            >
+              <img
+                src="/left_hand.png"
+                alt="Left Hand pointing"
+                className="w-full h-auto object-contain"
+              />
+            </motion.div>
+
+            {/* Right Parallax Hand */}
+            <motion.div
+              style={{ x: rightX, rotate: rightRotate, y: "-50%" }}
+              className="absolute left-full ml-6 top-1/2 w-[700px] lg:w-[1000px] h-auto pointer-events-none z-10 origin-left hidden md:block"
+            >
+              <img
+                src="/right_hand.png"
+                alt="Right Hand pointing"
+                className="w-full h-auto object-contain"
+              />
+            </motion.div>
+
+            <AtalDisplayModal />
           </div>
         </div>
       </div>

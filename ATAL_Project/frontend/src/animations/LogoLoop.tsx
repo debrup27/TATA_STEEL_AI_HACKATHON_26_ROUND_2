@@ -323,14 +323,24 @@ export const LogoLoop: React.FC<LogoLoopProps> = memo(
         const isClickableText = isTextItem && !isSeparator;
 
         const itemContent = isClickableText ? (
-          <a
-            className="inline-flex items-center text-current no-underline rounded cursor-pointer"
-            href="#"
-            onClick={(e) => e.preventDefault()}
-            aria-label={itemAriaLabel}
-          >
-            {content}
-          </a>
+          item.href ? (
+            <a
+              className="inline-flex items-center text-current no-underline rounded cursor-pointer"
+              href={item.href}
+              aria-label={itemAriaLabel}
+            >
+              {content}
+            </a>
+          ) : (
+            <a
+              className="inline-flex items-center text-current no-underline rounded cursor-pointer"
+              href="#"
+              onClick={(e) => e.preventDefault()}
+              aria-label={itemAriaLabel}
+            >
+              {content}
+            </a>
+          )
         ) : item.href ? (
           <a
             className="inline-flex items-center text-current no-underline rounded transition-opacity duration-200 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-current focus-visible:outline-offset-2"
