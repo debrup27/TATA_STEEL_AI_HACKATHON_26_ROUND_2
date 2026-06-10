@@ -3,12 +3,12 @@
 import React, { useRef } from "react";
 import { motion, Variants, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
-import Link from "next/link";
 import AnimatedGradientBackground from "../components/AnimatedGradientBackground";
 import { GLSLHills } from "../components/GLSLHills";
-import LogoLoop from "../animations/LogoLoop";
+import LogoLoop, { LogoItem } from "../animations/LogoLoop";
 import ClickSpark from "../components/ClickSpark";
 import AtalDisplayModal from "../components/AtalDisplayModal";
+import { triggerPageTransition } from "../components/PageTransition";
 
 // Short, custom transition animation for the website content
 const blurRevealVariants: Variants = {
@@ -28,12 +28,43 @@ const blurRevealVariants: Variants = {
   }
 };
 
-const textLogos = [
+const textLogos: LogoItem[] = [
   { text: "ATAL Sansad", href: "/sansad" },
   { text: "✦", isSeparator: true },
   { text: "ATAL Manas" },
   { text: "✦", isSeparator: true },
 ];
+
+// Custom renderItem that intercepts internal hrefs with page transition
+function renderLogoWithTransition(item: LogoItem, key: string) {
+  const isSeparator = item.isSeparator || item.text === "✦";
+  const textEl = (
+    <span
+      style={{ fontFamily: "var(--font-questrial), sans-serif" }}
+      className={
+        isSeparator
+          ? "text-base md:text-lg font-bold text-zinc-300 select-none"
+          : "text-lg md:text-2xl font-bold tracking-widest text-zinc-400 hover:text-zinc-900 transition-colors duration-300 select-none whitespace-nowrap"
+      }
+    >
+      {item.text}
+    </span>
+  );
+
+  if (!isSeparator && item.href) {
+    return (
+      <button
+        key={key}
+        onClick={() => triggerPageTransition(item.href!)}
+        className="inline-flex items-center text-current no-underline rounded cursor-pointer bg-transparent border-none p-0"
+        aria-label={item.text}
+      >
+        {textEl}
+      </button>
+    );
+  }
+  return textEl;
+}
 
 export default function Home() {
   const bottomSectionRef = useRef<HTMLDivElement>(null);
@@ -116,13 +147,13 @@ export default function Home() {
               height={160}
               className="w-32 h-auto object-contain opacity-65 select-none pointer-events-none"
             />
-            <Link
-              href="/sansad"
+            <button
+              onClick={() => triggerPageTransition("/sansad")}
               style={{ fontFamily: "var(--font-questrial), sans-serif" }}
-              className="text-[10px] tracking-[0.3em] uppercase font-bold text-zinc-400 hover:text-blue-600 transition-colors duration-300 select-none cursor-pointer -mt-3"
+              className="text-[10px] tracking-[0.3em] uppercase font-bold text-zinc-400 hover:text-blue-600 transition-colors duration-300 select-none cursor-pointer -mt-3 bg-transparent border-none p-0"
             >
               Strategic Forums
-            </Link>
+            </button>
             {/* Divider: Line, gem (✦), and another line in the same row as requested */}
             <div className="flex items-center gap-3 w-40 justify-center mt-3">
               <div className="h-px bg-zinc-300/80 flex-grow" />
@@ -142,6 +173,7 @@ export default function Home() {
               scaleOnHover={true}
               pauseOnHover={true}
               ariaLabel="ATAL Programs Ticker"
+              renderItem={renderLogoWithTransition}
             />
           </div>
 
