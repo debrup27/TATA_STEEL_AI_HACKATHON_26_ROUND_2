@@ -11,6 +11,7 @@ import AtalDisplayModal from "../components/AtalDisplayModal";
 import AtalDeveloperSection from "../components/AtalDeveloperSection";
 import AtalVideoSection from "../components/AtalVideoSection";
 import AtalBottomBanner from "../components/AtalBottomBanner";
+import AtalFooter from "../components/AtalFooter";
 import { triggerPageTransition } from "../components/PageTransition";
 
 // Short, custom transition animation for the website content
@@ -216,6 +217,7 @@ export default function Home() {
           <AtalBottomBanner />
         </div>
       </div>
+      <AtalFooter />
     </ClickSpark>
   );
 }

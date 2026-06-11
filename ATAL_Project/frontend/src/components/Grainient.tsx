@@ -104,7 +104,13 @@ void main(){
 }
 `;
 
-const ctxMap = new WeakMap<HTMLElement, any>();
+interface GrainientContext {
+  renderer: Renderer;
+  program: Program;
+  mesh: Mesh;
+}
+
+const ctxMap = new WeakMap<HTMLElement, GrainientContext>();
 
 interface GrainientProps {
   color1?: string;

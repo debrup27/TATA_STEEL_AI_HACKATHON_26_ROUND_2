@@ -43,7 +43,7 @@ const toCssLength = (value?: string | number) =>
 const useResizeObserver = (
   callback: () => void,
   elements: React.RefObject<HTMLElement | null>[],
-  dependencies: any[]
+  dependencies: unknown[]
 ) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -69,7 +69,7 @@ const useResizeObserver = (
 const useImageLoader = (
   seqRef: React.RefObject<HTMLElement | null>,
   onLoad: () => void,
-  dependencies: any[]
+  dependencies: unknown[]
 ) => {
   useEffect(() => {
     const images = seqRef.current?.querySelectorAll('img') ?? [];

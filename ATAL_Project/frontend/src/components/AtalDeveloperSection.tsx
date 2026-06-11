@@ -292,7 +292,7 @@ console.log(\`Found \${result.tablesFound.length} tables.\`);`,
     const lines = code.split("\n");
     return lines.map((line, idx) => {
       // Basic keyword replacement for high visual styling in light theme
-      let rendered = line
+      const rendered = line
         .replace(/(".*?")|('.*?')/g, '<span class="text-green-600 font-semibold">$1$2</span>')
         .replace(/\b(from|import|const|let|await|new|return|for|in|print|console)\b/g, '<span class="text-purple-600 font-bold">$1</span>')
         .replace(/\b(ATALClient|client|session|health|rca|result|document_type|file_path|asset_id|symptom|telemetry|event_id|include_forecast|enable_ocr|extract_tables|includeForecast|enableOcr|extractTables|ocr|tables)\b/g, '<span class="text-blue-600 font-semibold">$1</span>')
@@ -439,7 +439,7 @@ console.log(\`Found \${result.tablesFound.length} tables.\`);`,
                     isSelected ? "bg-zinc-50" : "bg-zinc-50 group-hover:bg-white"
                   }`}
                 >
-                  {React.cloneElement(item.icon as React.ReactElement<any>, {
+                  {React.cloneElement(item.icon as React.ReactElement<{ className?: string }>, {
                     className: `w-5 h-5 transition-colors duration-300 ${isSelected ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"}`
                   })}
                 </div>

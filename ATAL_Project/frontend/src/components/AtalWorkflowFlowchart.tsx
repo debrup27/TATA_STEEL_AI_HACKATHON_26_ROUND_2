@@ -226,11 +226,7 @@ export default function AtalWorkflowFlowchart() {
     });
   };
 
-  useEffect(() => {
-    // Reset simulation if anomaly toggle is flipped
-    setSimulationStep(0);
-    setLogs([`System State Configured: ${hasAnomaly ? "CRITICAL ANOMALY PRE-SET" : "NORMAL TELEMETRY PRE-SET"}`]);
-  }, [hasAnomaly]);
+
 
   return (
     <div className="w-full flex flex-col items-center justify-center p-4">
@@ -255,7 +251,11 @@ export default function AtalWorkflowFlowchart() {
           {/* Toggle Preset */}
           <div className="flex items-center bg-zinc-100 p-1 rounded-xl">
             <button
-              onClick={() => setHasAnomaly(true)}
+              onClick={() => {
+                setHasAnomaly(true);
+                setSimulationStep(0);
+                setLogs(["System State Configured: CRITICAL ANOMALY PRE-SET"]);
+              }}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer ${
                 hasAnomaly ? "bg-white text-red-600 shadow-sm" : "text-zinc-500"
               }`}
@@ -263,7 +263,11 @@ export default function AtalWorkflowFlowchart() {
               Preset: Critical Temp
             </button>
             <button
-              onClick={() => setHasAnomaly(false)}
+              onClick={() => {
+                setHasAnomaly(false);
+                setSimulationStep(0);
+                setLogs(["System State Configured: NORMAL TELEMETRY PRE-SET"]);
+              }}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all duration-200 cursor-pointer ${
                 !hasAnomaly ? "bg-white text-green-600 shadow-sm" : "text-zinc-500"
               }`}
