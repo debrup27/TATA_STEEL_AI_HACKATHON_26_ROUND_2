@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 import ClickSpark from "../../animations/ClickSpark";
+import AtalFooter from "../../components/AtalFooter";
 
 interface TelemetryCell {
   label: string;
@@ -86,17 +87,6 @@ export default function SansadScrollGridCrossPage() {
     };
   }, []);
 
-  const getCellValue = (label: string) => {
-    return cells.find((c) => c.label === label)?.value || "";
-  };
-
-  const getCellDotColor = (label: string) => {
-    const cell = cells.find((c) => c.label === label);
-    if (!cell) return "bg-emerald-500";
-    if (cell.status === "critical") return "bg-red-500 animate-pulse";
-    if (cell.status === "warning") return "bg-amber-400";
-    return "bg-emerald-500";
-  };
 
   // Scroll Progress Hooks (Desktop)
   const { scrollYProgress } = useScroll({
@@ -105,11 +95,7 @@ export default function SansadScrollGridCrossPage() {
   });
 
   // Keep track of scroll expansion threshold to toggle line breaks
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  useEffect(() => {
-    setIsExpanded(scrollYProgress.get() > 0.7);
-  }, [scrollYProgress]);
+  const [isExpanded, setIsExpanded] = useState(() => scrollYProgress.get() > 0.7);
 
   useMotionValueEvent(scrollYProgress, "change", (latest) => {
     setIsExpanded(latest > 0.7);
@@ -137,8 +123,8 @@ export default function SansadScrollGridCrossPage() {
   });
   const iconsY = useTransform(scrollYProgress, (v) => {
     if (v <= 0.7) return 0;
-    if (v >= 1) return -145;
-    return -145 * ((v - 0.7) / 0.3);
+    if (v >= 1) return -15;
+    return -15 * ((v - 0.7) / 0.3);
   });
   const iconsOpacity = useTransform(scrollYProgress, (v) => {
     if (v <= 0.7) return 0;
@@ -255,10 +241,10 @@ export default function SansadScrollGridCrossPage() {
               `
             }} />
 
-            {/* Left Gutter Vertical Carousel (scrolling down, text rotated 90 degrees) */}
+            {/* Left Gutter Vertical Carousel (scrolling up, text rotated 90 degrees) */}
             <div className="absolute left-0 top-0 bottom-0 w-[8vw] overflow-hidden hidden md:block z-20 pointer-events-none flex flex-col justify-start">
-              <div className="animate-marquee-down flex flex-col items-center w-full">
-                {Array(6).fill("ATAL").concat(Array(6).fill("ATAL")).map((text, idx) => {
+              <div className="animate-marquee-up flex flex-col items-center w-full">
+                {Array(6).fill("SANSAD").concat(Array(6).fill("SANSAD")).map((text, idx) => {
                   return (
                     <div 
                       key={idx} 
@@ -273,9 +259,9 @@ export default function SansadScrollGridCrossPage() {
               </div>
             </div>
 
-            {/* Right Gutter Vertical Carousel (scrolling up, text rotated 90 degrees) */}
+            {/* Right Gutter Vertical Carousel (scrolling down, text rotated 90 degrees) */}
             <div className="absolute right-0 top-0 bottom-0 w-[8vw] overflow-hidden hidden md:block z-20 pointer-events-none flex flex-col justify-start">
-              <div className="animate-marquee-up flex flex-col items-center w-full">
+              <div className="animate-marquee-down flex flex-col items-center w-full">
                 {Array(6).fill("ATAL").concat(Array(6).fill("ATAL")).map((text, idx) => {
                   return (
                     <div 
@@ -339,7 +325,7 @@ export default function SansadScrollGridCrossPage() {
                       {/* Left Ruler */}
                       <div className="absolute left-3 top-12 bottom-12 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
                         <span>9.0</span>
-                        <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">ATAL</span>
+                        <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">SANSAD</span>
                         <span>0.0</span>
                       </div>
 
@@ -448,7 +434,7 @@ export default function SansadScrollGridCrossPage() {
                       layout
                       transition={{ type: "spring", stiffness: 140, damping: 22 }}
                       style={{ fontSize: textSize }}
-                      className={`font-bold text-zinc-950 leading-tight tracking-tight flex mt-32 md:mt-48 lg:mt-64 xl:mt-80 ${
+                      className={`font-bold text-zinc-950 leading-tight tracking-tight flex mt-20 md:mt-24 lg:mt-28 xl:mt-32 ${
                         isExpanded 
                           ? "flex-row gap-x-[0.35em] justify-center text-center" 
                           : "flex-col items-start text-left"
@@ -492,6 +478,7 @@ export default function SansadScrollGridCrossPage() {
           </div>
         </div>
       )}
+      <AtalFooter />
     </ClickSpark>
   );
 }

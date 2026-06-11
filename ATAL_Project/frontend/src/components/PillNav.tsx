@@ -50,7 +50,7 @@ export default function PillNav({
   const hamburgerRef = useRef<HTMLButtonElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const navItemsRef = useRef<HTMLDivElement>(null);
-  const logoRef = useRef<HTMLAnchorElement | HTMLAnchorElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -292,11 +292,10 @@ export default function PillNav({
         aria-label="Primary"
         style={cssVars}
       >
-        <Link
-          href={items?.[0]?.href || "/"}
-          aria-label="Home"
+        <div
+          ref={logoRef}
           onMouseEnter={handleLogoEnter}
-          className="rounded-full p-2 inline-flex items-center justify-center overflow-hidden shadow-sm"
+          className="rounded-full p-2 inline-flex items-center justify-center overflow-hidden shadow-sm cursor-default"
           style={{
             width: "var(--nav-h)",
             height: "var(--nav-h)",
@@ -304,7 +303,7 @@ export default function PillNav({
           }}
         >
           <img src={logo} alt={logoAlt} ref={logoImgRef} className="w-full h-full object-cover block" />
-        </Link>
+        </div>
 
         <div
           ref={navItemsRef}
