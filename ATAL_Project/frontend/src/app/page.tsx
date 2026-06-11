@@ -1,18 +1,18 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { motion, Variants, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
-import AnimatedGradientBackground from "../components/AnimatedGradientBackground";
-import { GLSLHills } from "../components/GLSLHills";
+import AnimatedGradientBackground from "../animations/AnimatedGradientBackground";
+import { GLSLHills } from "../animations/GLSLHills";
 import LogoLoop, { LogoItem } from "../animations/LogoLoop";
-import ClickSpark from "../components/ClickSpark";
+import ClickSpark from "../animations/ClickSpark";
 import AtalDisplayModal from "../components/AtalDisplayModal";
 import AtalDeveloperSection from "../components/AtalDeveloperSection";
 import AtalVideoSection from "../components/AtalVideoSection";
 import AtalBottomBanner from "../components/AtalBottomBanner";
 import AtalFooter from "../components/AtalFooter";
-import { triggerPageTransition } from "../components/PageTransition";
+import { triggerPageTransition } from "../animations/PageTransition";
 
 // Short, custom transition animation for the website content
 const blurRevealVariants: Variants = {
@@ -133,6 +133,8 @@ export default function Home() {
           >
             Autonomous Troubleshooting, Asset Intelligence & Lifecycle Management
           </p>
+
+          <HoverButton />
         </motion.div>
 
         {/* Soft blur fade transition divider to blend the 3D hills background into the next section */}
@@ -219,6 +221,38 @@ export default function Home() {
       </div>
       <AtalFooter />
     </ClickSpark>
+  );
+}
+
+function HoverButton() {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <motion.button
+      className="mt-8 flex items-center border border-zinc-300/60 backdrop-blur-md font-bold text-sm md:text-base pl-6 py-3.5 rounded-full shadow-md cursor-pointer pointer-events-auto overflow-hidden"
+      animate={{
+        backgroundColor: isHovered ? "#120F17" : "rgba(255,255,255,0.2)",
+        color: isHovered ? "#ffffff" : "#1e293b",
+        scale: isHovered ? 1.05 : 1,
+        paddingRight: isHovered ? 28 : 24,
+      }}
+      transition={{ duration: 0.3, ease: "easeInOut" }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+      whileTap={{ scale: 0.95 }}
+    >
+      <span>Get Started</span>
+      <motion.span
+        className="inline-block overflow-hidden"
+        animate={{
+          width: isHovered ? 16 : 0,
+          opacity: isHovered ? 1 : 0,
+        }}
+        transition={{ duration: 0.25, ease: "easeOut" }}
+      >
+        →
+      </motion.span>
+    </motion.button>
   );
 }
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import PageTransition from "../components/PageTransition";
+import PageTransition from "../animations/PageTransition";
 import PillNav from "../components/PillNav";
 
 const questrial = localFont({

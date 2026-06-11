@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 
-// Custom Flower SVG Component using exact paths from docs.mistral.ai
+// Custom Flower SVG Component with configured coordinate paths
 const FlowerSVG: React.FC<{ color: "pink" | "red" | "yellow"; className?: string }> = ({ color, className }) => {
   const colorMap = {
     pink: "text-[#FF91DC]",
@@ -347,7 +347,7 @@ export default function AtalFooter() {
         {/* Bottom copyright and interactive theme control block */}
         <div className="w-full flex flex-col md:flex-row items-center justify-between pt-8 z-10 gap-4">
           <div className="flex flex-col items-center md:items-start gap-2">
-            {/* Light/Dark theme interactive button matching Mistral design */}
+            {/* Light/Dark theme interactive selection buttons */}
             <div className={`flex items-center gap-1 p-1 border shadow-sm rounded-lg transition-all duration-500 select-none ${isNight ? "bg-zinc-900/60 border-zinc-800" : "bg-white/60 border-zinc-200"}`}>
               <button
                 onClick={() => setIsNight(false)}

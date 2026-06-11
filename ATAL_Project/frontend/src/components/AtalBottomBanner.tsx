@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import Grainient from "./Grainient";
+import Grainient from "@/animations/Grainient";
 
 export default function AtalBottomBanner() {
   return (

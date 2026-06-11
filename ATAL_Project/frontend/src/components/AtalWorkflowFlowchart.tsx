@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface FlowNode {
@@ -17,6 +17,7 @@ interface FlowNode {
 }
 
 export default function AtalWorkflowFlowchart() {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [simulationStep, setSimulationStep] = useState<number>(0);
   const [hasAnomaly, setHasAnomaly] = useState<boolean>(true);
