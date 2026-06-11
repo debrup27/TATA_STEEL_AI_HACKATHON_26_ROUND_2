@@ -10,6 +10,12 @@ const questrial = localFont({
   weight: "400",
 });
 
+const pixeloid = localFont({
+  src: "../../public/fonts/PixeloidSansBold-1jpBg.ttf",
+  variable: "--font-pixeloid",
+  weight: "700",
+});
+
 export const metadata: Metadata = {
   title: "ATAL",
   description: "Autonomous Troubleshooting, Asset Intelligence & Lifecycle Management",
@@ -32,9 +38,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${questrial.variable} h-full antialiased`}
+      className={`${questrial.variable} ${pixeloid.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col overflow-x-hidden">
         <PillNav
           logo="/short_form_logo.png"
           logoAlt="ATAL Logo"

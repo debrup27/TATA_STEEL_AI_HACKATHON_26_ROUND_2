@@ -243,10 +243,11 @@ function HoverButton() {
     >
       <span>Get Started</span>
       <motion.span
-        className="inline-block overflow-hidden"
+        className="inline-block overflow-hidden text-lg md:text-xl font-bold align-middle"
         animate={{
-          width: isHovered ? 16 : 0,
+          width: isHovered ? 20 : 0,
           opacity: isHovered ? 1 : 0,
+          marginLeft: isHovered ? 8 : 0,
         }}
         transition={{ duration: 0.25, ease: "easeOut" }}
       >
@@ -255,4 +256,3 @@ function HoverButton() {
     </motion.button>
   );
 }
-
