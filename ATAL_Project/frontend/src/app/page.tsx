@@ -8,6 +8,9 @@ import { GLSLHills } from "../components/GLSLHills";
 import LogoLoop, { LogoItem } from "../animations/LogoLoop";
 import ClickSpark from "../components/ClickSpark";
 import AtalDisplayModal from "../components/AtalDisplayModal";
+import AtalDeveloperSection from "../components/AtalDeveloperSection";
+import AtalVideoSection from "../components/AtalVideoSection";
+import AtalBottomBanner from "../components/AtalBottomBanner";
 import { triggerPageTransition } from "../components/PageTransition";
 
 // Short, custom transition animation for the website content
@@ -68,9 +71,10 @@ function renderLogoWithTransition(item: LogoItem, key: string) {
 
 export default function Home() {
   const bottomSectionRef = useRef<HTMLDivElement>(null);
+  const modalScrollRef = useRef<HTMLDivElement>(null);
 
   const { scrollYProgress } = useScroll({
-    target: bottomSectionRef,
+    target: modalScrollRef,
     offset: ["start end", "end end"]
   });
 
@@ -80,7 +84,7 @@ export default function Home() {
   const leftRotate = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [-15, 0, 0]);
 
   // Right hand translation & rotation:
-  // Starts off-screen right (1100px), slides in to point at the modal (-2px) as we scroll down to the bottom of the page.
+  // Starts off-screen right (1100px), slides in to point at the modal (-250px) as we scroll down to the bottom of the page.
   const rightX = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [1100, -250, -250]);
   const rightRotate = useTransform(scrollYProgress, [0.0, 0.85, 1.0], [15, 0, 0]);
 
@@ -152,7 +156,7 @@ export default function Home() {
               style={{ fontFamily: "var(--font-questrial), sans-serif" }}
               className="text-[10px] tracking-[0.3em] uppercase font-bold text-zinc-400 hover:text-blue-600 transition-colors duration-300 select-none cursor-pointer -mt-3 bg-transparent border-none p-0"
             >
-              Strategic Forums
+              Our Concierge
             </button>
             {/* Divider: Line, gem (✦), and another line in the same row as requested */}
             <div className="flex items-center gap-3 w-40 justify-center mt-3">
@@ -178,7 +182,7 @@ export default function Home() {
           </div>
 
           {/* Custom Display Modal Component with Relative Container and Parallax Hands */}
-          <div className="w-full mt-10 relative">
+          <div ref={modalScrollRef} className="w-full mt-10 relative">
             {/* Left Parallax Hand */}
             <motion.div
               style={{ x: leftX, rotate: leftRotate, y: "-50%" }}
@@ -205,6 +209,11 @@ export default function Home() {
 
             <AtalDisplayModal />
           </div>
+
+          {/* New Sections rendered below the modal and hands container */}
+          <AtalDeveloperSection />
+          <AtalVideoSection />
+          <AtalBottomBanner />
         </div>
       </div>
     </ClickSpark>
