@@ -13,7 +13,7 @@ import {
   FileUploadTrigger,
 } from "@/components/ai-components/file-upload"
 import { Button } from "@/components/ui/button"
-import { ArrowUp, Brain, Globe, Mic, Paperclip, Plus, X } from "lucide-react"
+import { ArrowUp, Brain, Globe, Mic, Paperclip, Plus, Sparkles, X } from "lucide-react"
 import type React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
@@ -39,6 +39,14 @@ function fileToBase64(file: File): Promise<string> {
     reader.onload = () => resolve(reader.result as string);
     reader.onerror = (error) => reject(error);
   });
+}
+
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
 async function renderPdfPages(file: File): Promise<string[]> {
@@ -72,28 +80,68 @@ function PromptInputWithActions({
   onSendMessage,
   isLoading,
   className = "w-full max-w-3xl mx-auto px-3 pb-3 md:px-5 md:pb-5",
+  hasContext = false,
+  contextCount = 0,
+  onContextClick,
+  onClearContext,
+  onUploadContextDoc,
+  onConciergeClick,
+  contextEnabled = true,
+  alertsEnabled = true,
+  onDisableAlerts,
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
   onSendMessage: (message: string, files: { name: string; type: string; pages: string[] }[]) => void
   isLoading: boolean
   className?: string
+  hasContext?: boolean
+  contextCount?: number
+  onContextClick?: () => void
+  onClearContext?: () => void
+  onUploadContextDoc?: (file: { name: string; size: string; type: string; pages: string[]; isCustom: boolean }) => void
+  onConciergeClick?: () => void
+  contextEnabled?: boolean
+  alertsEnabled?: boolean
+  onDisableAlerts?: () => void
 }) {
   const [prompt, setPrompt] = useState("")
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [expandedFile, setExpandedFile] = useState<UploadedFile | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showTooltip, setShowTooltip] = useState(false)
+  const prevHasContextRef = useRef(hasContext)
+
+  useEffect(() => {
+    if (!hasContext) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFiles([])
+    }
+  }, [hasContext])
+
+  useEffect(() => {
+    if (hasContext && !prevHasContextRef.current) {
+      setShowTooltip(true)
+      const timer = setTimeout(() => {
+        setShowTooltip(false)
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+    prevHasContextRef.current = hasContext
+  }, [hasContext])
+
   const toastTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   const addToast = useCallback((message: string) => {
+    if (!alertsEnabled) return
     const id = genId()
     setToasts((prev) => [...prev, { id, message }])
     toastTimers.current[id] = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
       delete toastTimers.current[id]
     }, 3150)
-  }, [])
+  }, [alertsEnabled])
 
   useEffect(() => {
     const currentTimers = toastTimers.current;
@@ -103,15 +151,15 @@ function PromptInputWithActions({
   }, [])
 
   const handleFilesAdded = useCallback(async (newFiles: File[]) => {
-    const remaining = MAX_FILES - files.length
+    const remaining = MAX_FILES - (contextCount || 0) - files.length
     if (remaining <= 0) {
-      addToast(`Maximum ${MAX_FILES} files allowed`)
+      addToast(`Maximum ${MAX_FILES} context documents allowed`)
       return
     }
 
     const toAdd = newFiles.slice(0, remaining)
     if (newFiles.length > remaining) {
-      addToast(`Only ${remaining} more file${remaining !== 1 ? "s" : ""} allowed`)
+      addToast(`Only ${remaining} more document${remaining !== 1 ? "s" : ""} allowed`)
     }
 
     const uploads: UploadedFile[] = toAdd.map((file) => ({
@@ -124,15 +172,24 @@ function PromptInputWithActions({
     setFiles((prev) => [...prev, ...uploads])
 
     for (const uf of uploads) {
-      addToast(`${uf.file.name} uploaded`)
+      addToast(`${uf.file.name} uploading...`)
       try {
         const pages = uf.file.type === "application/pdf"
           ? await renderPdfPages(uf.file)
           : [await fileToBase64(uf.file)]
 
-        setFiles((prev) =>
-          prev.map((f) => (f.id === uf.id ? { ...f, status: "loaded" as const, pages } : f))
-        )
+        // Push directly to RAG conversation context
+        onUploadContextDoc?.({
+          name: uf.file.name,
+          size: formatBytes(uf.file.size),
+          type: uf.file.type,
+          pages: pages,
+          isCustom: true,
+        });
+
+        // Remove from local loading queue
+        setFiles((prev) => prev.filter((f) => f.id !== uf.id))
+        addToast(`${uf.file.name} added to context`)
       } catch {
         setFiles((prev) => prev.filter((f) => f.id !== uf.id))
         addToast(`Failed to process ${uf.file.name}`)
@@ -184,7 +241,16 @@ function PromptInputWithActions({
                 className="pointer-events-auto max-w-[360px]"
               >
                 <SystemMessage variant="action" fill>
-                  {t.message}
+                  <div className="flex flex-col gap-1">
+                    <span>{t.message}</span>
+                    <button
+                      type="button"
+                      onClick={() => onDisableAlerts?.()}
+                      className="text-[10px] font-bold underline hover:text-[#f97316]/80 text-left cursor-pointer pointer-events-auto"
+                    >
+                      Disable Alerts
+                    </button>
+                  </div>
                 </SystemMessage>
               </motion.div>
             ))}
@@ -360,6 +426,20 @@ function PromptInputWithActions({
                               </span>
                             )}
                           </button>
+                          
+                          {contextEnabled && (
+                            <button
+                              className="group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"
+                              onClick={() => {
+                                onConciergeClick?.();
+                                setMenuOpen(false);
+                              }}
+                              type="button"
+                            >
+                              <Sparkles size={15} className="shrink-0 text-[#1b253c]/50" />
+                              Concierge Context
+                            </button>
+                          )}
                         </motion.div>
                       </>
                     )}
@@ -384,6 +464,30 @@ function PromptInputWithActions({
                     onDeepThinkingChange(false);
                     addToast("Deep Thinking disabled");
                   }} />
+                )}
+
+                {hasContext && (
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showTooltip && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, scale: 0.95, x: "-50%" }}
+                          animate={{ opacity: 1, y: 0, scale: 1, x: "-50%" }}
+                          exit={{ opacity: 0, y: 8, scale: 0.95, x: "-50%" }}
+                          transition={{ duration: 0.25, ease: "easeOut" }}
+                          className="absolute bottom-full left-1/2 mb-2 bg-[#1b253c]/95 backdrop-blur-md text-[#FAF9F5] text-[10px] font-bold py-1 px-3 rounded-lg whitespace-nowrap z-50 shadow-md border border-[#1b253c]/10"
+                        >
+                          Click to expand context panel
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1b253c]/95" />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <ContextPill
+                      count={contextCount}
+                      onClick={onContextClick || (() => {})}
+                      onDismiss={onClearContext || (() => {})}
+                    />
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -469,5 +573,46 @@ function DeepThinkingPill({ onDismiss }: { onDismiss: () => void }) {
         <X size={11.5} className="text-orange-600 hover:text-orange-855 shrink-0" strokeWidth={2.5} />
       </motion.span>
     </motion.button>
+  )
+}
+
+function ContextPill({
+  count,
+  onClick,
+  onDismiss,
+}: {
+  count: number
+  onClick: () => void
+  onDismiss: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <motion.div
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-250/70 bg-emerald-50/90 text-[11px] font-bold text-emerald-700 cursor-pointer overflow-hidden transition-all duration-200 shadow-3xs"
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      onClick={onClick}
+      animate={{ paddingRight: hovered ? 10 : 12 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
+      <span className="relative flex size-1.5 items-center justify-center shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400/80 opacity-75"></span>
+        <span className="relative inline-flex rounded-full size-1 bg-emerald-500"></span>
+      </span>
+      <span>Context ({count})</span>
+      <motion.button
+        type="button"
+        className="flex items-center justify-center overflow-hidden h-4 w-4 rounded-full hover:bg-emerald-100/80 transition-colors"
+        onClick={(e) => {
+          e.stopPropagation()
+          onDismiss()
+        }}
+        animate={{ width: hovered ? 16 : 0, opacity: hovered ? 1 : 0, marginLeft: hovered ? 4 : 0 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+      >
+        <X size={11.5} className="text-emerald-600 hover:text-emerald-800 shrink-0" strokeWidth={2.5} />
+      </motion.button>
+    </motion.div>
   )
 }

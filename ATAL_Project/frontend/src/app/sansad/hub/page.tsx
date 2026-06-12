@@ -8,25 +8,18 @@ import ClickSpark from "../../../animations/ClickSpark";
 import LogoLoop from "../../../animations/LogoLoop";
 
 // Pre-defined list of potential live logs for simulation (focused on Sansad & Agent Army)
-const agentLogsPool = [
+const systemLogsPool = [
   { module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
-  { module: "Sinter-Agent", text: "BTP matched to strand speed of 3.2m/min." },
   { module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
   { module: "LadleTransfer-Optimizer", text: "Ladle transfer transit lag calculated at 42 minutes." },
-  { module: "CokeOven-Agent", text: "Centrifugal exhauster F1-EQ09 health index: 24%. RUL stable at 14 days." },
-  { module: "Sinter-Agent", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
+  { module: "Calibration-Service", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
   { module: "LadleTransfer-Optimizer", text: "Liquid iron mass flow matches SMS caster throughput." },
   { module: "ThermalCascade-Predictor", text: "No cascade anomalies detected in HSM coil coiler yard." },
-  { module: "CokeOven-Agent", text: "F1-EQ11 electrostatic precipitator electrode voltage at 48 kV." },
-  { module: "Sinter-Agent", text: "FeO Susceptibility index shifted to 8.3%. Checking moisture parameters." },
-  { module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
   { module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
-  // RUL Alerts directly in the logs
-  { module: "CokeOven-Agent", text: "CRITICAL: F1-EQ09 Exhauster bearing RUL at 14 days. Extreme vibration peaks." },
-  { module: "Sinter-Agent", text: "WARNING: F2-EQ04 Drive sprocket tooth root fatigue. RUL at 18 days." },
-  { module: "Sinter-Agent", text: "NOMINAL: F2-EQ09 Waste Gas Fan Impeller wear level normal. RUL at 42 days." },
-  { module: "CokeOven-Agent", text: "NOMINAL: F1-EQ11 Electrostatic Precipitator electrodes stable. RUL at 95 days." },
+  { module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
+  { module: "CokeOven-Agent", text: "F1-EQ11 electrostatic precipitator electrode voltage at 48 kV." },
 ];
+
 
 // Factory notification ticker data
 const factory1Notifications = [
@@ -99,6 +92,17 @@ const riskPriorityLogos = [
   { text: "✦", isSeparator: true },
 ];
 
+const ragLogsLogos = [
+  { text: "QUERY: F1-EQ09 EXHAUSTER BEARING — RAG MATCH 98.4%", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "VECTOR SEARCH: CASCADE SIMILARITY INDEX", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "PROMPT COMPILED: SANSAD WORK ORDER PAYLOAD", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "CONTEXT RETRIEVED: 3 HISTORICAL CASES", isSeparator: false },
+  { text: "✦", isSeparator: true },
+];
+
 export default function SansadMonitoringPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [isSansadHubHovered, setIsSansadHubHovered] = useState(false);
@@ -109,18 +113,18 @@ export default function SansadMonitoringPage() {
   const [sinterFeO, setSinterFeO] = useState(8.3);
   const [strandSpeed, setStrandSpeed] = useState(3.1);
 
-  // Live Scrolling Logs State (Big Text Lines)
-  const [logs, setLogs] = useState<Array<{ id: number; time: string; module: string; text: string }>>([
-    { id: 1, time: "11:08:12", module: "CokeOven-Agent", text: "Running FFT frequency scan on F1-EQ09 bearing." },
-    { id: 2, time: "11:09:45", module: "CokeOven-Agent", text: "CRITICAL: F1-EQ09 Exhauster bearing RUL at 14 days. Extreme vibration peaks." },
-    { id: 3, time: "11:10:04", module: "ThermalCascade-Predictor", text: "Cascade risk triggered: Oxygen ingress in raw gas main." },
-    { id: 4, time: "11:10:30", module: "Sansad-Hub", text: "Generating structured Work Order WO-2026-F1-09." },
-    { id: 5, time: "11:10:35", module: "Sansad-Hub", text: "Work Order payload dispatched to Manas Chat." },
+  // Live Scrolling Logs State
+  const [systemLogs, setSystemLogs] = useState<Array<{ id: number; time: string; module: string; text: string }>>([
+    { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
+    { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
+    { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
+    { id: 4, time: "22:19:19", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
+    { id: 5, time: "22:19:22", module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
+    { id: 6, time: "22:19:26", module: "Sinter-Agent", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
+    { id: 7, time: "22:19:30", module: "CokeOven-Agent", text: "NOMINAL: F1-EQ11 Electrostatic Precipitator electrodes stable. RUL at 95 days." },
   ]);
 
-  const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const logContainerRef = useRef<HTMLDivElement>(null);
-  const isAutoScrollRef = useRef(true);
+  const systemLogContainerRef = useRef<HTMLDivElement>(null);
 
   // Handle Resize for Mobile check
   useEffect(() => {
@@ -134,7 +138,7 @@ export default function SansadMonitoringPage() {
 
   // Fluctuating values and log appending simulation
   useEffect(() => {
-    let logIdCounter = 6;
+    let logIdCounter = 100;
     const interval = setInterval(() => {
       setExhausterVibration((prev) => {
         const delta = (Math.random() - 0.5) * 0.12;
@@ -161,50 +165,25 @@ export default function SansadMonitoringPage() {
         return prev;
       });
 
-      // Append new log at the bottom
+      // Append new log to system logs
       const now = new Date();
       const timeStr = now.toTimeString().split(" ")[0];
-      const randomLogTemplate = agentLogsPool[Math.floor(Math.random() * agentLogsPool.length)];
-      
-      setLogs((prev) => {
-        const nextLogs = [...prev, { id: logIdCounter++, time: timeStr, module: randomLogTemplate.module, text: randomLogTemplate.text }];
-        return nextLogs.slice(-25); // keep last 25 logs
+      const template = systemLogsPool[Math.floor(Math.random() * systemLogsPool.length)];
+      setSystemLogs((prev) => {
+        const nextLogs = [...prev, { id: logIdCounter++, time: timeStr, module: template.module, text: template.text }];
+        return nextLogs.slice(-25);
       });
     }, 3500);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Handle Auto-scroll and scroll-to-bottom trigger
+  // Handle Auto-scroll for the system logs container
   useEffect(() => {
-    if (isAutoScrollRef.current && logContainerRef.current) {
-      logContainerRef.current.scrollTo({
-        top: logContainerRef.current.scrollHeight,
-        behavior: "smooth"
-      });
+    if (systemLogContainerRef.current) {
+      systemLogContainerRef.current.scrollTop = systemLogContainerRef.current.scrollHeight;
     }
-  }, [logs]);
-
-  const handleLogScroll = () => {
-    const container = logContainerRef.current;
-    if (!container) return;
-
-    // Check if user is scrolled up
-    const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 40;
-    isAutoScrollRef.current = isAtBottom;
-    setShowScrollBottom(!isAtBottom);
-  };
-
-  const handleScrollToBottom = () => {
-    isAutoScrollRef.current = true;
-    setShowScrollBottom(false);
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTo({
-        top: logContainerRef.current.scrollHeight,
-        behavior: "smooth"
-      });
-    }
-  };
+  }, [systemLogs]);
 
   return (
     <ClickSpark
@@ -313,7 +292,7 @@ export default function SansadMonitoringPage() {
             </p>
             <div className="mt-4 flex gap-2">
               <Link href="/sansad/hub/dashboard" className="flex-1 text-center py-2 bg-[#1b253c] text-white rounded-xl text-[10px] font-bold uppercase cursor-pointer">
-                SANSAD HUB
+                SANSAD SAMVIDHAAN
               </Link>
             </div>
           </div>
@@ -373,392 +352,382 @@ export default function SansadMonitoringPage() {
               {/* Grid divisions (Adjacent layout boxes below the header) */}
               <div className="flex-1 flex overflow-hidden">
                 
-                {/* Left block (70% width) */}
-                <div className="w-[70%] h-full flex flex-col border-r border-zinc-200">
-                  
-                  {/* Top Row: Factory 1 & Factory 2 (48% height) */}
-                  <div className="h-[48%] flex border-b border-zinc-200">
+                {/* Column 1 (35% width) */}
+                <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
+                  {/* Factory 1 Box */}
+                  <Link href="/sansad/hub/factory1" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+
+                    {/* Smaller spacer — title sits ~40% from top */}
+                    <div className="flex-[0.4]" />
+
+                    <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
+                      FACTORY<br />01
+                    </h2>
+
+                    {/* Italic description */}
+                    <p className="mt-5 text-sm italic text-zinc-400 group-hover:text-zinc-500 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                      Coke Oven & By-Product Plant — extracts coke breeze, cleans COG, and feeds the blast furnace energy chain.
+                    </p>
+
+                    {/* Push ticker to bottom */}
+                    <div className="flex-[2]" />
+
+                    {/* Notification ticker + arrow row at bottom */}
+                    <div className="flex flex-col gap-2">
+                      <div className="overflow-hidden border-t border-[#1b253c]/8 transition-colors duration-300 pt-2">
+                        <LogoLoop
+                          logos={factory1Notifications}
+                          speed={22}
+                          direction="left"
+                          logoHeight={16}
+                          gap={20}
+                          pauseOnHover
+                          renderItem={(item) => (
+                            <span
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                              className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
+                                item.isSeparator
+                                  ? "text-[#1b253c]/20 group-hover:text-[#1b253c]/30"
+                                  : item.text?.includes("CRITICAL") || item.text?.includes("WARN")
+                                    ? "text-rose-500 group-hover:text-rose-600 font-bold"
+                                    : "text-[#1b253c]/50 group-hover:text-[#1b253c]/85"
+                              }`}
+                            >
+                              {item.text}
+                            </span>
+                          )}
+                        />
+                      </div>
+                      {/* Rotating Arrow Indicator */}
+                      <div className="flex justify-end">
+                        <ArrowUpRight className="w-7 h-7 text-[#1b253c] group-hover:text-[#f97316] transition-all duration-300 group-hover:rotate-45" />
+                      </div>
+                    </div>
+                  </Link>
+
+                  {/* Sansad Samvidhaan Box */}
+                  <Link 
+                    href="/sansad/hub/dashboard" 
+                    onMouseEnter={() => setIsSansadHubHovered(true)}
+                    onMouseLeave={() => setIsSansadHubHovered(false)}
+                    className={`group h-[52%] p-8 flex flex-col relative transition-all duration-300 ease-in-out cursor-pointer origin-bottom-left ${
+                      isSansadHubHovered 
+                        ? "bg-[#FAF6EE] text-[#1b253c] border-transparent scale-[1.01] z-20 shadow-2xl" 
+                        : "bg-transparent text-[#1b253c] border-zinc-200"
+                    }`}
+                  >
+                    <div className={`absolute top-2.5 left-2.5 font-mono text-[9px] transition-colors duration-300 select-none ${isSansadHubHovered ? "text-[#1b253c]/60" : "text-[#1b253c]/35"}`}>+</div>
+                    <div className={`absolute bottom-2.5 right-2.5 font-mono text-[9px] transition-colors duration-300 select-none ${isSansadHubHovered ? "text-[#1b253c]/60" : "text-[#1b253c]/35"}`}>+</div>
+
+                    <div className="flex-[0.4]" />
+
+                    <h2 className="text-5xl font-black uppercase leading-none text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
+                      SANSAD<br />SAMVIDHAAN
+                    </h2>
                     
-                    {/* Factory 1 Box (50% of left column) */}
-                    <Link href="/sansad/hub/factory1" className="group w-1/2 h-full p-8 border-r border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
-                      <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
-                      <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    <p className={`mt-5 text-sm italic leading-snug transition-colors duration-300 ${
+                      isSansadHubHovered ? "text-zinc-500" : "text-zinc-400"
+                    }`} style={{ fontFamily: "var(--font-questrial)" }}>
+                      Agentic concierge orchestrating the agent army — monitors RUL, traces multi-stage failure cascades, and routes structured diagnostics directly to Manas.
+                    </p>
 
-                      {/* Smaller spacer — title sits ~40% from top */}
-                      <div className="flex-[0.4]" />
+                    <div className="flex-[2]" />
 
-                      <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                        FACTORY<br />01
-                      </h2>
+                    <div className="flex flex-col gap-2">
+                      <div className="overflow-hidden border-t border-[#1b253c]/8 transition-colors duration-300 pt-2">
+                        <LogoLoop
+                          logos={sansadHubLogos}
+                          speed={25}
+                          direction="left"
+                          logoHeight={16}
+                          gap={20}
+                          pauseOnHover
+                          renderItem={(item) => (
+                            <span
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                              className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
+                                item.isSeparator
+                                  ? isSansadHubHovered ? "text-[#1b253c]/30" : "text-[#1b253c]/20"
+                                  : item.text?.includes("ACTIVE") || item.text?.includes("LIVE")
+                                    ? "text-emerald-600 font-bold"
+                                    : isSansadHubHovered ? "text-[#1b253c]/80" : "text-[#1b253c]/50"
+                              }`}
+                            >
+                              {item.text}
+                            </span>
+                          )}
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <ArrowUpRight className={`w-7 h-7 transition-all duration-300 ${
+                          isSansadHubHovered ? "text-[#f97316] rotate-45" : "text-[#1b253c]"
+                        }`} />
+                      </div>
+                    </div>
+                  </Link>
+                </div>
 
-                      {/* Italic description */}
-                      <p className="mt-5 text-sm italic text-zinc-400 group-hover:text-zinc-500 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                        Coke Oven & By-Product Plant — extracts coke breeze, cleans COG, and feeds the blast furnace energy chain.
+                {/* Column 2 (35% width) */}
+                <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
+                  {/* Factory 2 Box */}
+                  <Link href="/sansad/hub/factory2" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+
+                    {/* Smaller spacer */}
+                    <div className="flex-[0.4]" />
+
+                    <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
+                      FACTORY<br />02
+                    </h2>
+
+                    {/* Italic description */}
+                    <p className="mt-5 text-sm italic text-zinc-400 group-hover:text-zinc-500 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                      Sintering Plant — agglomerates iron ore fines, monitors BTP position and belt FeO to optimise blast furnace burden.
+                    </p>
+
+                    {/* Push ticker to bottom */}
+                    <div className="flex-[2]" />
+
+                    {/* Notification ticker + arrow row at bottom */}
+                    <div className="flex flex-col gap-2">
+                      <div className="overflow-hidden border-t border-[#1b253c]/8 transition-colors duration-300 pt-2">
+                        <LogoLoop
+                          logos={factory2Notifications}
+                          speed={18}
+                          direction="left"
+                          logoHeight={16}
+                          gap={20}
+                          pauseOnHover
+                          renderItem={(item) => (
+                            <span
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                              className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
+                                item.isSeparator
+                                  ? "text-[#1b253c]/20 group-hover:text-[#1b253c]/30"
+                                  : item.text?.includes("WARN")
+                                    ? "text-rose-500 group-hover:text-rose-600 font-bold"
+                                    : "text-[#1b253c]/50 group-hover:text-[#1b253c]/85"
+                              }`}
+                            >
+                              {item.text}
+                            </span>
+                          )}
+                        />
+                      </div>
+                      {/* Rotating Arrow Indicator */}
+                      <div className="flex justify-end">
+                        <ArrowUpRight className="w-7 h-7 text-[#1b253c] group-hover:text-[#f97316] transition-all duration-300 group-hover:rotate-45" />
+                      </div>
+                    </div>
+                  </Link>
+
+                  {/* Bottom stacked sub-panels */}
+                  <div className="h-[52%] flex flex-col">
+                    {/* Sub-panel A: RUL Monitor */}
+                    <Link href="/sansad/hub/monitor" className="group flex-1 py-6 px-8 border-b border-zinc-200 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                      <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+                      <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+
+                      <div className="flex-[0.2]" />
+                      <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>RUL Monitor</h3>
+                      <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                        Equipment Remaining Useful Life predictions from live sensor telemetry.
                       </p>
-
-                      {/* Push ticker to bottom */}
-                      <div className="flex-[2]" />
-
-                      {/* Notification ticker + arrow row at bottom */}
-                      <div className="flex flex-col gap-2">
-                        <div className="overflow-hidden border-t border-[#1b253c]/8 transition-colors duration-300 pt-2">
+                      <div className="flex-[1.5]" />
+                      <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
+                        <div className="overflow-hidden flex-1">
                           <LogoLoop
-                            logos={factory1Notifications}
+                            logos={rulMonitorLogos}
                             speed={22}
                             direction="left"
-                            logoHeight={16}
-                            gap={20}
+                            logoHeight={14}
+                            gap={18}
                             pauseOnHover
                             renderItem={(item) => (
                               <span
                                 style={{ fontFamily: "var(--font-questrial)" }}
-                                className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
-                                  item.isSeparator
-                                    ? "text-[#1b253c]/20 group-hover:text-[#1b253c]/30"
-                                    : item.text?.includes("CRITICAL") || item.text?.includes("WARN")
-                                      ? "text-rose-500 group-hover:text-rose-600 font-bold"
-                                      : "text-[#1b253c]/50 group-hover:text-[#1b253c]/85"
+                                className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
+                                  item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
+                                    : item.text?.includes("CRITICAL") ? "text-rose-500 group-hover:text-rose-450 font-bold"
+                                    : item.text?.includes("WARN") ? "text-amber-500 group-hover:text-amber-455 font-semibold"
+                                    : "text-emerald-600 group-hover:text-emerald-300 font-bold"
                                 }`}
-                              >
-                                {item.text}
-                              </span>
+                              >{item.text}</span>
                             )}
                           />
                         </div>
-                        {/* Rotating Arrow Indicator */}
-                        <div className="flex justify-end">
-                          <ArrowUpRight className="w-7 h-7 text-[#1b253c] transition-all duration-300 group-hover:rotate-45" />
-                        </div>
+                        <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
                       </div>
                     </Link>
 
-                    {/* Factory 2 Box (50% of left column) */}
-                    <Link href="/sansad/hub/factory2" className="group w-1/2 h-full p-8 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer border-r border-zinc-200">
-                      <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
-                      <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    {/* Sub-panel B: Abnormality Prediction */}
+                    <Link href="/sansad/hub/abpred" className="group flex-1 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                      <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+                      <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
 
-                      {/* Smaller spacer */}
-                      <div className="flex-[0.4]" />
-
-                      <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                        FACTORY<br />02
-                      </h2>
-
-                      {/* Italic description */}
-                      <p className="mt-5 text-sm italic text-zinc-400 group-hover:text-zinc-500 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                        Sintering Plant — agglomerates iron ore fines, monitors BTP position and belt FeO to optimise blast furnace burden.
+                      <div className="flex-[0.2]" />
+                      <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Abnormality Prediction</h3>
+                      <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                        Criticality scoring by process impact, delay severity and spares availability.
                       </p>
-
-                      {/* Push ticker to bottom */}
-                      <div className="flex-[2]" />
-
-                      {/* Notification ticker + arrow row at bottom */}
-                      <div className="flex flex-col gap-2">
-                        <div className="overflow-hidden border-t border-[#1b253c]/8 transition-colors duration-300 pt-2">
+                      <div className="flex-[1.5]" />
+                      <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
+                        <div className="overflow-hidden flex-1">
                           <LogoLoop
-                            logos={factory2Notifications}
-                            speed={18}
+                            logos={riskPriorityLogos}
+                            speed={22}
                             direction="left"
-                            logoHeight={16}
-                            gap={20}
+                            logoHeight={14}
+                            gap={18}
                             pauseOnHover
                             renderItem={(item) => (
                               <span
                                 style={{ fontFamily: "var(--font-questrial)" }}
-                                className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
-                                  item.isSeparator
-                                    ? "text-[#1b253c]/20 group-hover:text-[#1b253c]/30"
-                                    : item.text?.includes("WARN")
-                                      ? "text-rose-500 group-hover:text-rose-600 font-bold"
-                                      : "text-[#1b253c]/50 group-hover:text-[#1b253c]/85"
+                                className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
+                                  item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
+                                    : item.text?.includes("CRITICAL") ? "text-rose-500 group-hover:text-rose-455 font-bold"
+                                    : item.text?.includes("HIGH") ? "text-orange-500 group-hover:text-orange-400 font-semibold"
+                                    : item.text?.includes("MEDIUM") ? "text-amber-500 group-hover:text-amber-300"
+                                    : "text-emerald-600 group-hover:text-emerald-300"
                                 }`}
-                              >
-                                {item.text}
-                              </span>
+                              >{item.text}</span>
                             )}
                           />
                         </div>
-                        {/* Rotating Arrow Indicator */}
-                        <div className="flex justify-end">
-                          <ArrowUpRight className="w-7 h-7 text-[#1b253c] transition-all duration-300 group-hover:rotate-45" />
-                        </div>
+                        <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
                       </div>
                     </Link>
-
                   </div>
+                </div>
 
-                  {/* Bottom Row: SANSAD HUB — L-shaped layout */}
-                  <div className="flex-1 flex flex-col border-t border-zinc-200">
+                {/* Column 3 (30% width) */}
+                <div className="w-[30%] h-full flex flex-col">
+                  
+                  {/* LOG STREAM (top 48%) */}
+                  <Link href="/sansad/hub/logs" className="group h-[48%] border-b border-zinc-200 p-6 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
 
-                    {/* Top half: split SANSAD HUB Details (left) and Stacked sub-panels (right) */}
-                    <div className="flex-1 flex min-h-0">
+                    <div className="flex-shrink-0 mb-3 flex justify-between items-center select-none">
+                      <h2 className="text-xl font-black text-[#1b253c] uppercase" style={{ fontFamily: "var(--font-questrial)" }}>
+                        SYSTEM LOG STREAM
+                      </h2>
+                      <ArrowUpRight className="w-5 h-5 text-[#1b253c] group-hover:text-[#f97316] transition-all duration-300 group-hover:rotate-45" />
+                    </div>
 
-                      {/* Left: SANSAD HUB details card */}
-                      <Link 
-                        href="/sansad/hub/dashboard" 
-                        onMouseEnter={() => setIsSansadHubHovered(true)}
-                        onMouseLeave={() => setIsSansadHubHovered(false)}
-                        className={`w-[52%] h-full p-8 flex flex-col relative border-r transition-all duration-300 ease-in-out cursor-pointer origin-bottom-left ${
-                          isSansadHubHovered 
-                            ? "bg-[#FAF6EE] text-[#1b253c] border-transparent scale-[1.01] z-20 shadow-2xl" 
-                            : "bg-transparent text-[#1b253c] border-zinc-200"
-                        }`}
+                    <div className="flex-1 min-h-0 relative">
+                      <div
+                        ref={systemLogContainerRef}
+                        className="sansad-custom-scroll h-full overflow-y-auto space-y-3 scroll-smooth"
                       >
-                        <div className={`absolute top-2.5 left-2.5 font-mono text-[9px] transition-colors duration-300 select-none ${isSansadHubHovered ? "text-[#1b253c]/60" : "text-[#1b253c]/35"}`}>+</div>
-                        <div className={`absolute bottom-2.5 right-2.5 font-mono text-[9px] transition-colors duration-300 select-none ${isSansadHubHovered ? "text-[#1b253c]/60" : "text-[#1b253c]/35"}`}>+</div>
-
-                        {/* Pushed text down as requested */}
-                        <div className="flex-[1.4]" />
-
-                        <h2 className="text-5xl font-black uppercase leading-none text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
-                          SANSAD HUB
-                        </h2>
-                        <p className={`mt-5 text-sm italic leading-snug transition-colors duration-300 ${
-                          isSansadHubHovered ? "text-zinc-500" : "text-zinc-400"
-                        }`} style={{ fontFamily: "var(--font-questrial)" }}>
-                          Agentic concierge orchestrating the agent army — monitors RUL, traces multi-stage failure cascades, and routes structured diagnostics directly to Manas.
-                        </p>
-
-                        <div className="flex-[0.6]" />
-
-                        {/* Rotating Arrow Indicator */}
-                        <div className="flex justify-end">
-                          <ArrowUpRight className={`w-7 h-7 transition-all duration-300 ${
-                            isSansadHubHovered ? "text-[#f97316] rotate-45" : "text-[#1b253c]"
-                          }`} />
-                        </div>
-                      </Link>
-
-                      {/* Right: 3 stacked sub-panels (Hover olive `#75864C`, wrap in Links to subpages) */}
-                      <div className="flex-1 h-full flex flex-col overflow-hidden">
-
-                        {/* Sub-panel A: RUL Monitor -> /sansad/hub/monitor */}
-                        <Link href="/sansad/hub/monitor" className="group flex-1 py-6 px-8 border-b border-zinc-200 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
-                          <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-                          <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-
-                          <div className="flex-[0.2]" />
-                          <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>RUL Monitor</h3>
-                          <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                            Equipment Remaining Useful Life predictions from live sensor telemetry.
-                          </p>
-                          <div className="flex-[1.5]" />
-                          <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
-                            <div className="overflow-hidden flex-1">
-                              <LogoLoop
-                                logos={rulMonitorLogos}
-                                speed={22}
-                                direction="left"
-                                logoHeight={14}
-                                gap={18}
-                                pauseOnHover
-                                renderItem={(item) => (
-                                  <span
-                                    style={{ fontFamily: "var(--font-questrial)" }}
-                                    className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
-                                      item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
-                                        : item.text?.includes("CRITICAL") ? "text-rose-500 group-hover:text-rose-400 font-bold"
-                                        : item.text?.includes("WARN") ? "text-amber-500 group-hover:text-amber-450 font-semibold"
-                                        : "text-emerald-600 group-hover:text-emerald-300 font-bold"
-                                    }`}
-                                  >{item.text}</span>
-                                )}
-                              />
-                            </div>
-                            <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
-                          </div>
-                        </Link>
-
-                        {/* Sub-panel B: Historical Logs -> /sansad/hub/historical-logs */}
-                        <Link href="/sansad/hub/historical-logs" className="group flex-1 py-6 px-8 border-b border-zinc-200/80 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
-                          <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-                          <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-
-                          <div className="flex-[0.2]" />
-                          <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Historical Logs</h3>
-                          <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                            Past maintenance records, failure analyses, and SOP-driven repair history.
-                          </p>
-                          <div className="flex-[1.5]" />
-                          <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
-                            <div className="overflow-hidden flex-1">
-                              <LogoLoop
-                                logos={historicalLogsLogos}
-                                speed={22}
-                                direction="left"
-                                logoHeight={14}
-                                gap={18}
-                                pauseOnHover
-                                renderItem={(item) => (
-                                  <span
-                                    style={{ fontFamily: "var(--font-questrial)" }}
-                                    className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
-                                      item.isSeparator
-                                        ? "text-[#1b253c]/20 group-hover:text-white/30"
-                                        : "text-[#1b253c]/55 group-hover:text-white"
-                                    }`}
-                                  >{item.text}</span>
-                                )}
-                              />
-                            </div>
-                            <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
-                          </div>
-                        </Link>
-
-                        {/* Sub-panel C: Abnormality Prediction -> /sansad/hub/abpred */}
-                        <Link href="/sansad/hub/abpred" className="group flex-1 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
-                          <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-                          <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-
-                          <div className="flex-[0.2]" />
-                          <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Abnormality Prediction</h3>
-                          <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                            Criticality scoring by process impact, delay severity and spares availability.
-                          </p>
-                          <div className="flex-[1.5]" />
-                          <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
-                            <div className="overflow-hidden flex-1">
-                              <LogoLoop
-                                logos={riskPriorityLogos}
-                                speed={22}
-                                direction="left"
-                                logoHeight={14}
-                                gap={18}
-                                pauseOnHover
-                                renderItem={(item) => (
-                                  <span
-                                    style={{ fontFamily: "var(--font-questrial)" }}
-                                    className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
-                                      item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
-                                        : item.text?.includes("CRITICAL") ? "text-rose-500 group-hover:text-rose-450 font-bold"
-                                        : item.text?.includes("HIGH") ? "text-orange-500 group-hover:text-orange-400 font-semibold"
-                                        : item.text?.includes("MEDIUM") ? "text-amber-500 group-hover:text-amber-300"
-                                        : "text-emerald-600 group-hover:text-emerald-300"
-                                    }`}
-                                  >{item.text}</span>
-                                )}
-                              />
-                            </div>
-                            <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
-                          </div>
-                        </Link>
-
-                      </div>
-                    </div>
-
-                    {/* Bottom half: SANSAD HUB Notification Loop (base of the L-shape) */}
-                    <Link 
-                      href="/sansad/hub/dashboard" 
-                      onMouseEnter={() => setIsSansadHubHovered(true)}
-                      onMouseLeave={() => setIsSansadHubHovered(false)}
-                      className={`h-14 flex items-center overflow-hidden transition-all duration-300 ease-in-out cursor-pointer origin-top-left ${
-                        isSansadHubHovered 
-                          ? "bg-[#FAF6EE] scale-[1.01] z-20 shadow-2xl" 
-                          : "bg-[#FAF9F5]"
-                      }`}
-                    >
-                      <div className="w-full px-8">
-                        <div className={`overflow-hidden border-t pt-2 transition-colors duration-300 ${
-                          isSansadHubHovered ? "border-transparent" : "border-[#1b253c]/8"
-                        }`}>
-                          <LogoLoop
-                            logos={sansadHubLogos}
-                            speed={25}
-                            direction="left"
-                            logoHeight={16}
-                            gap={20}
-                            pauseOnHover
-                            renderItem={(item) => (
-                              <span
-                                style={{ fontFamily: "var(--font-questrial)" }}
-                                className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-sm ${
-                                  item.isSeparator
-                                    ? isSansadHubHovered ? "text-[#1b253c]/30" : "text-[#1b253c]/20"
-                                    : item.text?.includes("ACTIVE") || item.text?.includes("LIVE")
-                                      ? "text-emerald-600 font-bold"
-                                      : isSansadHubHovered ? "text-[#1b253c]/80" : "text-[#1b253c]/50"
-                                }`}
+                        <AnimatePresence mode="popLayout">
+                          {systemLogs.map((log) => {
+                            const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
+                            const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
+                            let timeColor = "text-[#1b253c]/40 group-hover:text-[#1b253c]/60";
+                            let moduleColor = "text-[#1b253c]/65 group-hover:text-[#1b253c]/85";
+                            let textStyle = "text-[#1b253c]/80 group-hover:text-[#1b253c]";
+                            let dot = "bg-zinc-300 group-hover:bg-zinc-400";
+                            if (isCritical) { timeColor = "text-rose-500/60 group-hover:text-rose-600/80"; moduleColor = "text-rose-600 group-hover:text-rose-700"; textStyle = "text-rose-600 group-hover:text-rose-700 font-semibold"; dot = "bg-rose-500 group-hover:bg-rose-600"; }
+                            else if (isWarning) { timeColor = "text-amber-600/60 group-hover:text-amber-700/80"; moduleColor = "text-amber-600 group-hover:text-amber-700"; textStyle = "text-amber-600 group-hover:text-amber-700"; dot = "bg-amber-500 group-hover:bg-amber-600"; }
+                            return (
+                              <motion.div
+                                key={log.id}
+                                layout
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.4, ease: "easeOut" }}
+                                className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-2 transition-colors duration-300 ${textStyle}`}
                               >
-                                {item.text}
-                              </span>
-                            )}
-                          />
-                        </div>
+                                <span className={`mt-2 h-1.5 w-1.5 rounded-full flex-shrink-0 transition-colors duration-300 ${dot}`} />
+                                <div>
+                                  <span style={{ fontFamily: "var(--font-questrial)" }} className={`text-[11px] block mb-0.5 transition-colors duration-300 ${timeColor}`}>[{log.time}]&nbsp;<span className={`font-bold transition-colors duration-300 ${moduleColor}`}>{log.module}</span></span>
+                                  <span style={{ fontFamily: "var(--font-questrial)" }} className="text-[14px] leading-snug transition-colors duration-300">{log.text}</span>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
                       </div>
-                    </Link>
-
-                  </div>
-
-                </div>
-
-                {/* Right column — full-height LOG STREAM (30% width, Hover solid creme `#FAF6EE`) */}
-                <div className="group w-[30%] h-full flex flex-col p-8 relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl">
-                  <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
-                  <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
-
-                  <div className="flex-shrink-0 mb-4 select-none">
-                    <h2 className="text-3xl font-black text-[#1b253c] group-hover:text-[#1b253c] uppercase transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                      LOG STREAM
-                    </h2>
-                  </div>
-
-                  <div className="flex-1 min-h-0 relative">
-                    <div
-                      ref={logContainerRef}
-                      onScroll={handleLogScroll}
-                      className="sansad-custom-scroll h-full overflow-y-auto space-y-4 scroll-smooth"
-                    >
-                      <AnimatePresence mode="popLayout">
-                        {logs.map((log) => {
-                          const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
-                          const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
-                          let timeColor = "text-[#1b253c]/40 group-hover:text-[#1b253c]/60";
-                          let moduleColor = "text-[#1b253c]/65 group-hover:text-[#1b253c]/85";
-                          let textStyle = "text-[#1b253c]/80 group-hover:text-[#1b253c]";
-                          let dot = "bg-zinc-300 group-hover:bg-zinc-400";
-                          if (isCritical) { timeColor = "text-rose-500/60 group-hover:text-rose-600/80"; moduleColor = "text-rose-600 group-hover:text-rose-700"; textStyle = "text-rose-600 group-hover:text-rose-700 font-semibold"; dot = "bg-rose-500 group-hover:bg-rose-600"; }
-                          else if (isWarning) { timeColor = "text-amber-600/60 group-hover:text-amber-700/80"; moduleColor = "text-amber-600 group-hover:text-amber-700"; textStyle = "text-amber-600 group-hover:text-amber-700"; dot = "bg-amber-500 group-hover:bg-amber-600"; }
-                          return (
-                            <motion.div
-                              key={log.id}
-                              layout
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.4, ease: "easeOut" }}
-                              className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-3 transition-colors duration-300 ${textStyle}`}
-                            >
-                              <span className={`mt-2.5 h-1.5 w-1.5 rounded-full flex-shrink-0 transition-colors duration-300 ${dot}`} />
-                              <div>
-                                <span style={{ fontFamily: "var(--font-questrial)" }} className={`text-[13px] block mb-0.5 transition-colors duration-300 ${timeColor}`}>[{log.time}]&nbsp;<span className={`font-bold transition-colors duration-300 ${moduleColor}`}>{log.module}</span></span>
-                                <span style={{ fontFamily: "var(--font-questrial)" }} className="text-[17px] leading-snug transition-colors duration-300">{log.text}</span>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </AnimatePresence>
                     </div>
+                  </Link>
 
-                    {/* Scroll to bottom */}
-                    <AnimatePresence>
-                      {showScrollBottom && (
-                        <motion.button
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 8 }}
-                          onClick={handleScrollToBottom}
-                          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3.5 py-1.5 bg-[#1b253c] text-[#FAF9F5] group-hover:bg-[#1b253c] group-hover:text-white rounded-full text-[9px] font-bold uppercase tracking-wider cursor-pointer shadow-md flex items-center gap-1 select-none z-20 transition-colors duration-300"
-                        >
-                          ↓ Latest
-                        </motion.button>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  {/* HISTORICAL LOGS (middle 26%) */}
+                  <Link href="/sansad/hub/historical-logs" className="group h-[26%] border-b border-zinc-200 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+
+                    <div className="flex-[0.2]" />
+                    <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Historical Logs</h3>
+                    <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                      Past maintenance records, failure analyses, and SOP-driven repair history.
+                    </p>
+                    <div className="flex-[1.5]" />
+                    <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
+                      <div className="overflow-hidden flex-1">
+                        <LogoLoop
+                          logos={historicalLogsLogos}
+                          speed={22}
+                          direction="left"
+                          logoHeight={14}
+                          gap={18}
+                          pauseOnHover
+                          renderItem={(item) => (
+                            <span
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                              className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
+                                item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
+                                  : "text-[#1b253c]/55 group-hover:text-white"
+                              }`}
+                            >{item.text}</span>
+                          )}
+                        />
+                      </div>
+                      <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
+                    </div>
+                  </Link>
+
+                  {/* RAG LOGS (bottom 26%) */}
+                  <Link href="/manas/chat" className="group h-[26%] py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
+
+                    <div className="flex-[0.2]" />
+                    <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>RAG Logs</h3>
+                    <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+                      Manas vector search queries, agent prompts, and context retrievals.
+                    </p>
+                    <div className="flex-[1.5]" />
+                    <div className="flex items-center justify-between gap-4 border-t border-[#1b253c]/8 group-hover:border-transparent transition-colors duration-300 pt-2">
+                      <div className="overflow-hidden flex-1">
+                        <LogoLoop
+                          logos={ragLogsLogos}
+                          speed={22}
+                          direction="left"
+                          logoHeight={14}
+                          gap={18}
+                          pauseOnHover
+                          renderItem={(item) => (
+                            <span
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                              className={`uppercase tracking-wide select-none whitespace-nowrap transition-colors duration-300 text-xs ${
+                                item.isSeparator ? "text-[#1b253c]/20 group-hover:text-white/30"
+                                  : "text-[#1b253c]/55 group-hover:text-white"
+                              }`}
+                            >{item.text}</span>
+                          )}
+                        />
+                      </div>
+                      <ArrowUpRight className="w-6 h-6 text-[#1b253c] group-hover:text-[#f97316] transition-transform duration-300 group-hover:rotate-45 shrink-0" />
+                    </div>
+                  </Link>
                 </div>
-
               </div>
             </div>
-
           </div>
         </div>
       )}

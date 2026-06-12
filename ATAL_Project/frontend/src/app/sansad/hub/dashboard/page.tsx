@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, Activity, FileText, ShieldAlert } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 
 export default function SansadHubLanding() {
@@ -16,30 +16,6 @@ export default function SansadHubLanding() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  const panels = [
-    {
-      href: "/sansad/hub/monitor",
-      icon: Activity,
-      title: "RUL Monitor",
-      desc: "Equipment Remaining Useful Life predictions from live sensor telemetry.",
-      color: "hover:bg-[#4A582E]",
-    },
-    {
-      href: "/sansad/hub/historical-logs",
-      icon: FileText,
-      title: "Historical Logs",
-      desc: "Past maintenance records, failure analyses, and SOP-driven repair history.",
-      color: "hover:bg-[#4A582E]",
-    },
-    {
-      href: "/sansad/hub/abpred",
-      icon: ShieldAlert,
-      title: "Abnormality Prediction",
-      desc: "Criticality scoring by process impact, delay severity and spares availability.",
-      color: "hover:bg-[#4A582E]",
-    },
-  ];
 
   return (
     <ClickSpark
@@ -141,35 +117,6 @@ export default function SansadHubLanding() {
                 </span>
               </div>
               <div className="w-1/4" />
-            </div>
-
-            <div className="flex-1 flex gap-8 min-h-0">
-              {panels.map((panel) => {
-                const Icon = panel.icon;
-                return (
-                  <Link
-                    key={panel.href}
-                    href={panel.href}
-                    className={`group flex-1 bg-white border border-zinc-200 rounded-3xl p-10 flex flex-col relative transition-all duration-300 ease-in-out cursor-pointer hover:scale-[1.02] hover:shadow-2xl ${panel.color}`}
-                  >
-                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
-
-                    <div className="flex-[0.6]" />
-                    <Icon className="w-10 h-10 text-[#1b253c] group-hover:text-orange-400 transition-colors duration-300 mb-4" />
-                    <h2 className="text-5xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                      {panel.title}
-                    </h2>
-                    <p className="mt-4 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                      {panel.desc}
-                    </p>
-                    <div className="flex-[1.2]" />
-                    <div className="flex justify-end">
-                      <ArrowUpRight className="w-8 h-8 text-[#1b253c] group-hover:text-[#f97316] transition-all duration-300 group-hover:rotate-45" />
-                    </div>
-                  </Link>
-                );
-              })}
             </div>
           </div>
         </div>

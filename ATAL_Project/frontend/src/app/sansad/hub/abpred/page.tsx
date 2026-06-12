@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, AlertTriangle, CheckCircle, TrendingUp, Clock, Package } from "lucide-react";
+import { ArrowLeft, ShieldAlert, TrendingUp, Clock, Package } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 
 interface RiskAsset {
@@ -74,12 +74,6 @@ export default function AbnormalityPredictionPage() {
 
   const activeRisk = risks.find(r => r.id === activeRiskId) || risks[0];
 
-  const getUrgencyIcon = (urgency: string) => {
-    if (urgency === "CRITICAL") return <ShieldAlert className="w-5 h-5 text-rose-500" />;
-    if (urgency === "HIGH") return <AlertTriangle className="w-5 h-5 text-orange-500" />;
-    if (urgency === "MEDIUM") return <AlertTriangle className="w-5 h-5 text-amber-500" />;
-    return <CheckCircle className="w-5 h-5 text-emerald-500" />;
-  };
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-rose-500";
