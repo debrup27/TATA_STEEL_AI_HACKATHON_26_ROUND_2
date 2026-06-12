@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShieldAlert, Award, TrendingUp } from "lucide-react";
+import { ArrowLeft, ShieldAlert, AlertTriangle, CheckCircle, TrendingUp, Clock, Package } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 
 interface RiskAsset {
@@ -16,7 +16,7 @@ interface RiskAsset {
   recommendation: string;
 }
 
-export default function RiskPriorityPage() {
+export default function AbnormalityPredictionPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [activeRiskId, setActiveRiskId] = useState<string | null>("risk-1");
 
@@ -74,6 +74,20 @@ export default function RiskPriorityPage() {
 
   const activeRisk = risks.find(r => r.id === activeRiskId) || risks[0];
 
+  const getUrgencyIcon = (urgency: string) => {
+    if (urgency === "CRITICAL") return <ShieldAlert className="w-5 h-5 text-rose-500" />;
+    if (urgency === "HIGH") return <AlertTriangle className="w-5 h-5 text-orange-500" />;
+    if (urgency === "MEDIUM") return <AlertTriangle className="w-5 h-5 text-amber-500" />;
+    return <CheckCircle className="w-5 h-5 text-emerald-500" />;
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-rose-500";
+    if (score >= 50) return "text-orange-500";
+    if (score >= 25) return "text-amber-500";
+    return "text-emerald-500";
+  };
+
   return (
     <ClickSpark
       sparkColor="#f97316"
@@ -121,11 +135,11 @@ export default function RiskPriorityPage() {
               SANSAD<br />HUB
             </h1>
             <p className="text-[9px] text-[#f97316] mt-3 font-bold uppercase tracking-[0.2em]">
-              Risk Priority Triage
+              Abnormality Prediction & Triage
             </p>
           </div>
           <div className="bg-white border border-zinc-200 p-6 rounded-2xl">
-            <p className="text-sm text-zinc-600">Please open this page on a desktop viewport to inspect risk priority triage parameters.</p>
+            <p className="text-sm text-zinc-600">Please open this page on a desktop viewport.</p>
             <Link href="/sansad/hub" className="mt-4 block text-center py-2 bg-[#1b253c] text-white rounded-xl text-[10px] font-bold uppercase tracking-wider">
               Back to Console
             </Link>
@@ -133,36 +147,28 @@ export default function RiskPriorityPage() {
         </div>
       ) : (
         <div className="w-screen h-screen overflow-hidden bg-[#FAF9F5] relative flex select-none">
-          {/* Left Gutter Vertical Marquee (8vw width) */}
           <div className="absolute left-0 top-0 bottom-0 w-[8vw] overflow-hidden z-20 pointer-events-none flex flex-col justify-start border-r border-zinc-200 bg-[#FAF9F5]">
             <div className="animate-marquee-up flex flex-col items-center w-full">
               {Array(6).fill("SANSAD").concat(Array(6).fill("SANSAD")).map((text, idx) => (
                 <div key={idx} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12 pointer-events-auto">
-                  <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider select-none">
-                    {text}
-                  </span>
+                  <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider select-none">{text}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Right Gutter Vertical Marquee (8vw width) */}
           <div className="absolute right-0 top-0 bottom-0 w-[8vw] overflow-hidden z-20 pointer-events-none flex flex-col justify-start border-l border-zinc-200 bg-[#FAF9F5]">
             <div className="animate-marquee-down flex flex-col items-center w-full">
               {Array(6).fill("ATAL").concat(Array(6).fill("ATAL")).map((text, idx) => (
                 <div key={idx} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12 pointer-events-auto">
-                  <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider select-none">
-                    {text}
-                  </span>
+                  <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider select-none">{text}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto">
-            <div className="w-full flex items-center justify-between mb-4 border-b border-zinc-200 pb-4 select-none">
-              {/* Left Side: Back Button */}
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="w-full flex items-center justify-between mb-6 border-b border-zinc-200 pb-4 select-none">
               <div className="w-1/4 flex justify-start">
                 <Link href="/sansad/hub" className="flex items-center select-none">
                   <div 
@@ -174,65 +180,51 @@ export default function RiskPriorityPage() {
                   </div>
                 </Link>
               </div>
-
-              {/* Center: Title and Subtitle */}
               <div className="flex-1 text-center">
-                <h2 className="text-xl font-black uppercase text-zinc-950" style={{ fontFamily: "var(--font-pixeloid)" }}>
-                  SANSAD HUB // RISK PRIORITY
-                </h2>
-                <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest block mt-1">
-                  Active Triage // Criticality Scoring & Redundancy Checklist
+                <h1 className="text-4xl font-black uppercase text-zinc-950 tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
+                  ABNORMALITY PREDICTION
+                </h1>
+                <span className="text-[10px] font-mono text-zinc-450 uppercase tracking-widest block mt-1">
+                  Anomaly scoring & triage assessment
                 </span>
               </div>
-
-              {/* Right Side: Spacer */}
               <div className="w-1/4" />
             </div>
 
-            {/* Content split dashboard style */}
+            {/* Left/Right split */}
             <div className="flex-1 flex gap-8 min-h-0">
-              
-              {/* Left Column: List of priorities */}
-              <div className="w-[45%] h-full flex flex-col gap-4 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/15 [&::-webkit-scrollbar-thumb]:rounded-full">
+              <div className="w-[45%] h-full flex flex-col gap-4 overflow-y-auto pr-6 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {risks.map((risk) => {
                   const isActive = risk.id === activeRiskId;
-                  let priorityLabelColor = "text-emerald-600 bg-emerald-50 border-emerald-200/50";
-                  if (risk.urgency === "CRITICAL") priorityLabelColor = "text-rose-600 bg-rose-50 border-rose-200/50 animate-pulse";
-                  else if (risk.urgency === "HIGH") priorityLabelColor = "text-orange-600 bg-orange-50 border-orange-200/50";
-                  else if (risk.urgency === "MEDIUM") priorityLabelColor = "text-amber-600 bg-amber-50 border-amber-200/50";
+                  const scoreColor = getScoreColor(risk.score);
 
                   return (
                     <div
                       key={risk.id}
                       onClick={() => setActiveRiskId(risk.id)}
-                      className={`p-6 rounded-2xl border transition-all duration-300 cursor-pointer select-none ${
-                        isActive 
-                          ? "bg-[#4A582E] border-[#4A582E] scale-[1.01] shadow-md text-white" 
-                          : "bg-white border-zinc-200 hover:border-[#4A582E] hover:scale-[1.005]"
+                      className={`rounded-2xl border p-6 flex flex-col relative transition-all duration-300 cursor-pointer select-none mr-1 ${
+                        isActive
+                          ? "bg-[#4A582E] border-[#4A582E] shadow-md text-white"
+                          : "bg-white border-zinc-200 hover:border-[#4A582E]"
                       }`}
                     >
-                      <div className="flex justify-between items-center mb-2">
-                        <span className={`font-mono text-[10px] font-bold ${isActive ? "text-zinc-200" : "text-zinc-400"}`}>Criticality Score</span>
-                        <div className={`px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${
-                          isActive
-                            ? risk.urgency === "CRITICAL"
-                              ? "text-rose-200 bg-rose-950/40 border-rose-800"
-                              : risk.urgency === "HIGH"
-                                ? "text-orange-200 bg-orange-950/40 border-orange-800"
-                                : risk.urgency === "MEDIUM"
-                                  ? "text-amber-200 bg-amber-950/40 border-amber-800"
-                                  : "text-emerald-200 bg-emerald-950/40 border-emerald-800"
-                            : priorityLabelColor
-                        }`}>
-                          {risk.urgency}
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center mt-1">
-                        <h3 className={`text-lg font-black uppercase ${isActive ? "text-white" : "text-[#1b253c]"}`} style={{ fontFamily: "var(--font-questrial)" }}>
-                          {risk.name}
-                        </h3>
-                        <span className={`text-2xl font-black ${isActive ? "text-white" : "text-[#1b253c]"}`} style={{ fontFamily: "var(--font-questrial)" }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`font-mono text-xs font-bold uppercase tracking-widest ${isActive ? "text-zinc-200" : "text-zinc-400"}`}>
+                          {risk.urgency} Priority
+                        </span>
+                        <span className={`text-2xl font-black ${isActive ? "text-white" : scoreColor}`} style={{ fontFamily: "var(--font-questrial)" }}>
                           {risk.score}
+                        </span>
+                      </div>
+                      <h3 className={`text-lg font-black uppercase ${isActive ? "text-white" : "text-[#1b253c]"}`} style={{ fontFamily: "var(--font-questrial)" }}>
+                        {risk.name}
+                      </h3>
+                      <div className="flex items-center gap-3 mt-2 text-xs">
+                        <span className={`font-mono font-bold ${isActive ? "text-zinc-300" : "text-zinc-400"}`}>
+                          {risk.downtimeHours}h outage
+                        </span>
+                        <span className={`font-mono font-bold ${isActive ? "text-zinc-300" : risk.sparesAvailable ? "text-emerald-600" : "text-rose-500"}`}>
+                          Spares: {risk.sparesAvailable ? "Yes" : "No"}
                         </span>
                       </div>
                     </div>
@@ -240,68 +232,81 @@ export default function RiskPriorityPage() {
                 })}
               </div>
 
-              {/* Right Column: Detailed breakdowns */}
               <div className="flex-1 h-full bg-white border border-zinc-200 rounded-3xl p-8 flex flex-col relative overflow-hidden">
                 <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 select-none">+</div>
                 <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 select-none">+</div>
 
                 {activeRisk && (
                   <div className="flex flex-col h-full">
-                    <span className="font-mono text-[10px] font-bold text-orange-500 uppercase tracking-widest block mb-2">Process Risk Evaluation</span>
-                    <h3 className="text-3xl font-black text-[#1b253c] uppercase border-b pb-4 mb-6" style={{ fontFamily: "var(--font-questrial)" }}>
-                      {activeRisk.name}
-                    </h3>
-
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 text-center">
-                        <span className="block font-mono text-[8px] text-zinc-400 font-bold uppercase tracking-wider">Triage Tier</span>
-                        <span className="block text-lg font-black text-[#1b253c] mt-1" style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.urgency}</span>
+                    <div className="flex items-start justify-between mb-6 pb-6 border-b border-zinc-150">
+                      <div>
+                        <span className="font-mono text-sm font-black text-orange-500 uppercase tracking-wider">Abnormality Assessment</span>
+                        <h3 className="text-3xl font-black text-[#1b253c] uppercase mt-1" style={{ fontFamily: "var(--font-questrial)" }}>
+                          {activeRisk.name}
+                        </h3>
                       </div>
-                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 text-center">
-                        <span className="block font-mono text-[8px] text-zinc-400 font-bold uppercase tracking-wider">Est. Outage</span>
-                        <span className="block text-lg font-black text-[#1b253c] mt-1" style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.downtimeHours} Hrs</span>
-                      </div>
-                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 text-center">
-                        <span className="block font-mono text-[8px] text-zinc-400 font-bold uppercase tracking-wider">Spares Ready</span>
-                        <span className="block text-lg font-black text-[#1b253c] mt-1" style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.sparesAvailable ? "YES" : "NO"}</span>
+                      <div className={`px-4 py-2 rounded-xl text-sm font-black border shrink-0 ${
+                        activeRisk.urgency === "CRITICAL"
+                          ? "text-rose-600 bg-rose-50 border-rose-200 animate-pulse"
+                          : activeRisk.urgency === "HIGH"
+                            ? "text-orange-600 bg-orange-50 border-orange-200"
+                            : activeRisk.urgency === "MEDIUM"
+                              ? "text-amber-600 bg-amber-50 border-amber-200"
+                              : "text-emerald-600 bg-emerald-50 border-emerald-200"
+                      }`} style={{ fontFamily: "var(--font-questrial)" }}>
+                        {activeRisk.urgency} · {activeRisk.score}
                       </div>
                     </div>
 
-                    <div className="space-y-6 flex-grow">
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 flex flex-col items-center gap-1">
+                        <ShieldAlert className="w-5 h-5 text-zinc-400" />
+                        <span className="block font-mono text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Triage Tier</span>
+                        <span className={`text-xl font-black ${getScoreColor(activeRisk.score)}`} style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.urgency}</span>
+                      </div>
+                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 flex flex-col items-center gap-1">
+                        <Clock className="w-5 h-5 text-zinc-400" />
+                        <span className="block font-mono text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Est. Outage</span>
+                        <span className="block text-xl font-black text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.downtimeHours} Hrs</span>
+                      </div>
+                      <div className="bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150 flex flex-col items-center gap-1">
+                        <Package className="w-5 h-5 text-zinc-400" />
+                        <span className="block font-mono text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Spares Ready</span>
+                        <span className={`block text-xl font-black ${activeRisk.sparesAvailable ? "text-emerald-600" : "text-rose-500"}`} style={{ fontFamily: "var(--font-questrial)" }}>{activeRisk.sparesAvailable ? "YES" : "NO"}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 flex-1 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                       <div>
-                        <div className="flex items-center gap-1.5 mb-1.5">
+                        <div className="flex items-center gap-2 mb-1.5">
                           <ShieldAlert className="w-4 h-4 text-orange-500" />
-                          <span className="font-mono text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Process Bottleneck Impact</span>
+                          <span className="font-mono text-xs text-zinc-400 font-bold uppercase tracking-wider">Process Bottleneck Impact</span>
                         </div>
-                        <p className="text-sm text-zinc-700 leading-relaxed font-sans bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150">
+                        <p className="text-sm text-zinc-700 leading-relaxed font-sans bg-[#FAF9F5] p-5 rounded-2xl border border-zinc-150">
                           {activeRisk.impact}
                         </p>
                       </div>
-
                       <div>
-                        <div className="flex items-center gap-1.5 mb-1.5">
+                        <div className="flex items-center gap-2 mb-1.5">
                           <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          <span className="font-mono text-[9px] text-zinc-400 font-bold uppercase tracking-wider">Agent Triage & Recommendation</span>
+                          <span className="font-mono text-xs text-zinc-400 font-bold uppercase tracking-wider">Agent Triage & Recommendation</span>
                         </div>
-                        <p className="text-sm text-zinc-700 leading-relaxed font-sans bg-[#FAF9F5] p-4 rounded-xl border border-zinc-150">
+                        <p className="text-sm text-zinc-700 leading-relaxed font-sans bg-[#FAF9F5] p-5 rounded-2xl border border-zinc-150">
                           {activeRisk.recommendation}
                         </p>
                       </div>
                     </div>
 
-                    <div className="border-t pt-4 flex justify-between items-center text-[10px] font-mono text-zinc-400 font-bold uppercase tracking-wider">
-                      <div className="flex items-center gap-1">
-                        <Award className="w-3.5 h-3.5" />
-                        Validated by Manas Risk Engine
+                    <div className="border-t border-zinc-150 pt-4 mt-4 flex justify-between items-center">
+                      <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400 font-bold uppercase tracking-wider">
+                        <ShieldAlert className="w-3.5 h-3.5" />
+                        Validated by Manas Anomaly Engine
                       </div>
                     </div>
-
                   </div>
                 )}
               </div>
-
             </div>
-
           </div>
         </div>
       )}

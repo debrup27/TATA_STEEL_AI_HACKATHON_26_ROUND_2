@@ -334,7 +334,7 @@ export default function HistoricalLogsPage() {
           </div>
 
           {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto">
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="w-full flex items-center justify-between mb-4 border-b border-zinc-200 pb-4 select-none">
               <div className="w-1/4 flex justify-start">
                 <Link href="/sansad/hub" className="flex items-center select-none">
@@ -388,7 +388,7 @@ export default function HistoricalLogsPage() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-3 pr-6 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/15 [&::-webkit-scrollbar-thumb]:rounded-full">
+                <div className="flex-1 overflow-y-auto space-y-3 pr-6 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   {filteredLogs.length === 0 ? (
                     <div className="text-center py-12 text-sm font-mono text-zinc-400">
                       No logs match the query search parameters.
@@ -470,7 +470,7 @@ export default function HistoricalLogsPage() {
                       </div>
                     )}
 
-                    <div className="space-y-4 flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/15 [&::-webkit-scrollbar-thumb]:rounded-full">
+                    <div className="space-y-4 flex-1 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                       <div>
                         <span className="block font-mono text-xs text-zinc-400 font-bold uppercase tracking-wider mb-1">Diagnosing Agent Module</span>
                         <span className="inline-block px-3 py-1.5 bg-zinc-100 rounded-lg text-sm font-mono text-[#1b253c] font-bold">
@@ -535,7 +535,7 @@ export default function HistoricalLogsPage() {
                             </div>
                             <span className="text-[10px] font-mono text-zinc-400 bg-zinc-100 px-2 py-1 rounded-md">Online</span>
                           </div>
-                          <div className="p-4 bg-white rounded-xl border border-zinc-200 max-h-[300px] overflow-y-auto">
+                          <div className="p-4 bg-white rounded-xl border border-zinc-200 max-h-[300px] overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                             <div className="text-xs text-zinc-700 leading-relaxed prose prose-sm max-w-none [&_h1]:text-lg [&_h1]:font-black [&_h2]:text-base [&_h2]:font-black [&_h3]:text-sm [&_h3]:font-bold [&_ul]:list-disc [&_ul]:pl-4 [&_li]:mb-0.5 [&_strong]:font-bold">
                               <ReactMarkdown>{activeLog.onlineContent}</ReactMarkdown>
                             </div>
@@ -584,7 +584,7 @@ export default function HistoricalLogsPage() {
                 <X className="w-5 h-5 text-zinc-500" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {expandedView === "pdf" && activeLog.pdfUrl && (
                 <iframe
                   src={activeLog.pdfUrl}

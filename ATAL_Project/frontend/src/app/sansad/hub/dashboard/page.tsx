@@ -33,9 +33,9 @@ export default function SansadHubLanding() {
       color: "hover:bg-[#4A582E]",
     },
     {
-      href: "/sansad/hub/priority",
+      href: "/sansad/hub/abpred",
       icon: ShieldAlert,
-      title: "Risk Priority",
+      title: "Abnormality Prediction",
       desc: "Criticality scoring by process impact, delay severity and spares availability.",
       color: "hover:bg-[#4A582E]",
     },

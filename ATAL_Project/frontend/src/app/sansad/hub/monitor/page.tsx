@@ -243,7 +243,7 @@ export default function RulMonitorPage() {
           </div>
 
           {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto">
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="w-full flex items-center justify-between mb-4 border-b border-zinc-200 pb-4 select-none">
               {/* Left Side: Back Button */}
               <div className="w-1/4 flex justify-start">
@@ -353,7 +353,7 @@ export default function RulMonitorPage() {
               </div>
 
               {/* Right Column: Complete Factory Parts breakdown index */}
-              <div className="w-[65%] h-full flex flex-col gap-4 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/15 [&::-webkit-scrollbar-thumb]:rounded-full">
+              <div className="w-[65%] h-full flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {activeFactory.parts.map((part) => {
                   const isCritical = part.status === "critical";
                   const isWarning = part.status === "warning";

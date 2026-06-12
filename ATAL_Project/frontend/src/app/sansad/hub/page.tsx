@@ -605,13 +605,13 @@ export default function SansadMonitoringPage() {
                           </div>
                         </Link>
 
-                        {/* Sub-panel C: Risk Priority -> /sansad/hub/priority */}
-                        <Link href="/sansad/hub/priority" className="group flex-1 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                        {/* Sub-panel C: Abnormality Prediction -> /sansad/hub/abpred */}
+                        <Link href="/sansad/hub/abpred" className="group flex-1 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
                           <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
                           <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
 
                           <div className="flex-[0.2]" />
-                          <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Risk Priority</h3>
+                          <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>Abnormality Prediction</h3>
                           <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
                             Criticality scoring by process impact, delay severity and spares availability.
                           </p>
