@@ -229,6 +229,7 @@ function HoverButton() {
 
   return (
     <motion.button
+      onClick={() => triggerPageTransition("/login")}
       className="mt-8 flex items-center border border-zinc-300/60 backdrop-blur-md font-bold text-sm md:text-base pl-6 py-3.5 rounded-full shadow-md cursor-pointer pointer-events-auto overflow-hidden"
       animate={{
         backgroundColor: isHovered ? "#120F17" : "rgba(255,255,255,0.2)",

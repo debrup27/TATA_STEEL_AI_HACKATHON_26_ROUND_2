@@ -211,7 +211,7 @@ export default function ManasLandingPage() {
                     className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-xl px-2.5 py-1.5 leading-normal shadow-3xs ${
+                      className={`max-w-[85%] rounded-xl px-2.5 py-1.5 leading-normal shadow-3xs font-semibold ${
                         msg.role === "user"
                           ? "bg-zinc-900 text-white rounded-tr-xs"
                           : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-xs"
@@ -273,7 +273,7 @@ export default function ManasLandingPage() {
           </div>
 
           <Link 
-            href="/manas/chat"
+            href="/login"
             className="bg-zinc-950 text-white p-5 rounded-2xl shadow-sm flex items-center justify-between border border-zinc-950 hover:bg-zinc-800 transition-colors"
           >
             <div>
@@ -423,7 +423,7 @@ export default function ManasLandingPage() {
                             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                           >
                             <div
-                              className={`max-w-[85%] rounded-2xl px-4 py-2.5 leading-normal shadow-xs ${
+                              className={`max-w-[85%] rounded-2xl px-4 py-2.5 leading-normal shadow-xs font-semibold ${
                                 msg.role === "user"
                                   ? "bg-zinc-900 text-white rounded-tr-sm"
                                   : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-sm"
@@ -556,7 +556,7 @@ export default function ManasLandingPage() {
 
                   {/* Launch button leads directly to active chat view */}
                   <motion.div style={{ opacity: buttonOpacity }} className="flex flex-col items-center gap-4 mt-12">
-                    <Link href="/manas/chat" className="block">
+                    <Link href="/login" className="block">
                       <motion.div
                         className="flex items-center text-white text-2xl tracking-tight rounded-xl shadow-lg cursor-pointer overflow-hidden"
                         style={{ fontFamily: "var(--font-pixeloid)", backgroundColor: "#000000" }}

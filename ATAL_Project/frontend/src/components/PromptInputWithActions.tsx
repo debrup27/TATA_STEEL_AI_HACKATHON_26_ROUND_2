@@ -32,6 +32,15 @@ interface Toast {
   message: string
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
+}
+
 async function renderPdfPages(file: File): Promise<string[]> {
   const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist")
   GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@6.0.227/build/pdf.worker.min.mjs`
@@ -47,8 +56,7 @@ async function renderPdfPages(file: File): Promise<string[]> {
     canvas.width = viewport.width
     canvas.height = viewport.height
     await page.render({ canvas, viewport }).promise
-    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/webp", 0.92))
-    urls.push(URL.createObjectURL(blob))
+    urls.push(canvas.toDataURL("image/webp", 0.92))
   }
 
   return urls
@@ -63,11 +71,13 @@ function PromptInputWithActions({
   onDeepThinkingChange,
   onSendMessage,
   isLoading,
+  className = "w-full max-w-3xl mx-auto px-3 pb-3 md:px-5 md:pb-5",
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
-  onSendMessage: (message: string) => void
+  onSendMessage: (message: string, files: { name: string; type: string; pages: string[] }[]) => void
   isLoading: boolean
+  className?: string
 }) {
   const [prompt, setPrompt] = useState("")
   const [files, setFiles] = useState<UploadedFile[]>([])
@@ -91,14 +101,6 @@ function PromptInputWithActions({
       Object.values(currentTimers).forEach(clearTimeout)
     }
   }, [])
-
-  useEffect(() => {
-    return () => {
-      files.forEach((f) => f.pages.forEach((u) => URL.revokeObjectURL(u)))
-    }
-  }, [files])
-
-
 
   const handleFilesAdded = useCallback(async (newFiles: File[]) => {
     const remaining = MAX_FILES - files.length
@@ -126,7 +128,7 @@ function PromptInputWithActions({
       try {
         const pages = uf.file.type === "application/pdf"
           ? await renderPdfPages(uf.file)
-          : [URL.createObjectURL(uf.file)]
+          : [await fileToBase64(uf.file)]
 
         setFiles((prev) =>
           prev.map((f) => (f.id === uf.id ? { ...f, status: "loaded" as const, pages } : f))
@@ -139,19 +141,26 @@ function PromptInputWithActions({
   }, [files.length, addToast])
 
   const handleRemoveFile = useCallback((id: string, fileName: string) => {
-    setFiles((prev) => {
-      const target = prev.find((f) => f.id === id)
-      if (target) target.pages.forEach((u) => URL.revokeObjectURL(u))
-      return prev.filter((f) => f.id !== id)
-    })
+    setFiles((prev) => prev.filter((f) => f.id !== id))
     addToast(`${fileName} removed`)
     setExpandedFile((prev) => (prev?.id === id ? null : prev))
   }, [addToast])
 
+  const isAnyFileLoading = files.some((f) => f.status === "loading")
+  const canSubmit = (prompt.trim() || files.length > 0) && !isAnyFileLoading && !isLoading
+
   const handleSubmit = () => {
-    if (!prompt.trim()) return
-    onSendMessage(prompt.trim())
+    if (!prompt.trim() && files.length === 0) return
+    if (isAnyFileLoading || isLoading) return
+
+    const attached = files.map((f) => ({
+      name: f.file.name,
+      type: f.file.type,
+      pages: f.pages,
+    }))
+    onSendMessage(prompt.trim(), attached)
     setPrompt("")
+    setFiles([])
   }
 
   const loadedCount = files.filter((f) => f.status === "loaded").length
@@ -161,7 +170,7 @@ function PromptInputWithActions({
       onFilesAdded={handleFilesAdded}
       accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp"
     >
-      <div className="w-full max-w-3xl mx-auto px-3 pb-3 md:px-5 md:pb-5">
+      <div className={className}>
         {/* System Alerts */}
         <div className="fixed top-4 right-4 z-[1002] flex flex-col gap-2 pointer-events-none">
           <AnimatePresence>
@@ -238,7 +247,7 @@ function PromptInputWithActions({
           value={prompt}
           onValueChange={setPrompt}
           onSubmit={handleSubmit}
-          className="border-input bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-xs"
+          className="border-black/10 bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-[inset_0_0_0_1.5px_#ffffff,0_1px_2px_rgba(0,0,0,0.05)]"
         >
           <div className="flex flex-col">
             {files.length > 0 && (
@@ -286,12 +295,10 @@ function PromptInputWithActions({
 
             <PromptInputActions className="mt-5 flex w-full items-center justify-between gap-2 px-3 pb-3">
               <div className="flex items-center gap-2">
-                <FileUploadTrigger asChild>
-                  <PromptInputAction tooltip="Attach files">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full"
+                <PromptInputAction tooltip="Attach files">
+                  <FileUploadTrigger asChild>
+                    <button
+                      className="size-9 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center transition-all duration-200 cursor-pointer disabled:cursor-not-allowed"
                       type="button"
                       disabled={files.some((f) => f.status === "loading")}
                     >
@@ -300,23 +307,25 @@ function PromptInputWithActions({
                       ) : (
                         <Paperclip size={18} />
                       )}
-                    </Button>
-                  </PromptInputAction>
-                </FileUploadTrigger>
+                    </button>
+                  </FileUploadTrigger>
+                </PromptInputAction>
 
                 <div className="relative">
                   <PromptInputAction tooltip="Add">
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="size-9 rounded-full transition-all duration-200"
+                    <button
+                      className={`size-9 rounded-full border flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                        menuOpen
+                          ? "border-orange-500 text-orange-600 bg-orange-50/30"
+                          : "border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20"
+                      }`}
                       onClick={() => setMenuOpen((v) => !v)}
                       type="button"
                     >
                       <span className="block transition-transform duration-200" style={{ transform: menuOpen ? "rotate(45deg)" : "rotate(0deg)" }}>
                         <Plus size={18} />
                       </span>
-                    </Button>
+                    </button>
                   </PromptInputAction>
 
                   <AnimatePresence>
@@ -328,10 +337,10 @@ function PromptInputWithActions({
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.92, y: 8 }}
                           transition={{ duration: 0.15, ease: "easeOut" }}
-                          className="absolute bottom-full left-0 mb-2 z-50 bg-white border border-zinc-200 rounded-2xl shadow-xl p-1.5 flex flex-col gap-0.5 min-w-[200px] origin-bottom-left"
+                          className="absolute bottom-full left-0 mb-2 z-50 bg-white/95 backdrop-blur-md border border-[#1b253c]/10 rounded-2xl shadow-[0_8px_32px_rgba(27,37,60,0.1),inset_0_0_0_1px_rgba(255,255,255,0.8)] p-1.5 flex flex-col gap-0.5 min-w-[210px] origin-bottom-left"
                         >
                           <button
-                            className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-50 transition-colors text-sm font-semibold cursor-pointer ${deepThinking ? "text-orange-700 bg-orange-50 hover:bg-orange-100" : "text-zinc-700"}`}
+                            className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer ${deepThinking ? "text-orange-700 bg-orange-500/10 hover:bg-orange-500/15" : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"}`}
                             onClick={() => {
                               const nextVal = !deepThinking;
                               onDeepThinkingChange(nextVal);
@@ -340,14 +349,14 @@ function PromptInputWithActions({
                             }}
                             type="button"
                           >
-                            <Brain size={16} className={`shrink-0 ${deepThinking ? "text-orange-500" : "text-zinc-400"}`} />
+                            <Brain size={15} className={`shrink-0 ${deepThinking ? "text-orange-600 animate-pulse" : "text-[#1b253c]/50"}`} />
                             Deep Thinking
                             {deepThinking && (
-                              <span className="ml-auto size-2 rounded-full bg-orange-500 group-hover:hidden" />
+                              <span className="ml-auto size-1.5 rounded-full bg-orange-500 group-hover:hidden animate-pulse" />
                             )}
                             {deepThinking && (
-                              <span className="ml-auto hidden group-hover:flex items-center justify-center size-4 rounded-full bg-orange-200 text-orange-600">
-                                <X size={10} />
+                              <span className="ml-auto hidden group-hover:flex items-center justify-center size-4 rounded-full bg-orange-100 text-orange-600">
+                                <X size={10} strokeWidth={2.5} />
                               </span>
                             )}
                           </button>
@@ -364,10 +373,10 @@ function PromptInputWithActions({
                 )}
 
                 <PromptInputAction tooltip="Search">
-                  <Button variant="outline" className="rounded-full">
+                  <button className="h-9 px-4 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer text-sm font-semibold">
                     <Globe size={18} />
                     Search
-                  </Button>
+                  </button>
                 </PromptInputAction>
 
                 {deepThinking && (
@@ -379,20 +388,16 @@ function PromptInputWithActions({
               </div>
               <div className="flex items-center gap-2">
                 <PromptInputAction tooltip="Voice input">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="size-9 rounded-full"
-                  >
+                  <button className="size-9 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center transition-all duration-200 cursor-pointer">
                     <Mic size={18} />
-                  </Button>
+                  </button>
                 </PromptInputAction>
 
                 <Button
                   size="icon"
-                  disabled={!prompt.trim() || isLoading}
+                  disabled={!canSubmit}
                   onClick={handleSubmit}
-                  className="size-9 rounded-full"
+                  className="size-9 rounded-full hover:!bg-orange-500 transition-all duration-300"
                 >
                   {!isLoading ? (
                     <ArrowUp size={18} />
@@ -444,20 +449,24 @@ function DeepThinkingPill({ onDismiss }: { onDismiss: () => void }) {
 
   return (
     <motion.button
-      className="flex items-center px-3 py-1 rounded-full bg-orange-100 border border-orange-200/60 text-xs font-bold text-orange-700 cursor-pointer overflow-hidden"
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-orange-200/60 bg-orange-50/90 text-[11px] font-bold text-orange-700 cursor-pointer overflow-hidden transition-all duration-200 shadow-3xs"
       onHoverStart={() => setHovered(true)}
       onHoverEnd={() => setHovered(false)}
       onClick={onDismiss}
       animate={{ paddingRight: hovered ? 10 : 12 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
     >
+      <span className="relative flex size-1.5 items-center justify-center shrink-0">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400/80 opacity-75"></span>
+        <span className="relative inline-flex rounded-full size-1 bg-orange-500"></span>
+      </span>
       <span>Deep Thinking</span>
       <motion.span
         className="flex items-center justify-center overflow-hidden"
         animate={{ width: hovered ? 16 : 0, opacity: hovered ? 1 : 0, marginLeft: hovered ? 4 : 0 }}
         transition={{ duration: 0.15, ease: "easeOut" }}
       >
-        <X size={12} className="text-orange-600 shrink-0" />
+        <X size={11.5} className="text-orange-600 hover:text-orange-855 shrink-0" strokeWidth={2.5} />
       </motion.span>
     </motion.button>
   )

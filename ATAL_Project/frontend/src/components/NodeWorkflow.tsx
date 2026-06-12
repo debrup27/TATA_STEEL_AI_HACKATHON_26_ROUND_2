@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  RotateCcw, Plus, Trash2, Copy, Edit3, Check, X
+  RotateCcw, Plus, Trash2, Copy, Edit3, Check, X, AlertTriangle, Play, HelpCircle
 } from "lucide-react";
 
 interface SensorReading {
@@ -32,96 +32,664 @@ interface FlowNode {
   valveName?: string;
   alertChannels?: { type: string; target: string; msg: string }[];
   ticketId?: string;
+  rulDays?: number;
 }
 
-export default function NodeWorkflow() {
-  const [nodes, setNodes] = useState<FlowNode[]>([
-    {
-      id: "node_1",
-      title: "Read Telemetry",
-      subtitle: "Ingest Sensor Feeds",
-      x: 40,
-      y: 170,
-      type: "telemetry",
-      statusColor: "#3b82f6",
-      status: "completed",
-      nextNodes: ["node_2"],
-      sensors: [
-        { name: "BF_Temp", value: "108°C", status: "HIGH" },
-        { name: "BF_Press", value: "3.2b", status: "OK" },
-        { name: "BF_Level", value: "84%", status: "OK" }
-      ]
-    },
-    {
-      id: "node_2",
-      title: "Analyze Feeds",
-      subtitle: "Anomaly Classifier",
-      x: 320,
-      y: 170,
-      type: "classifier",
-      statusColor: "#a855f7",
-      status: "completed",
-      nextNodes: ["node_3", "node_4"],
-      threshold: {
-        field: "BF_Temp",
-        operator: ">",
-        value: "95°C"
-      }
-    },
-    {
-      id: "node_3",
-      title: "Cooling Protocol",
-      subtitle: "Deploy Active Cooling",
-      x: 600,
-      y: 40,
-      type: "action",
-      statusColor: "#ef4444",
-      status: "completed",
-      nextNodes: ["node_5"],
-      valveName: "VALVE_4A",
-      valveFlow: 250
-    },
-    {
-      id: "node_4",
-      title: "Write Telemetry",
-      subtitle: "Log Normal State",
-      x: 600,
-      y: 300,
-      type: "end",
-      statusColor: "#10b981",
-      status: "idle",
-      nextNodes: []
-    },
-    {
-      id: "node_5",
-      title: "Alert Commands",
-      subtitle: "Notify Supervisor",
-      x: 880,
-      y: 170,
-      type: "alert",
-      statusColor: "#f97316",
-      status: "completed",
-      nextNodes: ["node_6"],
-      alertChannels: [
-        { type: "SMS", target: "+91 99321*****", msg: "Furnace temp crit..." },
-        { type: "Slack", target: "#atal-alerts", msg: "Pinged supervisor" }
-      ]
-    },
-    {
-      id: "node_6",
-      title: "Schedule Inspection",
-      subtitle: "Inspection Ticket",
-      x: 1160,
-      y: 170,
-      type: "ticket",
-      statusColor: "#eab308",
-      status: "idle",
-      nextNodes: [],
-      ticketId: "ATAL-889"
-    }
-  ]);
+// ----------------------------------------------------
+// Horizon Foundry (15 Nodes)
+// ----------------------------------------------------
+const initialHorizonNodes: FlowNode[] = [
+  {
+    id: "horizon_1",
+    title: "Raw Feed Ingest",
+    subtitle: "Ingestion System",
+    x: 40,
+    y: 180,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["horizon_2"],
+    rulDays: 140,
+    sensors: [
+      { name: "FeedRate", value: "320 T/h", status: "OK" },
+      { name: "BeltVibr", value: "2.4 mm/s", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_2",
+    title: "Coke Ovens Control",
+    subtitle: "Oven Temp Classifier",
+    x: 320,
+    y: 180,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["horizon_3", "horizon_4"],
+    rulDays: 92,
+    threshold: { field: "Oven_Temp", operator: ">", value: "1150°C" }
+  },
+  {
+    id: "horizon_3",
+    title: "Cooling Jet Pump",
+    subtitle: "Sinter Fan Cooler",
+    x: 600,
+    y: 50,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["horizon_5"],
+    rulDays: 45,
+    valveName: "VALVE_4A",
+    valveFlow: 250
+  },
+  {
+    id: "horizon_4",
+    title: "Recycled Gas Loop",
+    subtitle: "Waste Heat Telemetry",
+    x: 600,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["horizon_6"],
+    rulDays: 120,
+    sensors: [
+      { name: "Gas_Temp", value: "380°C", status: "OK" },
+      { name: "Loop_Pres", value: "1.2b", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_5",
+    title: "Furnace Ingress",
+    subtitle: "Blast Furnace Temp",
+    x: 880,
+    y: 50,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["horizon_7"],
+    rulDays: 30,
+    sensors: [
+      { name: "BF_Temp", value: "1450°C", status: "OK" },
+      { name: "BF_Press", value: "3.2b", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_6",
+    title: "Recycling Stack",
+    subtitle: "BF Gas Extraction",
+    x: 880,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["horizon_8"],
+    rulDays: 160,
+    sensors: [
+      { name: "FlowRate", value: "14200 m3/h", status: "OK" },
+      { name: "Gas_CO2", value: "22%", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_7",
+    title: "Active Taphole Jet",
+    subtitle: "BF Taphole Drill",
+    x: 1160,
+    y: 50,
+    type: "action",
+    statusColor: "#ef4444",
+    status: "completed",
+    nextNodes: ["horizon_9"],
+    rulDays: 14,
+    valveName: "DRILL_COOL_3",
+    valveFlow: 350
+  },
+  {
+    id: "horizon_8",
+    title: "Slag Hopper Drive",
+    subtitle: "Slag Granulator",
+    x: 1160,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["horizon_10"],
+    rulDays: 75,
+    sensors: [
+      { name: "Gran_Vibr", value: "3.1 mm/s", status: "OK" },
+      { name: "WaterTemp", value: "48°C", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_9",
+    title: "Lance Flow Check",
+    subtitle: "BOF Lance Controller",
+    x: 1440,
+    y: 50,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["horizon_11"],
+    rulDays: 8,
+    threshold: { field: "Lance_Height", operator: "<", value: "1.8m" }
+  },
+  {
+    id: "horizon_10",
+    title: "Ladle Induction",
+    subtitle: "Ladle Furnace Temp",
+    x: 1440,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["horizon_12"],
+    rulDays: 50,
+    sensors: [
+      { name: "Melt_Temp", value: "1620°C", status: "OK" },
+      { name: "InducCurrent", value: "12.4 kA", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_11",
+    title: "Mold Oscillator",
+    subtitle: "Continuous Caster",
+    x: 1720,
+    y: 50,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["horizon_13"],
+    rulDays: 28,
+    valveName: "SPRAY_COOL_B",
+    valveFlow: 520
+  },
+  {
+    id: "horizon_12",
+    title: "Stopper Rod Servo",
+    subtitle: "Tundish Flow Monitor",
+    x: 1720,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["horizon_13"],
+    rulDays: 60,
+    sensors: [
+      { name: "Rod_Press", value: "185 bar", status: "OK" },
+      { name: "Flow_Speed", value: "1.4 m/s", status: "OK" }
+    ]
+  },
+  {
+    id: "horizon_13",
+    title: "Coiler Temp Rule",
+    subtitle: "Hot Strip Mill",
+    x: 2000,
+    y: 180,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["horizon_14"],
+    rulDays: 45,
+    threshold: { field: "Slab_Temp", operator: "<", value: "880°C" }
+  },
+  {
+    id: "horizon_14",
+    title: "Coiler Mandrel",
+    subtitle: "HSM Roller Coiler",
+    x: 2280,
+    y: 180,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["horizon_15"],
+    rulDays: 45,
+    valveName: "MANDREL_LUB",
+    valveFlow: 120
+  },
+  {
+    id: "horizon_15",
+    title: "Coil Storage Yard",
+    subtitle: "Final Yard Log",
+    x: 2560,
+    y: 180,
+    type: "end",
+    statusColor: "#10b981",
+    status: "completed",
+    nextNodes: [],
+    rulDays: 365
+  }
+];
 
-  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+// ----------------------------------------------------
+// Apex Ore Facility (14 Nodes)
+// ----------------------------------------------------
+const initialApexNodes: FlowNode[] = [
+  {
+    id: "apex_1",
+    title: "Coal Loader Drive",
+    subtitle: "Raw Coal Feeder",
+    x: 40,
+    y: 180,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["apex_2"],
+    rulDays: 85,
+    sensors: [
+      { name: "CoalRate", value: "180 T/h", status: "OK" },
+      { name: "Belt_Temp", value: "42°C", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_2",
+    title: "Screening Monitor",
+    subtitle: "Ore Ingestion Unit",
+    x: 320,
+    y: 180,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["apex_3", "apex_4"],
+    rulDays: 110,
+    threshold: { field: "Ore_Flow", operator: ">", value: "240 T/h" }
+  },
+  {
+    id: "apex_3",
+    title: "Main Incline Belt",
+    subtitle: "Belt Conveyor Drive",
+    x: 600,
+    y: 50,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["apex_5"],
+    rulDays: 70,
+    valveName: "BELT_SPRAY_1",
+    valveFlow: 80
+  },
+  {
+    id: "apex_4",
+    title: "Gravity Classifier",
+    subtitle: "Ore Screener Feed",
+    x: 600,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["apex_6"],
+    rulDays: 95,
+    sensors: [
+      { name: "ScreenVibr", value: "4.8 mm/s", status: "OK" },
+      { name: "MeshPressure", value: "1.4b", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_5",
+    title: "Secondary Crusher",
+    subtitle: "Crusher Motor",
+    x: 880,
+    y: 50,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["apex_7"],
+    rulDays: 38,
+    sensors: [
+      { name: "WindingTemp", value: "88°C", status: "OK" },
+      { name: "CrusherVibr", value: "5.2 mm/s", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_6",
+    title: "Ball Mill Cylinder",
+    subtitle: "Ball Mill Slurry",
+    x: 880,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["apex_8"],
+    rulDays: 130,
+    sensors: [
+      { name: "SlurryDensity", value: "1.65 g/cc", status: "OK" },
+      { name: "MillRPM", value: "16.2 rpm", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_7",
+    title: "Feed Recycle Valve",
+    subtitle: "Slurry Pump Flow",
+    x: 1160,
+    y: 50,
+    type: "action",
+    statusColor: "#ef4444",
+    status: "completed",
+    nextNodes: ["apex_9"],
+    rulDays: 12,
+    valveName: "PUMP_VALVE_B",
+    valveFlow: 410
+  },
+  {
+    id: "apex_8",
+    title: "Underflow Pump",
+    subtitle: "Cyclone Classifier",
+    x: 1160,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["apex_10"],
+    rulDays: 80,
+    sensors: [
+      { name: "CyclPressure", value: "2.1b", status: "OK" },
+      { name: "FeedRate", value: "140 m3/h", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_9",
+    title: "Spiral Splitting",
+    subtitle: "Spiral Concentrator",
+    x: 1440,
+    y: 50,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["apex_11"],
+    rulDays: 55,
+    threshold: { field: "Pulp_Density", operator: "<", value: "35%" }
+  },
+  {
+    id: "apex_10",
+    title: "Drum Magnets",
+    subtitle: "Magnetic Separator",
+    x: 1440,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["apex_12"],
+    rulDays: 90,
+    sensors: [
+      { name: "FieldStrength", value: "1.2 Tesla", status: "OK" },
+      { name: "DrumSpeed", value: "24 rpm", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_11",
+    title: "Press Dewatering",
+    subtitle: "Filter Press Unit",
+    x: 1720,
+    y: 50,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["apex_13"],
+    rulDays: 40,
+    valveName: "FILTER_WASH",
+    valveFlow: 150
+  },
+  {
+    id: "apex_12",
+    title: "Dryer Temperature",
+    subtitle: "Rotary Dryer Temp",
+    x: 1720,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["apex_13"],
+    rulDays: 68,
+    sensors: [
+      { name: "DryerTemp", value: "195°C", status: "OK" },
+      { name: "MoistureOut", value: "4.8%", status: "OK" }
+    ]
+  },
+  {
+    id: "apex_13",
+    title: "Silo Capacity Scan",
+    subtitle: "Storage Silo Level",
+    x: 2000,
+    y: 180,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["apex_14"],
+    rulDays: 180,
+    threshold: { field: "Silo_Level", operator: "<", value: "90%" }
+  },
+  {
+    id: "apex_14",
+    title: "Train Loadout Terminal",
+    subtitle: "Delivery Terminal",
+    x: 2280,
+    y: 180,
+    type: "end",
+    statusColor: "#10b981",
+    status: "completed",
+    nextNodes: [],
+    rulDays: 365
+  }
+];
+
+// ----------------------------------------------------
+// Zephyr Core Plant (12 Nodes)
+// ----------------------------------------------------
+const initialZephyrNodes: FlowNode[] = [
+  {
+    id: "zephyr_1",
+    title: "Raw Batch Ingest",
+    subtitle: "Blast Furnace 2 Feed",
+    x: 40,
+    y: 180,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["zephyr_2"],
+    rulDays: 150,
+    sensors: [
+      { name: "SkipFlowRate", value: "280 T/h", status: "OK" },
+      { name: "ScaleWeight", value: "12.4 T", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_2",
+    title: "Flue Extraction Rule",
+    subtitle: "Gas Exhaust Blower",
+    x: 320,
+    y: 180,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["zephyr_3", "zephyr_4"],
+    rulDays: 78,
+    threshold: { field: "Flue_Temp", operator: ">", value: "260°C" }
+  },
+  {
+    id: "zephyr_3",
+    title: "Air Preheater Blower",
+    subtitle: "Air Preheater Fan",
+    x: 600,
+    y: 50,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["zephyr_5"],
+    rulDays: 32,
+    valveName: "FAN_VENT_4",
+    valveFlow: 900
+  },
+  {
+    id: "zephyr_4",
+    title: "Pulverized Feed Loop",
+    subtitle: "Coal Injection Pipe",
+    x: 600,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["zephyr_6"],
+    rulDays: 110,
+    sensors: [
+      { name: "CoalFlowSpeed", value: "28 m/s", status: "OK" },
+      { name: "PipePressure", value: "4.1 bar", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_5",
+    title: "Hearth Heat Sensors",
+    subtitle: "Hearth Thermal Array",
+    x: 880,
+    y: 50,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "completed",
+    nextNodes: ["zephyr_7"],
+    rulDays: 42,
+    sensors: [
+      { name: "HearthTemp", value: "1120°C", status: "OK" },
+      { name: "StaveHeatRate", value: "14.2 kW/m2", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_6",
+    title: "Tuyere Water Cooling",
+    subtitle: "Tuyere Cooling Array",
+    x: 880,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["zephyr_8"],
+    rulDays: 95,
+    sensors: [
+      { name: "CoolingFlow", value: "1420 L/min", status: "OK" },
+      { name: "OutletTemp", value: "44°C", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_7",
+    title: "Cast House Drill",
+    subtitle: "Cast House Taphole",
+    x: 1160,
+    y: 50,
+    type: "action",
+    statusColor: "#ef4444",
+    status: "completed",
+    nextNodes: ["zephyr_9"],
+    rulDays: 10,
+    valveName: "DRILL_LUBRICANT",
+    valveFlow: 80
+  },
+  {
+    id: "zephyr_8",
+    title: "Mud Gun Hydraulic",
+    subtitle: "Mud Gun Press Monitor",
+    x: 1160,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["zephyr_10"],
+    rulDays: 115,
+    sensors: [
+      { name: "PistonPress", value: "210 bar", status: "OK" },
+      { name: "OilTemp", value: "54°C", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_9",
+    title: "Desulphurizing Check",
+    subtitle: "Desulphurizing Unit",
+    x: 1440,
+    y: 50,
+    type: "classifier",
+    statusColor: "#a855f7",
+    status: "completed",
+    nextNodes: ["zephyr_11"],
+    rulDays: 60,
+    threshold: { field: "Sulphur_Percent", operator: ">", value: "0.015%" }
+  },
+  {
+    id: "zephyr_10",
+    title: "Ladle Rail Carrier",
+    subtitle: "Ladle Carrier System",
+    x: 1440,
+    y: 310,
+    type: "telemetry",
+    statusColor: "#3b82f6",
+    status: "idle",
+    nextNodes: ["zephyr_11"],
+    rulDays: 85,
+    sensors: [
+      { name: "CarrierLoad", value: "140 Tons", status: "OK" },
+      { name: "MotorVibration", value: "3.4 mm/s", status: "OK" }
+    ]
+  },
+  {
+    id: "zephyr_11",
+    title: "Pig Casting Spray",
+    subtitle: "Pig Casting Machine",
+    x: 1720,
+    y: 180,
+    type: "action",
+    statusColor: "#22c55e",
+    status: "completed",
+    nextNodes: ["zephyr_12"],
+    rulDays: 48,
+    valveName: "PC_MOLD_SPRAY",
+    valveFlow: 380
+  },
+  {
+    id: "zephyr_12",
+    title: "Production Output Log",
+    subtitle: "Batch Production Out",
+    x: 2000,
+    y: 180,
+    type: "end",
+    statusColor: "#10b981",
+    status: "completed",
+    nextNodes: [],
+    rulDays: 365
+  }
+];
+
+interface NodeWorkflowProps {
+  initialFactory?: "horizon" | "apex" | "zephyr";
+  onBack?: () => void;
+}
+
+export default function NodeWorkflow({ initialFactory = "horizon", onBack }: NodeWorkflowProps) {
+  const [activeFactory, setActiveFactory] = useState<"horizon" | "apex" | "zephyr">(initialFactory);
+
+  useEffect(() => {
+    setActiveFactory(initialFactory);
+  }, [initialFactory]);
+
+  // Refs to distinguish drag from click
+  const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hasDragged = useRef<boolean>(false);
+
+  // Main factory data state wrapper
+  const [factoryNodes, setFactoryNodes] = useState<Record<"horizon" | "apex" | "zephyr", FlowNode[]>>({
+    horizon: initialHorizonNodes,
+    apex: initialApexNodes,
+    zephyr: initialZephyrNodes
+  });
+
+  const nodes = factoryNodes[activeFactory];
+
+  // setNodes helper to dynamically update the active factory
+  const setNodes = (newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
+    setFactoryNodes((prev) => {
+      const updated = typeof newNodes === "function" ? newNodes(prev[activeFactory]) : newNodes;
+      return {
+        ...prev,
+        [activeFactory]: updated
+      };
+    });
+  };
+
+  const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editSubtitle, setEditSubtitle] = useState("");
@@ -145,16 +713,16 @@ export default function NodeWorkflow() {
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   };
 
-  // Node dimensions
-  const cardWidth = 240;
-  const cardHeight = 160;
+  // Node dimensions based on expansion state
+  const getCardWidth = (id: string) => (expandedNodeId === id ? 340 : 240);
+  const getCardHeight = (id: string) => (expandedNodeId === id ? 300 : 140);
 
   // Zoom handlers
   const handleZoom = (type: "in" | "out" | "reset") => {
     if (type === "in") {
       setZoomScale((prev) => Math.min(prev + 0.1, 1.5));
     } else if (type === "out") {
-      setZoomScale((prev) => Math.max(prev - 0.1, 0.6));
+      setZoomScale((prev) => Math.max(prev - 0.1, 0.5));
     } else {
       setZoomScale(1);
       setPanOffset({ x: 0, y: 0 });
@@ -163,9 +731,8 @@ export default function NodeWorkflow() {
 
   // Canvas Drag/Pan Handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    // If we're clicking a node action button or input, don't pan
     const target = e.target as HTMLElement;
-    if (target.closest(".node-element") || target.closest(".action-button")) return;
+    if (target.closest(".node-element") || target.closest(".action-button") || target.closest(".panel-button")) return;
     
     setIsPanning(true);
     setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
@@ -178,15 +745,21 @@ export default function NodeWorkflow() {
         y: e.clientY - panStart.y
       });
     } else if (draggingNodeId) {
+      // Calculate drag distance
+      const dx = e.clientX - dragStartPos.current.x;
+      const dy = e.clientY - dragStartPos.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 5) {
+        hasDragged.current = true;
+      }
+
       const updatedNodes = nodes.map((node) => {
         if (node.id === draggingNodeId) {
-          // Calculate new position based on page space, zoom scale
           let gridX = Math.round((e.clientX - dragOffset.x - panOffset.x) / zoomScale);
           let gridY = Math.round((e.clientY - dragOffset.y - panOffset.y) / zoomScale);
           
-          // Constrain coordinates to keep nodes inside canvas bounds
-          gridX = Math.max(10, Math.min(2200, gridX));
-          gridY = Math.max(10, Math.min(440, gridY));
+          gridX = Math.max(10, Math.min(3000, gridX));
+          gridY = Math.max(10, Math.min(600, gridY));
 
           return {
             ...node,
@@ -214,17 +787,19 @@ export default function NodeWorkflow() {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
     
-    // Position offset from cursor position to node top-left corner
     setDraggingNodeId(nodeId);
     setDragOffset({
       x: e.clientX - (node.x * zoomScale + panOffset.x),
       y: e.clientY - (node.y * zoomScale + panOffset.y)
     });
+
+    // Initialize drag detection
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+    hasDragged.current = false;
   };
 
   // Action: Delete Node
   const handleDeleteNode = (nodeId: string) => {
-    // Reconnect parents directly to the deleted node's children
     const targetNode = nodes.find((n) => n.id === nodeId);
     if (!targetNode) return;
 
@@ -234,7 +809,6 @@ export default function NodeWorkflow() {
       .filter((n) => n.id !== nodeId)
       .map((node) => {
         if (node.nextNodes.includes(nodeId)) {
-          // Replace deleted node with its children in parent's nextNodes list
           const listWithoutDeleted = node.nextNodes.filter((id) => id !== nodeId);
           return {
             ...node,
@@ -245,7 +819,7 @@ export default function NodeWorkflow() {
       });
 
     setNodes(reconnectedNodes);
-    if (activeNodeId === nodeId) setActiveNodeId(null);
+    if (expandedNodeId === nodeId) setExpandedNodeId(null);
   };
 
   // Action: Duplicate Node
@@ -253,7 +827,7 @@ export default function NodeWorkflow() {
     const sourceNode = nodes.find((n) => n.id === nodeId);
     if (!sourceNode) return;
 
-    const newId = `node_${Date.now()}`;
+    const newId = `${activeFactory}_node_${Date.now()}`;
     const duplicated: FlowNode = {
       ...sourceNode,
       id: newId,
@@ -294,10 +868,10 @@ export default function NodeWorkflow() {
     const parentNode = nodes.find((n) => n.id === parentId);
     if (!parentNode) return;
 
-    const newId = `node_${Date.now()}`;
+    const newId = `${activeFactory}_node_${Date.now()}`;
     let newNodeTemplate: FlowNode = {
       id: newId,
-      title: "New Ingest Feeds",
+      title: "New Equipment Feeds",
       subtitle: "Telemetry Ingest",
       x: parentNode.x + 280,
       y: parentNode.y,
@@ -305,45 +879,46 @@ export default function NodeWorkflow() {
       statusColor: "#3b82f6",
       status: "idle",
       nextNodes: [...parentNode.nextNodes],
-      sensors: [{ name: "New_Sensor", value: "0", status: "OK" }]
+      rulDays: 120,
+      sensors: [{ name: "Cool_Water", value: "85 L/min", status: "OK" }]
     };
 
     if (type === "classifier") {
       newNodeTemplate = {
         ...newNodeTemplate,
-        title: "Analyze Value",
+        title: "Rule Analyze Value",
         subtitle: "Anomaly Classifier",
         type: "classifier",
         statusColor: "#a855f7",
-        threshold: { field: "Sensor", operator: ">", value: "50" },
+        threshold: { field: "Cool_Water", operator: "<", value: "50 L/min" },
         sensors: undefined
       };
     } else if (type === "action") {
       newNodeTemplate = {
         ...newNodeTemplate,
-        title: "Trigger Valve",
+        title: "Trigger Bypass",
         subtitle: "Active Control Action",
         type: "action",
         statusColor: "#ef4444",
-        valveName: "VALVE_NEW",
-        valveFlow: 100,
+        valveName: "VALVE_BYPASS",
+        valveFlow: 180,
         sensors: undefined
       };
     } else if (type === "alert") {
       newNodeTemplate = {
         ...newNodeTemplate,
-        title: "Notify Channel",
+        title: "Notify Engineer",
         subtitle: "Alert Action",
         type: "alert",
         statusColor: "#f97316",
-        alertChannels: [{ type: "Slack", target: "#alerts", msg: "Custom action ping" }],
+        alertChannels: [{ type: "Slack", target: "#field-ops", msg: "Bypass anomaly alert!" }],
         sensors: undefined
       };
     } else if (type === "end") {
       newNodeTemplate = {
         ...newNodeTemplate,
-        title: "Success Logging",
-        subtitle: "State End Logging",
+        title: "Operational Logged",
+        subtitle: "End Pipeline Log",
         type: "end",
         statusColor: "#10b981",
         nextNodes: [],
@@ -351,8 +926,6 @@ export default function NodeWorkflow() {
       };
     }
 
-    // Insert new node in-between: parent now points only to new node.
-    // New node points to parent's original nextNodes.
     setNodes(
       nodes.map((n) => {
         if (n.id === parentId) {
@@ -368,8 +941,124 @@ export default function NodeWorkflow() {
     setShowAddMenuId(null);
   };
 
+  // ----------------------------------------------------
+  // Interactive Anomaly Simulation & Reset handlers
+  // ----------------------------------------------------
+  const handleSimulateAnomaly = (nodeId: string) => {
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => {
+        if (node.id === nodeId) {
+          const updatedSensors = node.sensors?.map((s) => {
+            const lowerName = s.name.toLowerCase();
+            if (lowerName.includes("temp") || lowerName.includes("heat")) {
+              return { ...s, value: "115°C", status: "CRITICAL" as const };
+            }
+            if (lowerName.includes("pres") || lowerName.includes("load")) {
+              return { ...s, value: "5.8 bar", status: "CRITICAL" as const };
+            }
+            if (lowerName.includes("vibr")) {
+              return { ...s, value: "14.2 mm/s", status: "CRITICAL" as const };
+            }
+            if (lowerName.includes("rate") || lowerName.includes("flow")) {
+              return { ...s, value: "480 T/h", status: "HIGH" as const };
+            }
+            return { ...s, status: "CRITICAL" as const };
+          }) || [{ name: "FaultCode", value: "ERR-902", status: "CRITICAL" as const }];
+
+          return {
+            ...node,
+            status: "running",
+            statusColor: "#ef4444", // Critical Red
+            sensors: updatedSensors,
+            subtitle: "CRITICAL ANOMALY TRIGGERED",
+            valveFlow: node.valveFlow !== undefined ? 650 : undefined,
+            rulDays: 1, // Visual RUL drop
+            alertChannels: node.alertChannels || [
+              { type: "SMS", target: "+91 98301*****", msg: "CRITICAL: " + node.title + " anomaly alert." },
+              { type: "Slack", target: "#alerts-active", msg: "CRITICAL: " + node.title + " health failure!" }
+            ]
+          };
+        }
+        return node;
+      })
+    );
+  };
+
+  const handleResetTelemetry = (nodeId: string) => {
+    setNodes((prevNodes) =>
+      prevNodes.map((node) => {
+        if (node.id === nodeId) {
+          const origHorizon = initialHorizonNodes.find((n) => n.id === nodeId);
+          const origApex = initialApexNodes.find((n) => n.id === nodeId);
+          const origZephyr = initialZephyrNodes.find((n) => n.id === nodeId);
+          const original = origHorizon || origApex || origZephyr;
+          if (original) {
+            return {
+              ...node,
+              status: original.status,
+              statusColor: original.statusColor,
+              subtitle: original.subtitle,
+              sensors: original.sensors,
+              valveFlow: original.valveFlow,
+              alertChannels: original.alertChannels,
+              rulDays: original.rulDays
+            };
+          }
+        }
+        return node;
+      })
+    );
+  };
+
+  const handleNodeClick = (nodeId: string) => {
+    // Toggles inline details expansion
+    setExpandedNodeId(expandedNodeId === nodeId ? null : nodeId);
+  };
+
   return (
     <div className="w-full h-full flex flex-col items-center justify-center font-sans">
+      
+      {/* Factory Tabs Selection Pill Bar */}
+      <div className="flex bg-zinc-900/10 backdrop-blur-xs p-1.5 rounded-full items-center gap-1.5 min-w-[320px] mb-6 border border-black/5 shadow-2xs relative z-20 select-none">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-bold bg-[#1b253c] text-white hover:bg-[#f97316] transition-colors cursor-pointer select-none flex items-center gap-1"
+          >
+            <span>←</span>
+            <span>Back</span>
+          </button>
+        )}
+        {(["horizon", "apex", "zephyr"] as const).map((fac) => {
+          const isActive = activeFactory === fac;
+          const label = fac === "horizon" ? "Horizon Foundry" : fac === "apex" ? "Apex Ore Facility" : "Zephyr Core Plant";
+          return (
+            <button
+              key={fac}
+              type="button"
+              onClick={() => {
+                setActiveFactory(fac);
+                setExpandedNodeId(null);
+                setEditingNodeId(null);
+              }}
+              className={`relative px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all duration-300 cursor-pointer select-none z-10 ${
+                isActive ? "text-blue-600" : "text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              {label}
+              {isActive && (
+                <motion.div
+                  layoutId="activeFactoryTab"
+                  className="absolute inset-0 bg-white shadow-sm border border-blue-50/50 rounded-full -z-10"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Flow Canvas Card Container */}
       <div 
         ref={containerRef}
@@ -408,37 +1097,42 @@ export default function NodeWorkflow() {
               </filter>
             </defs>
 
-            {/* Render curved glowing connector lines dynamically */}
+            {/* Render curved connector lines dynamically */}
             {nodes.map((sourceNode) => {
               return sourceNode.nextNodes.map((targetId) => {
                 const targetNode = nodes.find((n) => n.id === targetId);
                 if (!targetNode) return null;
 
-                const startX = sourceNode.x + cardWidth;
-                const startY = sourceNode.y + cardHeight / 2;
+                const startWidth = getCardWidth(sourceNode.id);
+                const startHeight = getCardHeight(sourceNode.id);
+                const endHeight = getCardHeight(targetNode.id);
+
+                const startX = sourceNode.x + startWidth;
+                const startY = sourceNode.y + startHeight / 2;
                 const endX = targetNode.x;
-                const endY = targetNode.y + cardHeight / 2;
+                const endY = targetNode.y + endHeight / 2;
 
                 const pathString = getBezierPath(startX, startY, endX, endY);
-                const isActive = sourceNode.status === "completed" && targetNode.status !== "idle";
+                const isActive = sourceNode.statusColor === "#ef4444" || (sourceNode.status === "completed" && targetNode.status !== "idle");
+                const isCritical = sourceNode.statusColor === "#ef4444";
 
                 return (
                   <g key={`${sourceNode.id}-${targetId}`} className="connector-glow">
                     {/* Glowing outer shadow line */}
                     <path
                       d={pathString}
-                      stroke="#a1a1aa"
+                      stroke={isCritical ? "#f87171" : "#a1a1aa"}
                       strokeWidth={6}
                       fill="none"
                       strokeLinecap="round"
-                      opacity={isActive ? 0.2 : 0.04}
+                      opacity={isActive ? 0.35 : 0.04}
                       className="transition-[stroke,opacity] duration-300"
                       filter="url(#glow-filter)"
                     />
                     {/* Core background connection line */}
                     <path
                       d={pathString}
-                      stroke={isActive ? "#a1a1aa" : "#e4e4e7"}
+                      stroke={isCritical ? "#ef4444" : isActive ? "#a1a1aa" : "#e4e4e7"}
                       strokeWidth={2}
                       fill="none"
                       strokeLinecap="round"
@@ -448,7 +1142,7 @@ export default function NodeWorkflow() {
                     {isActive && (
                       <path
                         d={pathString}
-                        stroke="#71717a"
+                        stroke={isCritical ? "#ef4444" : "#71717a"}
                         strokeWidth={1.5}
                         fill="none"
                         strokeLinecap="round"
@@ -467,38 +1161,45 @@ export default function NodeWorkflow() {
             const isEditing = editingNodeId === node.id;
             const isCompleted = node.status === "completed";
             const isRunning = node.status === "running";
+            const isExpanded = expandedNodeId === node.id;
+            const cardWidth = getCardWidth(node.id);
+            const cardHeight = getCardHeight(node.id);
+            const isNodeCritical = node.statusColor === "#ef4444";
 
             return (
-              <div
+              <motion.div
                 key={node.id}
-                className="absolute group"
+                animate={{
+                  width: cardWidth,
+                  height: cardHeight
+                }}
+                transition={{ type: "spring", stiffness: 220, damping: 25 }}
+                className="absolute group z-10"
                 style={{
                   left: node.x,
                   top: node.y,
-                  width: cardWidth,
-                  height: cardHeight,
-                  zIndex: showAddMenuId === node.id ? 40 : isRunning ? 20 : 10
+                  zIndex: isExpanded ? 50 : showAddMenuId === node.id ? 40 : isNodeCritical ? 30 : 10
                 }}
               >
                 {/* Input port dot (Left handle) */}
-                {node.id !== "node_1" && (
+                {node.id !== `${activeFactory}_1` && (
                   <div 
-                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-colors duration-300 pointer-events-none"
+                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
                     style={{ 
                       left: 0, 
-                      top: cardHeight / 2,
-                      backgroundColor: "#b91c1c"
+                      top: "50%",
+                      backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
                     }}
                   />
                 )}
                 {/* Output port dot (Right handle) */}
                 {node.nextNodes.length > 0 && (
                   <div 
-                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-colors duration-300 pointer-events-none"
+                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
                     style={{ 
-                      left: cardWidth, 
-                      top: cardHeight / 2,
-                      backgroundColor: "#b91c1c"
+                      left: "100%", 
+                      top: "50%",
+                      backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
                     }}
                   />
                 )}
@@ -506,13 +1207,23 @@ export default function NodeWorkflow() {
                 {/* Main Card Element */}
                 <div
                   onMouseDown={(e) => handleNodeDragStart(e, node.id)}
-                  onClick={() => setActiveNodeId(node.id)}
-                  className={`node-element w-full h-full bg-white rounded-2xl border-2 transition-all duration-200 flex flex-col overflow-hidden select-none cursor-grab active:cursor-grabbing ${
-                    isRunning
-                      ? "border-blue-500 shadow-[0_0_22px_rgba(59,130,246,0.3)] scale-[1.02]"
+                  onClick={(e) => {
+                    if (hasDragged.current) {
+                      e.stopPropagation();
+                      return;
+                    }
+                    handleNodeClick(node.id);
+                  }}
+                  className={`node-element w-full h-full bg-white rounded-2xl border-2 transition-all duration-300 flex flex-col overflow-hidden select-none cursor-grab active:cursor-grabbing ${
+                    isExpanded 
+                      ? "border-zinc-800 shadow-xl" 
+                      : isNodeCritical
+                      ? "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.25)] hover:shadow-lg"
+                      : isRunning
+                      ? "border-blue-500 shadow-[0_0_22px_rgba(59,130,246,0.2)] scale-[1.01]"
                       : isCompleted
-                      ? "border-zinc-200 shadow-md hover:shadow-lg"
-                      : "border-zinc-100 shadow-xs opacity-60 hover:opacity-90"
+                      ? "border-zinc-200 shadow-xs hover:shadow-md"
+                      : "border-zinc-100 shadow-3xs opacity-75 hover:opacity-95"
                   }`}
                 >
                   {/* Drag Handle Top Bar */}
@@ -522,115 +1233,209 @@ export default function NodeWorkflow() {
                     <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
                   </div>
 
-                  {/* Floating Node Toolbar Actions Overlay (Hover) */}
-                  <div className="absolute top-4 right-2.5 flex gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-                    <button 
-                      title="Rename" 
-                      onClick={() => startRenameNode(node)}
-                      className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                    </button>
-                    <button 
-                      title="Duplicate" 
-                      onClick={() => handleDuplicateNode(node.id)}
-                      className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
-                    <button 
-                      title="Delete" 
-                      onClick={() => handleDeleteNode(node.id)}
-                      className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                  {/* Floating Node Toolbar Actions Overlay (Hover, only when not expanded) */}
+                  {!isExpanded && (
+                    <div className="absolute top-4 right-2.5 flex gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
+                      <button 
+                        title="Rename" 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); startRenameNode(node); }}
+                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                      </button>
+                      <button 
+                        title="Duplicate" 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDuplicateNode(node.id); }}
+                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      <button 
+                        title="Delete" 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id); }}
+                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )}
 
-                  {/* Dynamic Node Content */}
+                  {/* Expanded Close Button */}
+                  {isExpanded && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setExpandedNodeId(null); }}
+                      className="action-button absolute top-4 right-4 z-30 size-7 bg-zinc-100 hover:bg-zinc-200 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  )}
+
+                  {/* Node Content Area */}
                   <div className="flex-grow p-3 bg-zinc-50/10 border-b border-zinc-100 overflow-hidden relative">
-                    {node.type === "telemetry" && node.sensors && (
-                      <div className="flex flex-col h-full text-[8.5px] font-mono p-1 bg-zinc-50/50 rounded-lg border border-zinc-100 overflow-hidden">
-                        <div className="flex justify-between border-b border-zinc-200/60 pb-1 font-bold text-zinc-500">
-                          <span>Sensor</span>
-                          <span>Value</span>
-                          <span>Status</span>
+                    {!isExpanded ? (
+                      /* COLLAPSED MINI VIEW CONTENT */
+                      <div className="h-full flex flex-col justify-between pt-1">
+                        <div className="text-[10px] font-bold text-zinc-500 line-clamp-2 leading-tight pr-10">
+                          {node.subtitle}
                         </div>
-                        <div className="flex-grow space-y-1 pt-1 overflow-y-auto">
-                          {node.sensors.map((sensor, idx) => (
-                            <div key={idx} className="flex justify-between items-center text-zinc-700">
-                              <span className="font-semibold text-zinc-600">{sensor.name}</span>
-                              <span className="font-extrabold">{sensor.value}</span>
-                              <span className={`px-1 rounded-sm text-[7px] font-bold ${
-                                sensor.status === "OK" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600 animate-pulse"
-                              }`}>{sensor.status}</span>
+                        {node.sensors && node.sensors[0] && (
+                          <div className="flex justify-between items-center bg-zinc-50 p-1.5 rounded-lg border border-zinc-100 text-[9px] font-mono mt-1">
+                            <span className="text-zinc-400 font-semibold">{node.sensors[0].name}</span>
+                            <span className="font-extrabold text-zinc-700">{node.sensors[0].value}</span>
+                          </div>
+                        )}
+                        {node.valveName && (
+                          <div className="flex justify-between items-center text-[9px] font-mono mt-1">
+                            <span className="text-zinc-400">{node.valveName}</span>
+                            <span className="font-extrabold text-zinc-700">{node.valveFlow} L/min</span>
+                          </div>
+                        )}
+                        {node.rulDays !== undefined && (
+                          <div className="flex justify-between items-center mt-1 text-[8px] font-bold">
+                            <span className="text-zinc-400">RUL INDEX</span>
+                            <span className={node.rulDays < 15 ? "text-red-500 animate-pulse" : "text-zinc-500"}>
+                              {node.rulDays}d Remaining
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* EXPANDED DETAILED VIEW CONTENT */
+                      <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.15 }}
+                        className="h-full flex flex-col justify-between text-xs pr-1"
+                        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking content
+                      >
+                        <div className="space-y-3 pt-1">
+                          {/* Asset Info Header Row */}
+                          <div className="flex justify-between items-start border-b border-zinc-100 pb-2">
+                            <div>
+                              <span className="text-[9px] font-extrabold tracking-widest text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">
+                                {node.type}
+                              </span>
+                              <div className="mt-1 flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-zinc-400">RUL:</span>
+                                <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                                  node.rulDays! < 15 
+                                    ? "bg-red-50 text-red-600 border border-red-100" 
+                                    : "bg-zinc-100 text-zinc-700"
+                                }`}>
+                                  {node.rulDays} Days Left
+                                </span>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                            {isNodeCritical && (
+                              <div className="flex items-center gap-1 text-[9px] font-bold text-red-600 animate-pulse bg-red-50 border border-red-100 px-2 py-1 rounded-lg">
+                                <AlertTriangle className="size-3.5" />
+                                <span>CRIT ALERT</span>
+                              </div>
+                            )}
+                          </div>
 
-                    {node.type === "classifier" && node.threshold && (
-                      <div className="flex flex-col items-center justify-center h-full text-center">
-                        <span className="text-[7.5px] font-extrabold text-zinc-400 uppercase tracking-widest">Rule Check</span>
-                        <span className="text-[11px] font-bold text-zinc-700 mt-1.5 px-3 py-1 bg-white border border-zinc-200 rounded-lg shadow-2xs">
-                          {node.threshold.field} {node.threshold.operator} {node.threshold.value}
-                        </span>
-                        <div className="flex gap-3 mt-2">
-                          <span className="text-[7.5px] font-bold px-2 py-0.5 bg-red-100 text-red-600 rounded">TRUE</span>
-                          <span className="text-[7.5px] font-bold px-2 py-0.5 bg-green-100 text-green-600 rounded">FALSE</span>
-                        </div>
-                      </div>
-                    )}
+                          {/* Dynamic detailed specs */}
+                          <div className="max-h-[120px] overflow-y-auto pr-1">
+                            {node.sensors && (
+                              <div className="flex flex-col gap-1.5 font-mono text-[10px] p-2 bg-zinc-50 rounded-xl border border-zinc-100">
+                                <div className="flex justify-between font-bold text-[8.5px] text-zinc-400 uppercase tracking-wider border-b border-zinc-200/50 pb-1">
+                                  <span>Sensor Parameter</span>
+                                  <span>Reading</span>
+                                  <span>State</span>
+                                </div>
+                                {node.sensors.map((sensor, idx) => (
+                                  <div key={idx} className="flex justify-between items-center text-zinc-700">
+                                    <span className="font-semibold text-zinc-500">{sensor.name}</span>
+                                    <span className="font-bold">{sensor.value}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold ${
+                                      sensor.status === "OK" 
+                                        ? "bg-emerald-50 text-emerald-600" 
+                                        : "bg-red-50 text-red-600 animate-pulse"
+                                    }`}>{sensor.status}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
 
-                    {node.type === "action" && (
-                      <div className="flex flex-col h-full justify-between p-1 bg-zinc-50/50 rounded-lg border border-zinc-100">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping flex-shrink-0" />
-                          <span className="text-[9px] font-bold text-zinc-700">{node.valveName}: OPEN</span>
-                        </div>
-                        <div className="w-full bg-zinc-200 h-1.5 rounded-full overflow-hidden my-1">
-                          <div className="bg-red-500 h-full w-[100%] transition-all duration-300" />
-                        </div>
-                        <span className="text-[8px] font-bold text-zinc-400">Flow rate: {node.valveFlow} L/min</span>
-                      </div>
-                    )}
+                            {node.threshold && (
+                              <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100 text-center">
+                                <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1.5">Anomaly Evaluation Criteria</span>
+                                <span className="font-mono text-[11px] font-bold bg-white border border-zinc-200 px-3 py-1 rounded-lg shadow-3xs inline-block">
+                                  {node.threshold.field} {node.threshold.operator} {node.threshold.value}
+                                </span>
+                              </div>
+                            )}
 
-                    {node.type === "alert" && node.alertChannels && (
-                      <div className="flex flex-col h-full gap-1 p-0.5 text-[8px]">
-                        <span className="font-bold text-zinc-400 uppercase tracking-wider text-[7px]">Alert Coordinator</span>
-                        <div className="flex-1 flex flex-col gap-1 overflow-y-auto">
-                          {node.alertChannels.map((channel, idx) => (
-                            <div key={idx} className="flex justify-between items-center bg-white border border-zinc-200/60 p-1 rounded shadow-2xs text-zinc-600">
-                              <span className="font-bold text-zinc-700">{channel.type}</span>
-                              <span className="text-zinc-500 truncate max-w-[120px]">{channel.msg}</span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                            {node.valveName && (
+                              <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100">
+                                <div className="flex justify-between items-center mb-1 text-[10px]">
+                                  <span className="font-bold text-zinc-600">{node.valveName}</span>
+                                  <span className={`font-black uppercase text-[8px] px-1.5 py-0.5 rounded ${isNodeCritical ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
+                                    {isNodeCritical ? "MAX VENT" : "ACTIVE NOMINAL"}
+                                  </span>
+                                </div>
+                                <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden my-2 border border-zinc-300/10">
+                                  <div 
+                                    className={`h-full transition-all duration-300 ${isNodeCritical ? "bg-red-500" : "bg-emerald-500"}`} 
+                                    style={{ width: `${Math.min(100, (node.valveFlow! / 700) * 100)}%` }} 
+                                  />
+                                </div>
+                                <div className="flex justify-between text-[9px] text-zinc-400 font-bold font-mono">
+                                  <span>Cooling flow: {node.valveFlow} L/min</span>
+                                  <span>Capacity: 700 L/min</span>
+                                </div>
+                              </div>
+                            )}
 
-                    {node.type === "end" && (
-                      <div className="flex flex-col items-center justify-center h-full text-center">
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 mb-1 border border-emerald-200 shadow-sm">
-                          <Check className="w-4 h-4 stroke-[3.5]" />
+                            {node.alertChannels && (
+                              <div className="space-y-1">
+                                <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1">Active Alert Dispatch Logs</span>
+                                {node.alertChannels.map((ch, idx) => (
+                                  <div key={idx} className="flex justify-between items-center bg-zinc-50 border border-zinc-100 p-2 rounded-xl text-[10px] text-zinc-600">
+                                    <div>
+                                      <span className="font-extrabold text-zinc-800 uppercase text-[9px] mr-1.5">{ch.type}</span>
+                                      <span className="font-mono text-zinc-400">{ch.target}</span>
+                                    </div>
+                                    <span className="text-zinc-500 italic truncate max-w-[120px]">{ch.msg}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-wider mt-1">State Logged</span>
-                      </div>
-                    )}
 
-                    {node.type === "ticket" && (
-                      <div className="flex flex-col h-full justify-between p-1 bg-zinc-50/50 rounded-lg border border-zinc-100">
-                        <div>
-                          <span className="block font-extrabold text-zinc-800 text-[9px]">Ticket #{node.ticketId}</span>
-                          <span className="block text-zinc-400 text-[7.5px] mt-0.5">TAPHOLE ALIGNMENT</span>
+                        {/* Interactive Testing controls (Failure Simulators) */}
+                        <div className="flex gap-2 pt-2 border-t border-zinc-100 mt-2 shrink-0">
+                          {isNodeCritical ? (
+                            <button
+                              type="button"
+                              onClick={() => handleResetTelemetry(node.id)}
+                              className="panel-button flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
+                            >
+                              Reset Telemetry
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSimulateAnomaly(node.id)}
+                              className="panel-button flex-1 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 font-bold text-[10px] transition-all duration-200 cursor-pointer text-center"
+                            >
+                              Simulate Anomaly
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => alert("Maintenance work order ticket raised in system database.")}
+                            className="panel-button flex-1 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
+                          >
+                            Work Order
+                          </button>
                         </div>
-                        <div className="flex gap-2.5">
-                          <span className="text-[7.5px] font-bold px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded">Pending</span>
-                          <span className="text-[7.5px] font-bold px-2 py-0.5 bg-zinc-100 text-zinc-500 rounded">Priority: HIGH</span>
-                        </div>
-                      </div>
+                      </motion.div>
                     )}
                   </div>
 
@@ -661,7 +1466,7 @@ export default function NodeWorkflow() {
                         <div
                           className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? "animate-pulse" : ""}`}
                           style={{
-                            backgroundColor: node.status === "completed" || node.status === "running" ? node.statusColor : "#e4e4e7"
+                            backgroundColor: node.statusColor || "#e4e4e7"
                           }}
                         />
                       </>
@@ -669,20 +1474,22 @@ export default function NodeWorkflow() {
                   </div>
                 </div>
 
-                {/* Insert Node "+" floating button (shows next to output port on Hover) */}
-                <div className="absolute top-1/2 -translate-y-1/2 -right-7 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowAddMenuId(showAddMenuId === node.id ? null : node.id);
-                    }}
-                    className="action-button w-6 h-6 rounded-full bg-white border border-zinc-200 shadow-md flex items-center justify-center hover:bg-zinc-50 hover:text-zinc-800 text-zinc-500 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {/* Insert Node "+" floating button (shows next to output port on Hover, only when not expanded) */}
+                {!isExpanded && (
+                  <div className="absolute top-1/2 -translate-y-1/2 -right-7 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAddMenuId(showAddMenuId === node.id ? null : node.id);
+                      }}
+                      className="action-button w-6 h-6 rounded-full bg-white border border-zinc-200 shadow-md flex items-center justify-center hover:bg-zinc-50 hover:text-zinc-800 text-zinc-500 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-                {/* Floating Select Dropdown for node actions (templates and connections) */}
+                {/* Floating Select Dropdown for node actions */}
                 <AnimatePresence>
                   {showAddMenuId === node.id && (
                     <motion.div 
@@ -771,7 +1578,7 @@ export default function NodeWorkflow() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -818,5 +1625,4 @@ export default function NodeWorkflow() {
       `}</style>
     </div>
   );
-
 }

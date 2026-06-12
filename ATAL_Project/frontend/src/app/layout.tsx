@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import PageTransition from "../animations/PageTransition";
 import PillNav from "../components/PillNav";
+import { Suspense } from "react";
 
 const questrial = localFont({
   src: "../../public/fonts/Questrial-Regular.ttf",
@@ -41,16 +42,20 @@ export default function RootLayout({
       className={`${questrial.variable} ${pixeloid.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col overflow-x-hidden">
-        <PillNav
-          logo="/short_form_logo.png"
-          logoAlt="ATAL Logo"
-          items={navItems}
-          baseColor="#ffffff"
-          pillColor="#1b253c"
-          hoveredPillTextColor="#1b253c"
-          pillTextColor="#ffffff"
-        />
-        <PageTransition>{children}</PageTransition>
+        <Suspense fallback={null}>
+          <PillNav
+            logo="/short_form_logo.png"
+            logoAlt="ATAL Logo"
+            items={navItems}
+            baseColor="#ffffff"
+            pillColor="#1b253c"
+            hoveredPillTextColor="#1b253c"
+            pillTextColor="#ffffff"
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <PageTransition>{children}</PageTransition>
+        </Suspense>
       </body>
     </html>
   );

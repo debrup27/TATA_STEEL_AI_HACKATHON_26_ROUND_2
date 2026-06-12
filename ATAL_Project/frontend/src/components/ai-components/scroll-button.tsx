@@ -36,10 +36,10 @@ function ScrollButton({ containerRef, className = "" }: ScrollButtonProps) {
     <button
       type="button"
       onClick={scrollToBottom}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-zinc-200 shadow-lg text-xs font-semibold text-zinc-600 hover:text-zinc-900 hover:border-zinc-300 transition-all cursor-pointer ${className}`}
+      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-[#1b253c]/15 bg-[#F7F4EC] shadow-md text-xs font-bold text-[#1b253c]/80 hover:text-orange-600 hover:border-orange-200 transition-all duration-200 cursor-pointer active:scale-95 select-none ${className}`}
     >
-      <ChevronDown size={14} />
-      Scroll to bottom
+      <ChevronDown size={13.5} strokeWidth={2.5} className="text-current" />
+      <span>Scroll to bottom</span>
     </button>
   );
 }

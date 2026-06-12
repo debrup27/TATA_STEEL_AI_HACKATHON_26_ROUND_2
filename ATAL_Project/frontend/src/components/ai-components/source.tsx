@@ -1,6 +1,7 @@
 "use client";
-
 import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { FileText } from "lucide-react";
 
 interface SourceTriggerProps {
   label: string;
@@ -25,18 +26,16 @@ function SourceTrigger({ label, showFavicon }: SourceTriggerProps) {
   return (
     <span
       className={`
-        inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold
-        border transition-colors duration-150 cursor-default select-none
+        inline-flex items-center gap-1.5 text-xs font-bold tracking-tight select-none cursor-pointer transition-all duration-200
+        underline decoration-dashed decoration-[#1b253c]/35 underline-offset-[3px]
         ${open
-          ? "bg-zinc-100 border-zinc-300 text-zinc-700"
-          : "bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-700"
+          ? "text-orange-600 decoration-orange-500"
+          : "text-[#1b253c]/85 hover:text-orange-600 hover:decoration-orange-500"
         }
       `}
     >
       {showFavicon && (
-        <span className="size-3.5 rounded-full bg-zinc-200 flex items-center justify-center text-[8px] font-bold text-zinc-500 shrink-0">
-          S
-        </span>
+        <FileText size={12} className="shrink-0 text-current opacity-70 transition-opacity duration-200" />
       )}
       {label}
     </span>
@@ -45,13 +44,29 @@ function SourceTrigger({ label, showFavicon }: SourceTriggerProps) {
 
 function SourceContent({ title, description }: SourceContentProps) {
   const { open } = React.useContext(SourceContext);
-  if (!open) return null;
 
   return (
-    <div className="absolute top-full left-0 mt-1.5 w-64 bg-white border border-zinc-200 rounded-xl shadow-lg p-3 z-50">
-      <p className="text-sm font-semibold text-zinc-800 truncate">{title}</p>
-      <p className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{description}</p>
-    </div>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 4 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 4 }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white/95 backdrop-blur-md border border-[#1b253c]/10 rounded-xl shadow-[0_8px_30px_rgba(27,37,60,0.08),inset_0_0_0_1px_rgba(255,255,255,0.8)] p-3.5 z-[100] pointer-events-none origin-bottom"
+        >
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <span className="size-3.5 rounded bg-[#1b253c]/5 flex items-center justify-center text-[8px] font-bold text-[#1b253c]/60 border border-[#1b253c]/10 shrink-0">
+                doc
+              </span>
+              <p className="text-xs font-bold text-[#1b253c] truncate leading-tight flex-1">{title}</p>
+            </div>
+            <p className="text-[11px] leading-relaxed text-zinc-500 font-medium mt-1 line-clamp-3">{description}</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -66,7 +81,7 @@ function Source({ href, children }: SourceProps) {
         href={href}
         target={href ? "_blank" : undefined}
         rel={href ? "noopener noreferrer" : undefined}
-        className="relative inline-flex"
+        className="relative inline-flex items-center"
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
@@ -77,3 +92,4 @@ function Source({ href, children }: SourceProps) {
 }
 
 export { Source, SourceTrigger, SourceContent };
+

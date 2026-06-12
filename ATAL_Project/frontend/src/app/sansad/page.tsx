@@ -184,7 +184,7 @@ export default function SansadScrollGridCrossPage() {
           </div>
 
           <Link 
-            href="/sansad/monitoring"
+            href="/login"
             className="bg-zinc-950 text-white p-5 rounded-2xl shadow-sm flex items-center justify-between border border-zinc-950 hover:bg-zinc-800 transition-colors"
           >
             <div>
@@ -445,7 +445,7 @@ export default function SansadScrollGridCrossPage() {
                     </motion.div>
                   </motion.div>
                   <motion.div style={{ opacity: buttonOpacity }} className="flex flex-col items-center gap-4 mt-12">
-                    <Link href="/sansad/monitoring" className="block">
+                    <Link href="/login" className="block">
                       <motion.div
                         className="flex items-center text-white text-2xl tracking-tight rounded-xl shadow-lg cursor-pointer overflow-hidden"
                         style={{ fontFamily: "var(--font-pixeloid)", backgroundColor: "#000000" }}

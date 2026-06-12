@@ -227,22 +227,24 @@ export const LogoLoop: React.FC<LogoLoopProps> = memo(
           if (containerRef.current.style.height !== `${targetHeight}px`)
             containerRef.current.style.height = `${targetHeight}px`;
         }
-        if (sequenceHeight > 0) {
+        if (sequenceHeight > 5) {
           setSeqHeight(Math.ceil(sequenceHeight));
           const viewport = containerRef.current?.clientHeight ?? parentHeight ?? sequenceHeight;
           const copiesNeeded = Math.ceil(viewport / sequenceHeight) + ANIMATION_CONFIG.COPY_HEADROOM;
-          setCopyCount(Math.max(ANIMATION_CONFIG.MIN_COPIES, copiesNeeded));
+          setCopyCount(Math.min(10, Math.max(ANIMATION_CONFIG.MIN_COPIES, copiesNeeded)));
         }
-      } else if (sequenceWidth > 0) {
+      } else if (sequenceWidth > 5) {
         setSeqWidth(Math.ceil(sequenceWidth));
         const copiesNeeded = Math.ceil(containerWidth / sequenceWidth) + ANIMATION_CONFIG.COPY_HEADROOM;
-        setCopyCount(Math.max(ANIMATION_CONFIG.MIN_COPIES, copiesNeeded));
+        setCopyCount(Math.min(10, Math.max(ANIMATION_CONFIG.MIN_COPIES, copiesNeeded)));
       }
     }, [isVertical]);
 
-    useResizeObserver(updateDimensions, [containerRef, seqRef], [logos, gap, logoHeight, isVertical]);
+    const serializedLogos = useMemo(() => JSON.stringify(logos), [logos]);
 
-    useImageLoader(seqRef, updateDimensions, [logos, gap, logoHeight, isVertical]);
+    useResizeObserver(updateDimensions, [containerRef, seqRef], [serializedLogos, gap, logoHeight, isVertical]);
+
+    useImageLoader(seqRef, updateDimensions, [serializedLogos, gap, logoHeight, isVertical]);
 
     useAnimationLoop(trackRef, targetVelocity, seqWidth, seqHeight, isHovered, effectiveHoverSpeed, isVertical);
 

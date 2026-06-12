@@ -1,7 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { Send, RefreshCw } from "lucide-react";
+import { triggerPageTransition } from "../animations/PageTransition";
+import {
+  Steps,
+  StepsContent,
+  StepsItem,
+  StepsTrigger,
+  StepsBar
+} from "./ai-components/steps";
+import { TextShimmerLoader } from "./ai-components/loader";
+import {
+  Source,
+  SourceContent,
+  SourceTrigger
+} from "./ai-components/source";
 
 interface TabItem {
   id: "atal_sansad" | "atal_manas";
@@ -18,27 +33,126 @@ interface RightPanelItem {
   icon: React.ReactNode;
 }
 
+interface TelemetryCell {
+  label: string;
+  value: string;
+  status: "nominal" | "warning" | "critical";
+}
+
 export default function AtalDisplayModal() {
   const [activeTab, setActiveTab] = useState<"atal_sansad" | "atal_manas">("atal_sansad");
-  const [language, setLanguage] = useState("English");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const languages = ["English", "Hindi", "Odia", "Bengali"];
-  const [inputText, setInputText] = useState(
-    "Friction levels in the Blast Furnace taphole drill are rising; motor winding temperature has exceeded 95°C. Check alignment and lubrication states immediately."
-  );
+
+  // Sansad State
+  const [cells, setCells] = useState<TelemetryCell[]>([
+    { label: "BF1_TMP", value: "98°C", status: "warning" },
+    { label: "BF1_PRS", value: "3.1b", status: "nominal" },
+    { label: "VLV_04", value: "OPEN", status: "critical" },
+    { label: "ANOM_ST", value: "WARN", status: "warning" },
+    { label: "FLW_RT", value: "240L", status: "nominal" },
+    { label: "SYS_CK", value: "NOM", status: "nominal" }
+  ]);
+
+  // Manas State
+  const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+    { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
+  ]);
+  const [manasInput, setManasInput] = useState("");
+  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [showDemoProcessing, setShowDemoProcessing] = useState(false);
+  const [demoStep, setDemoStep] = useState(0);
 
   const handleTabChange = (tabId: "atal_sansad" | "atal_manas") => {
     setActiveTab(tabId);
-    if (tabId === "atal_sansad") {
-      setInputText(
-        "Friction levels in the Blast Furnace taphole drill are rising; motor winding temperature has exceeded 95°C. Check alignment and lubrication states immediately."
-      );
-    } else {
-      setInputText(
-        "Predictive health scan query: Retrieve remaining useful life (RUL) data for Hot Strip Mill Roller Coiler and Oxygen Lance Elevation Motor."
-      );
-    }
   };
+
+  // Live updates for telemetry cells (always active to feel alive)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCells((prev) =>
+        prev.map((cell) => {
+          if (Math.random() > 0.85) {
+            const statuses: ("nominal" | "warning" | "critical")[] = ["nominal", "warning", "critical"];
+            const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
+            
+            let val = cell.value;
+            if (cell.label === "BF1_TMP") {
+              val = randomStatus === "critical" ? "106°C" : randomStatus === "warning" ? "98°C" : "89°C";
+            } else if (cell.label === "ANOM_ST") {
+              val = randomStatus === "critical" ? "CRIT" : randomStatus === "warning" ? "WARN" : "NOM";
+            } else if (cell.label === "SYS_CK") {
+              val = randomStatus === "critical" ? "FAIL" : "NOM";
+            }
+
+            return {
+              ...cell,
+              status: randomStatus,
+              value: val
+            };
+          }
+          return cell;
+        })
+      );
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Simulated AI diagnostics handler for Manas demo
+  const handleSendDemoMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manasInput.trim() || isDemoLoading) return;
+    const userMsg = manasInput.trim();
+    setDemoMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setManasInput("");
+    setIsDemoLoading(true);
+    setDemoStep(0);
+  };
+
+  useEffect(() => {
+    if (!isDemoLoading) return;
+    const timer = setTimeout(() => {
+      setShowDemoProcessing(true);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [isDemoLoading]);
+
+  useEffect(() => {
+    if (!showDemoProcessing) return;
+    const stepCount = 3;
+    const stepTimer = setInterval(() => {
+      setDemoStep((prev) => {
+        if (prev >= stepCount - 1) {
+          clearInterval(stepTimer);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, 1200);
+
+    const doneTimer = setTimeout(() => {
+      setDemoMessages((prev) => {
+        const lastUserMsg = prev[prev.length - 1]?.content || "";
+        let reply = "Analysis complete. Asset integrity levels are nominal. Predictive wear models estimate 1,200 run hours before replacement. Let me know if you would like me to schedule a diagnostic run.";
+        const query = lastUserMsg.toLowerCase();
+        if (query.includes("status") || query.includes("check")) {
+          reply = "System status checks: SYS_OK. Telemetry readings are nominal and stable across all furnace segments.";
+        } else if (query.includes("valve") || query.includes("flow")) {
+          reply = "Optimal valve flow rate calculated at 240L/min. Command stages ready to execute.";
+        } else if (query.includes("ticket") || query.includes("generate")) {
+          reply = "Ticket ATAL-889 generated successfully for turbine diagnostic inspections.";
+        }
+        return [...prev, { role: "assistant", content: reply }];
+      });
+      setShowDemoProcessing(false);
+      setIsDemoLoading(false);
+      setDemoStep(0);
+    }, 1200 * stepCount + 400);
+
+    return () => {
+      clearInterval(stepTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [showDemoProcessing]);
 
   const tabs: TabItem[] = [
     {
@@ -56,58 +170,6 @@ export default function AtalDisplayModal() {
       icon: (
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-        </svg>
-      )
-    }
-  ];
-
-  const sansadAlerts: RightPanelItem[] = [
-    {
-      title: "Bearing Seizure Risk",
-      badgeText: "Critical",
-      badgeType: "critical",
-      subtext: "Delay Severity: High • Spares: In Stock",
-      iconBgColor: "#3b82f6",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      )
-    },
-    {
-      title: "Lubrication Degradation",
-      badgeText: "Warning",
-      badgeType: "warning",
-      subtext: "Delay Severity: Medium • Spares: Available",
-      iconBgColor: "#22c55e",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-        </svg>
-      )
-    },
-    {
-      title: "Gearbox Alignment Drift",
-      badgeText: "Urgent",
-      badgeType: "warning",
-      subtext: "Delay Severity: High • Spares: Lead Time 12d",
-      iconBgColor: "#ef4444",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      )
-    },
-    {
-      title: "Motor Thermal Overload",
-      badgeText: "Moderate",
-      badgeType: "info",
-      subtext: "Delay Severity: Low • Spares: In Stock",
-      iconBgColor: "#eab308",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
         </svg>
       )
     }
@@ -164,11 +226,25 @@ export default function AtalDisplayModal() {
     }
   ];
 
-  const activeAlerts = activeTab === "atal_sansad" ? sansadAlerts : manasPredictions;
+  // 9x9 Grid layout for drawing letter 'A'
+  const gridA = [
+    [0, 0, 0, 1, 1, 1, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0, 1, 0, 0],
+    [0, 0, 1, 0, 0, 0, 1, 0, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0],
+    [0, 1, 1, 1, 1, 1, 1, 1, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0],
+    [0, 1, 0, 0, 0, 0, 0, 1, 0]
+  ];
 
-  const countWords = (text: string) => {
-    return text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
-  };
+  const gridCells = [];
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      gridCells.push({ row: r, col: c, isActive: gridA[r][c] === 1 });
+    }
+  }
 
   return (
     <div className="w-full flex flex-col items-center justify-center p-4">
@@ -216,149 +292,308 @@ export default function AtalDisplayModal() {
         {/* Modal Main Grid splits Left / Right */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch">
           
-          {/* Left Panel: Description Input Section (8 Columns) */}
-          <div className="md:col-span-7 flex flex-col justify-between border border-zinc-100 rounded-2xl p-6 bg-zinc-50/40 relative min-h-[300px]">
-            <div>
-              <textarea
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                maxLength={2000}
-                className="w-full h-48 bg-transparent text-sm md:text-base font-semibold text-zinc-800 placeholder-zinc-400 border-none resize-none focus:outline-none focus:ring-0 leading-relaxed font-sans"
-                placeholder="Type here..."
-              />
-            </div>
+          {/* Left Panel: (8 Columns) - Displays page visual layout */}
+          <div className="md:col-span-7 flex flex-col items-center justify-center relative min-h-[350px]">
+            {activeTab === "atal_sansad" ? (
+              /* Sansad Page Redesign Visual: Interactive 9x9 Grid layout */
+              <div className="w-full h-full flex flex-col items-center justify-center border border-zinc-100 rounded-2xl p-6 bg-zinc-50/40 relative">
+                <div className="relative p-8 bg-[#FAF6EE]/50 border border-black/15 rounded-3xl flex items-center justify-center w-full max-w-sm aspect-square shadow-sm">
+                  {/* Top Ruler */}
+                  <div className="absolute top-2.5 left-10 right-10 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
+                    <span>0.0</span>
+                    <span className="opacity-40 tracking-[0.25em] font-black uppercase">X-AXIS</span>
+                    <span>9.0</span>
+                  </div>
 
-            {/* Bottom Controls of Left Panel */}
-            <div className="flex flex-col gap-4">
-              {/* Counters */}
-              <div className="flex justify-between items-center text-[11px] font-bold text-zinc-400 select-none">
-                <span>{countWords(inputText)} words</span>
-                <span>{inputText.length}/2000</span>
-              </div>
+                  {/* Bottom Ruler */}
+                  <div className="absolute bottom-2.5 left-10 right-10 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
+                    <span>0.0</span>
+                    <span className="text-orange-500 font-bold tracking-[0.25em] uppercase">SYS_OK</span>
+                    <span>9.0</span>
+                  </div>
 
-              {/* Selector and Action Button */}
-              <div className="flex justify-between items-center pt-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setDropdownOpen(!dropdownOpen)}
-                    className="flex items-center gap-2 bg-white border border-zinc-200/80 rounded-xl px-4 py-2 pr-8 text-xs font-bold text-zinc-700 hover:border-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500/10 cursor-pointer shadow-sm select-none"
-                  >
-                    <span>{language}</span>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-zinc-400">
-                      <svg
-                        className={`w-3 h-3 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={3}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </button>
+                  {/* Left Ruler */}
+                  <div className="absolute left-2.5 top-10 bottom-10 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
+                    <span>9.0</span>
+                    <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">SANSAD</span>
+                    <span>0.0</span>
+                  </div>
 
-                  {dropdownOpen && (
-                    <>
-                      {/* Overlay background to dismiss when clicking outside */}
-                      <div className="fixed inset-0 z-20 cursor-default" onClick={() => setDropdownOpen(false)} />
-                      
-                      {/* Floating custom dropdown */}
-                      <div className="absolute bottom-full mb-2 left-0 min-w-[120px] bg-white border border-zinc-100 rounded-xl shadow-lg py-1.5 z-30 animate-in fade-in slide-in-from-bottom-2 duration-150 origin-bottom">
-                        {languages.map((lang) => (
-                          <button
-                            key={lang}
-                            onClick={() => {
-                              setLanguage(lang);
-                              setDropdownOpen(false);
-                            }}
-                            className={`w-full text-left px-4 py-2 text-xs font-semibold hover:bg-zinc-50 transition-colors duration-150 block cursor-pointer ${
-                              language === lang ? "text-blue-600 bg-blue-50/30" : "text-zinc-600"
-                            }`}
-                          >
-                            {lang}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                  {/* Right Ruler */}
+                  <div className="absolute right-2.5 top-10 bottom-10 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
+                    <span>9.0</span>
+                    <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">ATAL</span>
+                    <span>0.0</span>
+                  </div>
+
+                  {/* Grid of Squares */}
+                  <div className="grid grid-cols-9 gap-1.5 p-2 bg-[#FAF9F5] border border-black/25 rounded-xl relative">
+                    {/* Corner crop marks / ticks */}
+                    <div className="absolute -top-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
+                    <div className="absolute -top-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
+                    <div className="absolute -bottom-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
+                    <div className="absolute -bottom-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
+
+                    {/* Animated Squares */}
+                    {gridCells.map((cell, idx) => {
+                      return (
+                        <motion.div
+                          key={idx}
+                          whileHover={
+                            cell.isActive
+                              ? { scale: 1.25, rotate: 90, backgroundColor: "#ea580c" }
+                              : { scale: 1.2, backgroundColor: "rgba(249, 115, 22, 0.2)" }
+                          }
+                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-[4px] cursor-pointer transition-shadow ${
+                            cell.isActive
+                              ? "bg-[#f97316] shadow-md shadow-orange-500/20 border border-black/15"
+                              : "border border-black/15 bg-[#FAF9F5]/60 hover:border-orange-300"
+                          }`}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
-
-                {/* Main Blue Trigger Action Button */}
-                <button className="w-12 h-12 rounded-full bg-[#1b253c] hover:bg-blue-600 text-white flex items-center justify-center transition-all duration-300 shadow-lg cursor-pointer transform hover:scale-105 active:scale-95">
-                  <svg className="w-5 h-5 translate-x-0.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </button>
               </div>
-            </div>
+            ) : (
+              /* Manas Page Redesign Visual: Safari Browser mockup Chat Client */
+              <div 
+                className="w-full h-full flex flex-col items-center justify-center p-4 border border-zinc-100 bg-zinc-50/40 rounded-2xl overflow-hidden relative"
+                style={{
+                  backgroundImage: "url('/pastel.png')",
+                  backgroundSize: "cover",
+                  backgroundPosition: "center"
+                }}
+              >
+                {/* Safari Browser Window Mockup */}
+                <div className="w-full h-full min-h-[300px] max-h-[380px] rounded-2xl bg-white/80 backdrop-blur-md border border-black/15 flex flex-col overflow-hidden shadow-xl">
+                  {/* Browser Header Bar */}
+                  <div className="border-b border-black/10 px-4 py-2.5 flex items-center justify-between bg-white/90 backdrop-blur-xs select-none">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="size-2 rounded-full bg-[#ff5f56]" />
+                      <span className="size-2 rounded-full bg-[#ffbd2e]" />
+                      <span className="size-2 rounded-full bg-[#27c93f]" />
+                    </div>
+                    <span 
+                      className="text-[10px] font-bold text-zinc-700 tracking-wider uppercase select-none font-mono"
+                    >
+                      ATAL MANAS
+                    </span>
+                    <button 
+                      onClick={() => {
+                        setDemoMessages([
+                          { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
+                        ]);
+                        setManasInput("");
+                        setIsDemoLoading(false);
+                        setShowDemoProcessing(false);
+                        setDemoStep(0);
+                      }}
+                      className="text-zinc-400 hover:text-orange-500 transition-colors bg-transparent border-none p-0 cursor-pointer"
+                    >
+                      <RefreshCw size={12} />
+                    </button>
+                  </div>
+
+                  {/* Chat Messages Panel */}
+                  <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-transparent text-[11px] sm:text-xs [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
+                    {demoMessages.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 leading-normal shadow-xs ${
+                            msg.role === "user"
+                              ? "bg-zinc-900 text-white rounded-tr-sm"
+                              : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-sm"
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {showDemoProcessing && (
+                      <div className="max-w-[85%] self-start text-[11px]">
+                        <Steps defaultOpen>
+                          <StepsTrigger>
+                            <TextShimmerLoader
+                              text="Processing your request"
+                              size="sm"
+                            />
+                          </StepsTrigger>
+                          <StepsContent bar={<StepsBar />}>
+                            <div className="space-y-1 mt-1 font-medium">
+                              <StepsItem status={demoStep > 0 ? "complete" : demoStep === 0 ? "active" : "pending"}>
+                                Parsing telemetry feeds
+                              </StepsItem>
+                              <StepsItem status={demoStep > 1 ? "complete" : demoStep === 1 ? "active" : "pending"}>
+                                <Source>
+                                  <SourceTrigger label="datalake.atal" showFavicon />
+                                  <SourceContent
+                                    title="ATAL Diagnostic Lake"
+                                    description="Primary index for asset sensor feeds."
+                                  />
+                                </Source>{" "}
+                                referenced
+                              </StepsItem>
+                              <StepsItem status={demoStep > 2 ? "complete" : demoStep === 2 ? "active" : "pending"}>
+                                Formulating diagnosis
+                              </StepsItem>
+                            </div>
+                          </StepsContent>
+                        </Steps>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Browser Input Bar */}
+                  <form 
+                    onSubmit={handleSendDemoMessage}
+                    className="border-t border-black/5 p-2 bg-white/90 backdrop-blur-xs flex gap-2 items-center shrink-0"
+                  >
+                    <input
+                      type="text"
+                      value={manasInput}
+                      onChange={(e) => setManasInput(e.target.value)}
+                      placeholder="Ask Manas..."
+                      disabled={isDemoLoading}
+                      className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!manasInput.trim() || isDemoLoading}
+                      className="p-2 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
+                    >
+                      <Send size={12} />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Panel: Side Status list / Alert list (5 Columns) */}
           <div className="md:col-span-5 flex flex-col justify-between p-1">
-            <div>
-              {/* Header inside Panel */}
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold text-zinc-800 select-none">
-                  {activeTab === "atal_sansad" ? "Incident Log" : "Asset Health"}
-                </h3>
-                <button className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none">
-                  View all
-                </button>
-              </div>
+            {activeTab === "atal_sansad" ? (
+              <div>
+                {/* Header inside Panel */}
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-zinc-800 select-none">
+                    Telemetry Indicators
+                  </h3>
+                  <button 
+                    onClick={() => triggerPageTransition("/sansad")}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none"
+                  >
+                    View details
+                  </button>
+                </div>
 
-              {/* List of items */}
-              <div className="flex flex-col gap-4">
-                {activeAlerts.map((item, index) => {
-                  // Determine badge styling based on badgeType
-                  let badgeColors = "bg-blue-50 text-blue-600";
-                  if (item.badgeType === "critical") {
-                    badgeColors = "bg-red-50 text-red-600";
-                  } else if (item.badgeType === "warning") {
-                    badgeColors = "bg-orange-50 text-orange-600";
-                  } else if (item.badgeType === "healthy") {
-                    badgeColors = "bg-green-50 text-green-600";
-                  }
-
-                  return (
-                    <div
-                      key={index}
-                      className="flex items-center gap-3.5 p-3 rounded-2xl hover:bg-zinc-50/70 border border-transparent hover:border-zinc-100 transition-all duration-300 group cursor-pointer"
-                    >
-                      {/* Colored play/avatar rounded square */}
-                      <div
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-sm"
-                        style={{ backgroundColor: item.iconBgColor }}
+                {/* Telemetry Cells Grid */}
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {cells.map((cell) => {
+                    let badgeColors = "bg-green-50 text-green-600 border border-green-200/50";
+                    if (cell.status === "critical") {
+                      badgeColors = "bg-red-50 text-red-600 border border-red-200/50";
+                    } else if (cell.status === "warning") {
+                      badgeColors = "bg-amber-50 text-amber-600 border border-amber-200/50";
+                    }
+                    return (
+                      <div 
+                        key={cell.label}
+                        className="bg-white border border-zinc-100 rounded-xl p-3 flex flex-col justify-between h-[85px] shadow-2xs hover:shadow-xs transition-shadow"
                       >
-                        {item.icon}
-                      </div>
-
-                      {/* Content block */}
-                      <div className="flex-grow min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <h4 className="text-sm font-bold text-zinc-800 truncate">
-                            {item.title}
-                          </h4>
-                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide select-none ${badgeColors}`}>
-                            {item.badgeText}
-                          </span>
+                        <div className="flex justify-between items-center">
+                          <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase tracking-wider">{cell.label}</span>
+                          <span className={`w-2 h-2 rounded-full ${
+                            cell.status === "critical" 
+                              ? "bg-red-500 animate-pulse" 
+                              : cell.status === "warning" 
+                              ? "bg-amber-400" 
+                              : "bg-emerald-500"
+                          }`} />
                         </div>
-                        <p className="text-[11px] font-bold text-zinc-400 truncate">
-                          {item.subtext}
-                        </p>
+                        <span className="font-mono text-base font-black text-zinc-800 leading-none my-1">{cell.value}</span>
+                        <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider text-center w-fit ${badgeColors}`}>
+                          {cell.status}
+                        </span>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                {/* Header inside Panel */}
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-zinc-800 select-none">
+                    Asset Health
+                  </h3>
+                  <button 
+                    onClick={() => triggerPageTransition("/manas")}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none"
+                  >
+                    View all
+                  </button>
+                </div>
+
+                {/* List of items */}
+                <div className="flex flex-col gap-4">
+                  {manasPredictions.map((item, index) => {
+                    let badgeColors = "bg-blue-50 text-blue-600";
+                    if (item.badgeType === "critical") {
+                      badgeColors = "bg-red-50 text-red-600";
+                    } else if (item.badgeType === "warning") {
+                      badgeColors = "bg-orange-50 text-orange-600";
+                    } else if (item.badgeType === "healthy") {
+                      badgeColors = "bg-green-50 text-green-600";
+                    }
+
+                    return (
+                      <div
+                        key={index}
+                        className="flex items-center gap-3.5 p-3 rounded-2xl hover:bg-zinc-50/70 border border-transparent hover:border-zinc-100 transition-all duration-300 group cursor-pointer"
+                      >
+                        {/* Colored icon */}
+                        <div
+                          className="w-11 h-11 rounded-2xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-sm"
+                          style={{ backgroundColor: item.iconBgColor }}
+                        >
+                          {item.icon}
+                        </div>
+
+                        {/* Content block */}
+                        <div className="flex-grow min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <h4 className="text-sm font-bold text-zinc-800 truncate">
+                              {item.title}
+                            </h4>
+                            <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wide select-none ${badgeColors}`}>
+                              {item.badgeText}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-bold text-zinc-400 truncate">
+                            {item.subtext}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Footer inside Right Panel */}
             <div className="flex justify-between items-center mt-8 pt-4 border-t border-zinc-100">
               <span className="text-xs font-bold text-zinc-500 select-none">
-                Export to Dashboard?
+                {activeTab === "atal_sansad" ? "Pipeline Operations?" : "Diagnostic Chat?"}
               </span>
-              <button className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none">
-                Generate action plan
+              <button 
+                onClick={() => triggerPageTransition("/login")}
+                className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none"
+              >
+                {activeTab === "atal_sansad" ? "Launch Control" : "Try Manas Now"}
               </button>
             </div>
 
@@ -367,8 +602,11 @@ export default function AtalDisplayModal() {
       </div>
 
       {/* Button below card */}
-      <button className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95">
-        Initialize Agent Copilot
+      <button 
+        onClick={() => triggerPageTransition("/login")}
+        className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95"
+      >
+        {activeTab === "atal_sansad" ? "Initialize Sansad Copilot" : "Initialize Manas Copilot"}
       </button>
     </div>
   );

@@ -281,6 +281,8 @@ export default function PillNav({
     "--pill-gap": "3px",
   } as React.CSSProperties;
 
+  if (pathname === "/manas/chat" || pathname === "/sansad/monitoring") return null;
+
   return (
     <div
       ref={containerRef}
