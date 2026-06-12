@@ -334,14 +334,7 @@ export const LogoLoop: React.FC<LogoLoopProps> = memo(
               {content}
             </a>
           ) : (
-            <a
-              className="inline-flex items-center text-current no-underline rounded cursor-pointer"
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              aria-label={itemAriaLabel}
-            >
-              {content}
-            </a>
+            content
           )
         ) : item.href ? (
           <a

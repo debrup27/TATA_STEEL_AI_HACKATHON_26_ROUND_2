@@ -8,7 +8,6 @@ import { PromptInputWithActions } from "../../../components/PromptInputWithActio
 import {
   Plus,
   Trash2,
-  ChevronLeft,
   MessageSquare,
   Settings,
   Home,
@@ -82,8 +81,36 @@ const MOCK_SESSIONS: ChatSession[] = [
 ];
 
 export default function ManasChatPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>("");
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("manas_chat_sessions");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        } catch (e) {
+          console.error("Failed to parse chat sessions", e);
+        }
+      }
+    }
+    return MOCK_SESSIONS;
+  });
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("manas_chat_sessions");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+            return parsed[0].id;
+          }
+        } catch {}
+      }
+    }
+    return MOCK_SESSIONS[0].id;
+  });
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deepThinking, setDeepThinking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -92,31 +119,10 @@ export default function ManasChatPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFile, setExpandedFile] = useState<MessageFile | null>(null);
 
-  const isLoaded = useRef(false);
+  const isLoaded = useRef(true);
   const thinkingSessionIdRef = useRef<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Initialize and load sessions from local storage
-  useEffect(() => {
-    const saved = localStorage.getItem("manas_chat_sessions");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          setSessions(parsed);
-          setActiveSessionId(parsed[0].id);
-          isLoaded.current = true;
-          return;
-        }
-      } catch (e) {
-        console.error("Failed to parse chat sessions", e);
-      }
-    }
-    setSessions(MOCK_SESSIONS);
-    setActiveSessionId(MOCK_SESSIONS[0].id);
-    isLoaded.current = true;
-  }, []);
 
   // Save sessions to local storage
   useEffect(() => {

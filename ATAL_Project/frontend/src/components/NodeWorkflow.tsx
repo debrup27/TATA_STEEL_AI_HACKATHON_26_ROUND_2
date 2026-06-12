@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-  RotateCcw, Plus, Trash2, Copy, Edit3, Check, X, AlertTriangle, Play, HelpCircle
+  RotateCcw, Plus, Trash2, Copy, Edit3, X, AlertTriangle
 } from "lucide-react";
 
 interface SensorReading {
@@ -658,12 +658,13 @@ interface NodeWorkflowProps {
   onBack?: () => void;
 }
 
-export default function NodeWorkflow({ initialFactory = "horizon", onBack }: NodeWorkflowProps) {
+export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflowProps) {
   const [activeFactory, setActiveFactory] = useState<"horizon" | "apex" | "zephyr">(initialFactory);
-
-  useEffect(() => {
+  const [prevInitialFactory, setPrevInitialFactory] = useState(initialFactory);
+  if (initialFactory !== prevInitialFactory) {
+    setPrevInitialFactory(initialFactory);
     setActiveFactory(initialFactory);
-  }, [initialFactory]);
+  }
 
   // Refs to distinguish drag from click
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -1020,16 +1021,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", onBack }: Nod
       
       {/* Factory Tabs Selection Pill Bar */}
       <div className="flex bg-zinc-900/10 backdrop-blur-xs p-1.5 rounded-full items-center gap-1.5 min-w-[320px] mb-6 border border-black/5 shadow-2xs relative z-20 select-none">
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="px-3.5 py-1.5 rounded-full text-[10px] sm:text-xs font-bold bg-[#1b253c] text-white hover:bg-[#f97316] transition-colors cursor-pointer select-none flex items-center gap-1"
-          >
-            <span>←</span>
-            <span>Back</span>
-          </button>
-        )}
+
         {(["horizon", "apex", "zephyr"] as const).map((fac) => {
           const isActive = activeFactory === fac;
           const label = fac === "horizon" ? "Horizon Foundry" : fac === "apex" ? "Apex Ore Facility" : "Zephyr Core Plant";
