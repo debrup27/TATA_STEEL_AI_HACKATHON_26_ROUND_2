@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ArrowLeft, Search, Terminal, FileText, Calendar, FileDown, FileCode, Maximize2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import ClickSpark from "@/animations/ClickSpark";
-import { getMaintenanceLogs } from "@/services/maintenance";
 import type { MaintenanceLog } from "@/services/types";
 
 const problemStatementMd = `# AI Hackathon | Round 2 - Agentic AI Challenge | Problem Statement

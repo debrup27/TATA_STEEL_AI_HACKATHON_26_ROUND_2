@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { getPagesFromPdf } from "@/lib/pdf-renderer"
 import { fileToBase64, formatBytes } from "@/lib/utils"
-import { TOAST_DURATION, DURATION_SLOW, DURATION_FAST } from "@/lib/constants"
+import { TOAST_DURATION, DURATION_SLOW } from "@/lib/constants"
 
 const MAX_FILES = 5
 
@@ -105,7 +105,10 @@ function PromptInputWithActions({
 
   useEffect(() => {
     if (triggerToast && alertsEnabled) {
-      addToast(triggerToast)
+      const timer = setTimeout(() => {
+        addToast(triggerToast)
+      }, 0)
+      return () => clearTimeout(timer)
     }
   }, [triggerToast, addToast, alertsEnabled])
 

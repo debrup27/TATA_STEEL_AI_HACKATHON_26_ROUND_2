@@ -23,7 +23,9 @@ export function useMockChatSimulation(options: UseMockChatSimulationOptions = {}
   const [currentStep, setCurrentStep] = useState(0);
 
   const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   const start = useCallback(() => {
     setIsLoading(true);

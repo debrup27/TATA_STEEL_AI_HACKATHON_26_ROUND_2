@@ -1,40 +1,14 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { 
-  RotateCcw, Plus, Trash2, Copy, Edit3, X, AlertTriangle
-} from "lucide-react";
+import React, { useState, useRef, useCallback } from "react";
+import { motion } from "framer-motion";
 import { SPRING_DEFAULT } from "@/lib/constants";
+import type { FlowNode } from "./workflow/types";
 
-interface SensorReading {
-  name: string;
-  value: string;
-  status: "OK" | "HIGH" | "CRITICAL";
-}
-
-interface FlowNode {
-  id: string;
-  title: string;
-  subtitle: string;
-  x: number;
-  y: number;
-  type: "telemetry" | "classifier" | "action" | "alert" | "end" | "ticket";
-  statusColor: string;
-  status: "completed" | "running" | "idle";
-  nextNodes: string[]; // Child node IDs
-  sensors?: SensorReading[];
-  threshold?: {
-    field: string;
-    operator: string;
-    value: string;
-  };
-  valveFlow?: number;
-  valveName?: string;
-  alertChannels?: { type: string; target: string; msg: string }[];
-  ticketId?: string;
-  rulDays?: number;
-}
+// Import modular subcomponents
+import WorkflowNodeCard from "./workflow/WorkflowNodeCard";
+import WorkflowConnector from "./workflow/WorkflowConnector";
+import WorkflowZoomControls from "./workflow/WorkflowZoomControls";
 
 // ----------------------------------------------------
 // Horizon Foundry (15 Nodes)
@@ -264,10 +238,6 @@ const initialHorizonNodes: FlowNode[] = [
 // ----------------------------------------------------
 // Zephyr Core Plant (12 Nodes)
 // ----------------------------------------------------
-
-// ----------------------------------------------------
-// Zephyr Core Plant (12 Nodes)
-// ----------------------------------------------------
 const initialZephyrNodes: FlowNode[] = [
   {
     id: "zephyr_1",
@@ -453,6 +423,9 @@ interface NodeWorkflowProps {
   onBack?: () => void;
 }
 
+const getCardWidth = (id: string, expandedNodeId: string | null) => (expandedNodeId === id ? 340 : 240);
+const getCardHeight = (id: string, expandedNodeId: string | null) => (expandedNodeId === id ? 300 : 140);
+
 export default function NodeWorkflow({ initialFactory = "horizon", hidePills = false }: NodeWorkflowProps) {
   const [activeFactory, setActiveFactory] = useState<"horizon" | "zephyr">(initialFactory);
   const [prevInitialFactory, setPrevInitialFactory] = useState(initialFactory);
@@ -474,7 +447,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   const nodes = factoryNodes[activeFactory];
 
   // setNodes helper to dynamically update the active factory
-  const setNodes = (newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
+  const setNodes = useCallback((newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
     setFactoryNodes((prev) => {
       const updated = typeof newNodes === "function" ? newNodes(prev[activeFactory]) : newNodes;
       return {
@@ -482,7 +455,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         [activeFactory]: updated
       };
     });
-  };
+  }, [activeFactory]);
 
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -492,7 +465,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   
   // Canvas Pan & Zoom States
   const [zoomScale, setZoomScale] = useState<number>(1);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 40, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -534,18 +507,8 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     return () => clearTimeout(timer);
   }, [isCanvasReady]);
 
-  // Bezier curve path constructor
-  const getBezierPath = (x1: number, y1: number, x2: number, y2: number) => {
-    const dx = (x2 - x1) / 2;
-    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
-  };
-
-  // Node dimensions based on expansion state
-  const getCardWidth = (id: string) => (expandedNodeId === id ? 340 : 240);
-  const getCardHeight = (id: string) => (expandedNodeId === id ? 300 : 140);
-
   // Zoom handlers
-  const handleZoom = (type: "in" | "out" | "reset") => {
+  const handleZoom = useCallback((type: "in" | "out" | "reset") => {
     if (type === "in") {
       setZoomScale((prev) => Math.min(prev + 0.1, 1.5));
     } else if (type === "out") {
@@ -564,7 +527,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         setPanOffset({ x: 40, y: 0 });
       }
     }
-  };
+  }, [nodes]);
 
   // Canvas Drag/Pan Handlers
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
@@ -616,7 +579,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   };
 
   // Card drag trigger
-  const handleNodeDragStart = (e: React.MouseEvent, nodeId: string) => {
+  const handleNodeDragStart = useCallback((e: React.MouseEvent, nodeId: string) => {
     const target = e.target as HTMLElement;
     if (target.closest("button") || target.closest("input") || target.closest(".action-button")) return;
 
@@ -633,60 +596,62 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     // Initialize drag detection
     dragStartPos.current = { x: e.clientX, y: e.clientY };
     hasDragged.current = false;
-  };
+  }, [nodes, zoomScale, panOffset]);
 
   // Action: Delete Node
-  const handleDeleteNode = (nodeId: string) => {
-    const targetNode = nodes.find((n) => n.id === nodeId);
-    if (!targetNode) return;
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    setNodes((prev) => {
+      const targetNode = prev.find((n) => n.id === nodeId);
+      if (!targetNode) return prev;
 
-    const children = targetNode.nextNodes;
+      const children = targetNode.nextNodes;
 
-    const reconnectedNodes = nodes
-      .filter((n) => n.id !== nodeId)
-      .map((node) => {
-        if (node.nextNodes.includes(nodeId)) {
-          const listWithoutDeleted = node.nextNodes.filter((id) => id !== nodeId);
-          return {
-            ...node,
-            nextNodes: [...new Set([...listWithoutDeleted, ...children])]
-          };
-        }
-        return node;
-      });
-
-    setNodes(reconnectedNodes);
-    if (expandedNodeId === nodeId) setExpandedNodeId(null);
-  };
+      return prev
+        .filter((n) => n.id !== nodeId)
+        .map((node) => {
+          if (node.nextNodes.includes(nodeId)) {
+            const listWithoutDeleted = node.nextNodes.filter((id) => id !== nodeId);
+            return {
+              ...node,
+              nextNodes: [...new Set([...listWithoutDeleted, ...children])]
+            };
+          }
+          return node;
+        });
+    });
+    setExpandedNodeId((prev) => (prev === nodeId ? null : prev));
+  }, [setNodes]);
 
   // Action: Duplicate Node
-  const handleDuplicateNode = (nodeId: string) => {
-    const sourceNode = nodes.find((n) => n.id === nodeId);
-    if (!sourceNode) return;
+  const handleDuplicateNode = useCallback((nodeId: string) => {
+    setNodes((prev) => {
+      const sourceNode = prev.find((n) => n.id === nodeId);
+      if (!sourceNode) return prev;
 
-    const newId = `${activeFactory}_node_${Date.now()}`;
-    const duplicated: FlowNode = {
-      ...sourceNode,
-      id: newId,
-      title: `${sourceNode.title} Copy`,
-      x: sourceNode.x + 40,
-      y: sourceNode.y + 40,
-      nextNodes: [...sourceNode.nextNodes]
-    };
+      const newId = `${activeFactory}_node_${Date.now()}`;
+      const duplicated: FlowNode = {
+        ...sourceNode,
+        id: newId,
+        title: `${sourceNode.title} Copy`,
+        x: sourceNode.x + 40,
+        y: sourceNode.y + 40,
+        nextNodes: [...sourceNode.nextNodes]
+      };
 
-    setNodes([...nodes, duplicated]);
-  };
+      return [...prev, duplicated];
+    });
+  }, [activeFactory, setNodes]);
 
   // Action: Rename Node
-  const startRenameNode = (node: FlowNode) => {
+  const startRenameNode = useCallback((node: FlowNode) => {
     setEditingNodeId(node.id);
     setEditTitle(node.title);
     setEditSubtitle(node.subtitle);
-  };
+  }, []);
 
-  const handleSaveRename = (nodeId: string) => {
-    setNodes(
-      nodes.map((node) => {
+  const handleSaveRename = useCallback((nodeId: string) => {
+    setNodes((prev) =>
+      prev.map((node) => {
         if (node.id === nodeId) {
           return {
             ...node,
@@ -698,73 +663,73 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
       })
     );
     setEditingNodeId(null);
-  };
+  }, [editTitle, editSubtitle, setNodes]);
 
   // Action: Add Node Next in Sequence
-  const handleAddNodeAfter = (parentId: string, type: string) => {
-    const parentNode = nodes.find((n) => n.id === parentId);
-    if (!parentNode) return;
+  const handleAddNodeAfter = useCallback((parentId: string, type: string) => {
+    setNodes((prev) => {
+      const parentNode = prev.find((n) => n.id === parentId);
+      if (!parentNode) return prev;
 
-    const newId = `${activeFactory}_node_${Date.now()}`;
-    let newNodeTemplate: FlowNode = {
-      id: newId,
-      title: "New Equipment Feeds",
-      subtitle: "Telemetry Ingest",
-      x: parentNode.x + 280,
-      y: parentNode.y,
-      type: "telemetry",
-      statusColor: "#3b82f6",
-      status: "idle",
-      nextNodes: [...parentNode.nextNodes],
-      rulDays: 120,
-      sensors: [{ name: "Cool_Water", value: "85 L/min", status: "OK" }]
-    };
+      const newId = `${activeFactory}_node_${Date.now()}`;
+      let newNodeTemplate: FlowNode = {
+        id: newId,
+        title: "New Equipment Feeds",
+        subtitle: "Telemetry Ingest",
+        x: parentNode.x + 280,
+        y: parentNode.y,
+        type: "telemetry",
+        statusColor: "#3b82f6",
+        status: "idle",
+        nextNodes: [...parentNode.nextNodes],
+        rulDays: 120,
+        sensors: [{ name: "Cool_Water", value: "85 L/min", status: "OK" }]
+      };
 
-    if (type === "classifier") {
-      newNodeTemplate = {
-        ...newNodeTemplate,
-        title: "Rule Analyze Value",
-        subtitle: "Anomaly Classifier",
-        type: "classifier",
-        statusColor: "#a855f7",
-        threshold: { field: "Cool_Water", operator: "<", value: "50 L/min" },
-        sensors: undefined
-      };
-    } else if (type === "action") {
-      newNodeTemplate = {
-        ...newNodeTemplate,
-        title: "Trigger Bypass",
-        subtitle: "Active Control Action",
-        type: "action",
-        statusColor: "#ef4444",
-        valveName: "VALVE_BYPASS",
-        valveFlow: 180,
-        sensors: undefined
-      };
-    } else if (type === "alert") {
-      newNodeTemplate = {
-        ...newNodeTemplate,
-        title: "Notify Engineer",
-        subtitle: "Alert Action",
-        type: "alert",
-        statusColor: "#f97316",
-        alertChannels: [{ type: "Slack", target: "#field-ops", msg: "Bypass anomaly alert!" }],
-        sensors: undefined
-      };
-    } else if (type === "end") {
-      newNodeTemplate = {
-        ...newNodeTemplate,
-        title: "Operational Logged",
-        subtitle: "End Pipeline Log",
-        type: "end",
-        statusColor: "#10b981",
-        nextNodes: [],
-        sensors: undefined
-      };
-    }
+      if (type === "classifier") {
+        newNodeTemplate = {
+          ...newNodeTemplate,
+          title: "Rule Analyze Value",
+          subtitle: "Anomaly Classifier",
+          type: "classifier",
+          statusColor: "#a855f7",
+          threshold: { field: "Cool_Water", operator: "<", value: "50 L/min" },
+          sensors: undefined
+        };
+      } else if (type === "action") {
+        newNodeTemplate = {
+          ...newNodeTemplate,
+          title: "Trigger Bypass",
+          subtitle: "Active Control Action",
+          type: "action",
+          statusColor: "#ef4444",
+          valveName: "VALVE_BYPASS",
+          valveFlow: 180,
+          sensors: undefined
+        };
+      } else if (type === "alert") {
+        newNodeTemplate = {
+          ...newNodeTemplate,
+          title: "Notify Engineer",
+          subtitle: "Alert Action",
+          type: "alert",
+          statusColor: "#f97316",
+          alertChannels: [{ type: "Slack", target: "#field-ops", msg: "Bypass anomaly alert!" }],
+          sensors: undefined
+        };
+      } else if (type === "end") {
+        newNodeTemplate = {
+          ...newNodeTemplate,
+          title: "Operational Logged",
+          subtitle: "End Pipeline Log",
+          type: "end",
+          statusColor: "#10b981",
+          nextNodes: [],
+          sensors: undefined
+        };
+      }
 
-    setNodes(
-      nodes.map((n) => {
+      return prev.map((n) => {
         if (n.id === parentId) {
           return {
             ...n,
@@ -772,18 +737,18 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
           };
         }
         return n;
-      }).concat(newNodeTemplate)
-    );
+      }).concat(newNodeTemplate);
+    });
 
     setShowAddMenuId(null);
-  };
+  }, [activeFactory, setNodes]);
 
   // ----------------------------------------------------
   // Interactive Anomaly Simulation & Reset handlers
   // ----------------------------------------------------
-  const handleSimulateAnomaly = (nodeId: string) => {
-    setNodes((prevNodes) =>
-      prevNodes.map((node) => {
+  const handleSimulateAnomaly = useCallback((nodeId: string) => {
+    setNodes((prev) =>
+      prev.map((node) => {
         if (node.id === nodeId) {
           const updatedSensors = node.sensors?.map((s) => {
             const lowerName = s.name.toLowerCase();
@@ -819,11 +784,11 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         return node;
       })
     );
-  };
+  }, [setNodes]);
 
-  const handleResetTelemetry = (nodeId: string) => {
-    setNodes((prevNodes) =>
-      prevNodes.map((node) => {
+  const handleResetTelemetry = useCallback((nodeId: string) => {
+    setNodes((prev) =>
+      prev.map((node) => {
         if (node.id === nodeId) {
           const origHorizon = initialHorizonNodes.find((n) => n.id === nodeId);
           const origZephyr = initialZephyrNodes.find((n) => n.id === nodeId);
@@ -844,12 +809,37 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         return node;
       })
     );
-  };
+  }, [setNodes]);
 
-  const handleNodeClick = (nodeId: string) => {
-    // Toggles inline details expansion
-    setExpandedNodeId(expandedNodeId === nodeId ? null : nodeId);
-  };
+  const handleNodeClick = useCallback((nodeId: string) => {
+    if (hasDragged.current) return;
+    setExpandedNodeId((prev) => (prev === nodeId ? null : nodeId));
+  }, []);
+
+  const handleToggleAddMenu = useCallback((nodeId: string) => {
+    setShowAddMenuId((prev) => (prev === nodeId ? null : nodeId));
+  }, []);
+
+  const handleToggleConnection = useCallback((parentId: string, targetId: string) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id === parentId) {
+          const isConnected = n.nextNodes.includes(targetId);
+          return {
+            ...n,
+            nextNodes: isConnected
+              ? n.nextNodes.filter((id) => id !== targetId)
+              : [...n.nextNodes, targetId]
+          };
+        }
+        return n;
+      })
+    );
+  }, [setNodes]);
+
+  const handleCloseExpand = useCallback(() => {
+    setExpandedNodeId(null);
+  }, []);
 
   return (
     <div className="w-full h-full flex flex-col items-stretch justify-start font-sans">
@@ -919,50 +909,36 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         >
           {/* SVG Connecting Edges Path Layer */}
           <svg className="absolute inset-0 w-[8000px] h-[8000px] pointer-events-none z-0">
-
             {/* Render curved connector lines dynamically */}
             {nodes.map((sourceNode) => {
               return sourceNode.nextNodes.map((targetId) => {
                 const targetNode = nodes.find((n) => n.id === targetId);
                 if (!targetNode) return null;
 
-                const startWidth = getCardWidth(sourceNode.id);
-                const startHeight = getCardHeight(sourceNode.id);
-                const endHeight = getCardHeight(targetNode.id);
+                const startWidth = getCardWidth(sourceNode.id, expandedNodeId);
+                const startHeight = getCardHeight(sourceNode.id, expandedNodeId);
+                const endHeight = getCardHeight(targetNode.id, expandedNodeId);
 
                 const startX = sourceNode.x + startWidth;
                 const startY = sourceNode.y + startHeight / 2;
                 const endX = targetNode.x;
                 const endY = targetNode.y + endHeight / 2;
 
-                const pathString = getBezierPath(startX, startY, endX, endY);
                 const isActive = sourceNode.statusColor === "#ef4444" || (sourceNode.status === "completed" && targetNode.status !== "idle");
                 const isCritical = sourceNode.statusColor === "#ef4444";
 
                 return (
-                  <g key={`${sourceNode.id}-${targetId}`} className="connector-glow">
-                    {/* Core background connection line */}
-                    <path
-                      d={pathString}
-                      stroke={isCritical ? "#ef4444" : isActive ? "#a1a1aa" : "#e4e4e7"}
-                      strokeWidth={2}
-                      fill="none"
-                      strokeLinecap="round"
-                      className="transition-[stroke,opacity] duration-300"
-                    />
-                    {/* Glowing flowing dash overlay */}
-                    {isActive && (
-                      <path
-                        d={pathString}
-                        stroke={isCritical ? "#ef4444" : "#71717a"}
-                        strokeWidth={1.5}
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeDasharray="8, 12"
-                        className="stroke-dasharray-anim"
-                      />
-                    )}
-                  </g>
+                  <WorkflowConnector
+                    key={`${sourceNode.id}-${targetId}`}
+                    sourceId={sourceNode.id}
+                    targetId={targetId}
+                    startX={startX}
+                    startY={startY}
+                    endX={endX}
+                    endY={endY}
+                    isActive={isActive}
+                    isCritical={isCritical}
+                  />
                 );
               });
             })}
@@ -970,455 +946,41 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
 
           {/* Render Flow Node Cards */}
           {nodes.map((node) => {
-            const isEditing = editingNodeId === node.id;
-            const isCompleted = node.status === "completed";
-            const isRunning = node.status === "running";
-            const isExpanded = expandedNodeId === node.id;
-            const cardWidth = getCardWidth(node.id);
-            const cardHeight = getCardHeight(node.id);
-            const isNodeCritical = node.statusColor === "#ef4444";
-
             return (
-              <motion.div
+              <WorkflowNodeCard
                 key={node.id}
-                animate={{
-                  width: cardWidth,
-                  height: cardHeight
-                }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
-                className="absolute group z-10"
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  zIndex: isExpanded ? 50 : showAddMenuId === node.id ? 40 : isNodeCritical ? 30 : 10
-                }}
-              >
-                {/* Input port dot (Left handle) */}
-                {node.id !== `${activeFactory}_1` && (
-                  <div 
-                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
-                    style={{ 
-                      left: 0, 
-                      top: "50%",
-                      backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
-                    }}
-                  />
-                )}
-                {/* Output port dot (Right handle) */}
-                {node.nextNodes.length > 0 && (
-                  <div 
-                    className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
-                    style={{ 
-                      left: "100%", 
-                      top: "50%",
-                      backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
-                    }}
-                  />
-                )}
-
-                {/* Main Card Element */}
-                <div
-                  onMouseDown={(e) => handleNodeDragStart(e, node.id)}
-                  onClick={(e) => {
-                    if (hasDragged.current) {
-                      e.stopPropagation();
-                      return;
-                    }
-                    handleNodeClick(node.id);
-                  }}
-                  className={`node-element w-full h-full bg-white rounded-2xl border-2 transition-all duration-300 flex flex-col overflow-hidden select-none cursor-grab active:cursor-grabbing ${
-                    isExpanded 
-                      ? "border-zinc-800 shadow-xl" 
-                      : isNodeCritical
-                      ? "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.25)] hover:shadow-lg"
-                      : isRunning
-                      ? "border-blue-500 shadow-[0_0_22px_rgba(59,130,246,0.2)] scale-[1.01]"
-                      : isCompleted
-                      ? "border-zinc-200 shadow-xs hover:shadow-md"
-                      : "border-zinc-100 shadow-3xs opacity-75 hover:opacity-95"
-                  }`}
-                >
-                  {/* Drag Handle Top Bar */}
-                  <div className="w-full h-3 bg-zinc-50 border-b border-zinc-100 flex items-center justify-center gap-1 flex-shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-                  </div>
-
-                  {/* Floating Node Toolbar Actions Overlay (Hover, only when not expanded) */}
-                  {!isExpanded && (
-                    <div className="absolute top-4 right-2.5 flex gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-                      <button 
-                        title="Rename" 
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); startRenameNode(node); }}
-                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <Edit3 className="w-3 h-3" />
-                      </button>
-                      <button 
-                        title="Duplicate" 
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleDuplicateNode(node.id); }}
-                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                      <button 
-                        title="Delete" 
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteNode(node.id); }}
-                        className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Expanded Close Button */}
-                  {isExpanded && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setExpandedNodeId(null); }}
-                      className="action-button absolute top-4 right-4 z-30 size-7 bg-zinc-100 hover:bg-zinc-200 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  )}
-
-                  {/* Node Content Area */}
-                  <div className="flex-grow p-3 bg-zinc-50/10 border-b border-zinc-100 overflow-hidden relative">
-                    {!isExpanded ? (
-                      /* COLLAPSED MINI VIEW CONTENT */
-                      <div className="h-full flex flex-col justify-between pt-1">
-                        <div className="text-[10px] font-bold text-zinc-500 line-clamp-2 leading-tight pr-10">
-                          {node.subtitle}
-                        </div>
-                        {node.sensors && node.sensors[0] && (
-                          <div className="flex justify-between items-center bg-zinc-50 p-1.5 rounded-lg border border-zinc-100 text-[9px] font-mono mt-1">
-                            <span className="text-zinc-400 font-semibold">{node.sensors[0].name}</span>
-                            <span className="font-extrabold text-zinc-700">{node.sensors[0].value}</span>
-                          </div>
-                        )}
-                        {node.valveName && (
-                          <div className="flex justify-between items-center text-[9px] font-mono mt-1">
-                            <span className="text-zinc-400">{node.valveName}</span>
-                            <span className="font-extrabold text-zinc-700">{node.valveFlow} L/min</span>
-                          </div>
-                        )}
-                        {node.rulDays !== undefined && (
-                          <div className="flex justify-between items-center mt-1 text-[8px] font-bold">
-                            <span className="text-zinc-400">RUL INDEX</span>
-                            <span className={node.rulDays < 15 ? "text-red-500 animate-pulse" : "text-zinc-500"}>
-                              {node.rulDays}d Remaining
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      /* EXPANDED DETAILED VIEW CONTENT */
-                      <motion.div 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.15 }}
-                        className="h-full flex flex-col justify-between text-xs pr-1"
-                        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking content
-                      >
-                        <div className="space-y-3 pt-1">
-                          {/* Asset Info Header Row */}
-                          <div className="flex justify-between items-start border-b border-zinc-100 pb-2">
-                            <div>
-                              <span className="text-[9px] font-extrabold tracking-widest text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">
-                                {node.type}
-                              </span>
-                              <div className="mt-1 flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-zinc-400">RUL:</span>
-                                <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
-                                  node.rulDays! < 15 
-                                    ? "bg-red-50 text-red-600 border border-red-100" 
-                                    : "bg-zinc-100 text-zinc-700"
-                                }`}>
-                                  {node.rulDays} Days Left
-                                </span>
-                              </div>
-                            </div>
-                            {isNodeCritical && (
-                              <div className="flex items-center gap-1 text-[9px] font-bold text-red-600 animate-pulse bg-red-50 border border-red-100 px-2 py-1 rounded-lg">
-                                <AlertTriangle className="size-3.5" />
-                                <span>CRIT ALERT</span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Dynamic detailed specs */}
-                          <div className="max-h-[120px] overflow-y-auto pr-1">
-                            {node.sensors && (
-                              <div className="flex flex-col gap-1.5 font-mono text-[10px] p-2 bg-zinc-50 rounded-xl border border-zinc-100">
-                                <div className="flex justify-between font-bold text-[8.5px] text-zinc-400 uppercase tracking-wider border-b border-zinc-200/50 pb-1">
-                                  <span>Sensor Parameter</span>
-                                  <span>Reading</span>
-                                  <span>State</span>
-                                </div>
-                                {node.sensors.map((sensor, idx) => (
-                                  <div key={idx} className="flex justify-between items-center text-zinc-700">
-                                    <span className="font-semibold text-zinc-500">{sensor.name}</span>
-                                    <span className="font-bold">{sensor.value}</span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold ${
-                                      sensor.status === "OK" 
-                                        ? "bg-emerald-50 text-emerald-600" 
-                                        : "bg-red-50 text-red-600 animate-pulse"
-                                    }`}>{sensor.status}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {node.threshold && (
-                              <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100 text-center">
-                                <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1.5">Anomaly Evaluation Criteria</span>
-                                <span className="font-mono text-[11px] font-bold bg-white border border-zinc-200 px-3 py-1 rounded-lg shadow-3xs inline-block">
-                                  {node.threshold.field} {node.threshold.operator} {node.threshold.value}
-                                </span>
-                              </div>
-                            )}
-
-                            {node.valveName && (
-                              <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100">
-                                <div className="flex justify-between items-center mb-1 text-[10px]">
-                                  <span className="font-bold text-zinc-600">{node.valveName}</span>
-                                  <span className={`font-black uppercase text-[8px] px-1.5 py-0.5 rounded ${isNodeCritical ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
-                                    {isNodeCritical ? "MAX VENT" : "ACTIVE NOMINAL"}
-                                  </span>
-                                </div>
-                                <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden my-2 border border-zinc-300/10">
-                                  <div 
-                                    className={`h-full transition-all duration-300 ${isNodeCritical ? "bg-red-500" : "bg-emerald-500"}`} 
-                                    style={{ width: `${Math.min(100, (node.valveFlow! / 700) * 100)}%` }} 
-                                  />
-                                </div>
-                                <div className="flex justify-between text-[9px] text-zinc-400 font-bold font-mono">
-                                  <span>Cooling flow: {node.valveFlow} L/min</span>
-                                  <span>Capacity: 700 L/min</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {node.alertChannels && (
-                              <div className="space-y-1">
-                                <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1">Active Alert Dispatch Logs</span>
-                                {node.alertChannels.map((ch, idx) => (
-                                  <div key={idx} className="flex justify-between items-center bg-zinc-50 border border-zinc-100 p-2 rounded-xl text-[10px] text-zinc-600">
-                                    <div>
-                                      <span className="font-extrabold text-zinc-800 uppercase text-[9px] mr-1.5">{ch.type}</span>
-                                      <span className="font-mono text-zinc-400">{ch.target}</span>
-                                    </div>
-                                    <span className="text-zinc-500 italic truncate max-w-[120px]">{ch.msg}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Interactive Testing controls (Failure Simulators) */}
-                        <div className="flex gap-2 pt-2 border-t border-zinc-100 mt-2 shrink-0">
-                          {isNodeCritical ? (
-                            <button
-                              type="button"
-                              onClick={() => handleResetTelemetry(node.id)}
-                              className="panel-button flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
-                            >
-                              Reset Telemetry
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleSimulateAnomaly(node.id)}
-                              className="panel-button flex-1 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 font-bold text-[10px] transition-all duration-200 cursor-pointer text-center"
-                            >
-                              Simulate Anomaly
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => alert("Maintenance work order ticket raised in system database.")}
-                            className="panel-button flex-1 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
-                          >
-                            Work Order
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </div>
-
-                  {/* Bottom Node Title Footer */}
-                  <div className="p-3 bg-white flex justify-between items-center h-[48px] flex-shrink-0">
-                    {isEditing ? (
-                      <div className="flex items-center gap-1.5 w-full justify-between" onClick={(e) => e.stopPropagation()}>
-                        <input 
-                          type="text" 
-                          value={editTitle} 
-                          onChange={(e) => setEditTitle(e.target.value)} 
-                          className="border border-zinc-300 rounded px-1.5 py-0.5 text-[10px] w-[140px] focus:outline-none focus:border-zinc-600"
-                        />
-                        <button 
-                          onClick={() => handleSaveRename(node.id)}
-                          className="px-2 py-0.5 bg-zinc-800 text-white rounded text-[9px] font-bold hover:bg-zinc-700 cursor-pointer"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="truncate pr-2">
-                          <h4 className="text-[11px] font-extrabold text-zinc-800 truncate leading-tight">{node.title}</h4>
-                          <p className="text-[8px] font-bold text-zinc-400 mt-0.5 truncate uppercase tracking-widest leading-none">{node.subtitle}</p>
-                        </div>
-                        {/* Status dot */}
-                        <div
-                          className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? "animate-pulse" : ""}`}
-                          style={{
-                            backgroundColor: node.statusColor || "#e4e4e7"
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Insert Node "+" floating button (shows next to output port on Hover, only when not expanded) */}
-                {!isExpanded && (
-                  <div className="absolute top-1/2 -translate-y-1/2 -right-7 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowAddMenuId(showAddMenuId === node.id ? null : node.id);
-                      }}
-                      className="action-button w-6 h-6 rounded-full bg-white border border-zinc-200 shadow-md flex items-center justify-center hover:bg-zinc-50 hover:text-zinc-800 text-zinc-500 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Floating Select Dropdown for node actions */}
-                <AnimatePresence>
-                  {showAddMenuId === node.id && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                      transition={{ duration: 0.15 }}
-                      className="absolute z-40 bg-white border border-zinc-200/80 shadow-2xl rounded-2xl p-2.5 w-[230px] pointer-events-auto select-none"
-                      style={{
-                        left: cardWidth + 15,
-                        top: 10
-                      }}
-                    >
-                      <div className="flex justify-between items-center border-b border-zinc-100 pb-1.5 mb-2 px-1">
-                        <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">Node Actions</span>
-                        <button onClick={() => setShowAddMenuId(null)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {/* Add new node templates section */}
-                      <div className="text-[8px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1 px-1">Insert Template</div>
-                      <div className="flex flex-col gap-0.5 text-[9.5px] border-b border-zinc-100 pb-2 mb-2">
-                        <button onClick={() => handleAddNodeAfter(node.id, "telemetry")} className="flex items-center gap-2 p-1.5 hover:bg-zinc-100 rounded text-left text-zinc-700 cursor-pointer w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> Ingest Telemetry
-                        </button>
-                        <button onClick={() => handleAddNodeAfter(node.id, "classifier")} className="flex items-center gap-2 p-1.5 hover:bg-zinc-100 rounded text-left text-zinc-700 cursor-pointer w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Threshold Classifier
-                        </button>
-                        <button onClick={() => handleAddNodeAfter(node.id, "action")} className="flex items-center gap-2 p-1.5 hover:bg-zinc-100 rounded text-left text-zinc-700 cursor-pointer w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Deploy cooling action
-                        </button>
-                        <button onClick={() => handleAddNodeAfter(node.id, "alert")} className="flex items-center gap-2 p-1.5 hover:bg-zinc-100 rounded text-left text-zinc-700 cursor-pointer w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500" /> Trigger alerts
-                        </button>
-                        <button onClick={() => handleAddNodeAfter(node.id, "end")} className="flex items-center gap-2 p-1.5 hover:bg-zinc-100 rounded text-left text-zinc-700 cursor-pointer w-full">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> State saved log
-                        </button>
-                      </div>
-
-                      {/* Connect preexisting nodes section */}
-                      <div className="text-[8px] font-extrabold text-zinc-400 uppercase tracking-wider mb-1.5 px-1">Connect Existing Node</div>
-                      <div className="flex flex-col gap-1 max-h-[160px] overflow-y-auto pr-1 text-[9.5px]">
-                        {nodes
-                          .filter((n) => n.id !== node.id)
-                          .map((targetNode) => {
-                            const isConnected = node.nextNodes.includes(targetNode.id);
-                            return (
-                              <button
-                                key={targetNode.id}
-                                onClick={() => {
-                                  setNodes(
-                                    nodes.map((n) => {
-                                      if (n.id === node.id) {
-                                        return {
-                                          ...n,
-                                          nextNodes: isConnected
-                                            ? n.nextNodes.filter((id) => id !== targetNode.id)
-                                            : [...n.nextNodes, targetNode.id]
-                                        };
-                                      }
-                                      return n;
-                                    })
-                                  );
-                                }}
-                                className={`flex items-center justify-between p-1 hover:bg-zinc-100 rounded text-left cursor-pointer transition-colors ${
-                                  isConnected ? "bg-zinc-100 text-zinc-800 font-medium" : "text-zinc-600"
-                                }`}
-                              >
-                                <div className="truncate pr-1">
-                                  <span className="block truncate font-bold text-[9px]">{targetNode.title}</span>
-                                  <span className="block text-[7px] text-zinc-400 uppercase tracking-wider leading-none mt-0.5">{targetNode.type}</span>
-                                </div>
-                                <span className={`text-[7.5px] font-bold uppercase tracking-wider px-1 py-0.5 rounded border transition-colors ${
-                                  isConnected 
-                                    ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100" 
-                                    : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
-                                }`}>
-                                  {isConnected ? "Disconnect" : "Connect"}
-                                </span>
-                              </button>
-                            );
-                          })
-                        }
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
+                node={node}
+                isExpanded={expandedNodeId === node.id}
+                isEditing={editingNodeId === node.id}
+                showAddMenu={showAddMenuId === node.id}
+                zoomScale={zoomScale}
+                activeFactory={activeFactory}
+                editTitle={editTitle}
+                editSubtitle={editSubtitle}
+                setEditTitle={setEditTitle}
+                setEditSubtitle={setEditSubtitle}
+                onNodeClick={handleNodeClick}
+                onCloseExpand={handleCloseExpand}
+                onNodeDragStart={handleNodeDragStart}
+                onRenameStart={startRenameNode}
+                onRenameSave={handleSaveRename}
+                onDuplicate={handleDuplicateNode}
+                onDelete={handleDeleteNode}
+                onSimulateAnomaly={handleSimulateAnomaly}
+                onResetTelemetry={handleResetTelemetry}
+                onToggleAddMenu={handleToggleAddMenu}
+                onAddNodeAfter={handleAddNodeAfter}
+                allNodes={nodes}
+                onToggleConnection={handleToggleConnection}
+              />
             );
           })}
         </div>
 
         {/* Floating Zoom Controls Panel */}
-        <div className="absolute top-4 right-4 z-20 flex bg-white border border-zinc-200/80 shadow-md rounded-xl p-1 gap-0.5 select-none pointer-events-auto">
-          <button 
-            onClick={() => handleZoom("in")} 
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors cursor-pointer"
-            title="Zoom In"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={() => handleZoom("out")} 
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors cursor-pointer"
-            title="Zoom Out"
-          >
-            <span className="font-extrabold text-sm select-none leading-none">-</span>
-          </button>
-          <button 
-            onClick={() => handleZoom("reset")} 
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition-colors cursor-pointer"
-            title="Reset View"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <WorkflowZoomControls
+          onZoom={handleZoom}
+        />
       </div>
 
       <style jsx global>{`

@@ -10,7 +10,8 @@ export function useMockTelemetryLogs(
   initialLogs?: LogEntry[],
 ): { logs: LogEntry[]; clear: () => void } {
   const [logs, setLogs] = useState<LogEntry[]>(initialLogs ?? []);
-  const idRef = useRef(initialLogs && initialLogs.length > 0 ? initialLogs[initialLogs.length - 1].id + 1 : Date.now());
+  const [initialId] = useState(() => initialLogs && initialLogs.length > 0 ? initialLogs[initialLogs.length - 1].id + 1 : Date.now());
+  const idRef = useRef(initialId);
 
   const clear = useCallback(() => {
     const fresh: LogEntry[] = [{ id: idRef.current++, time: new Date().toTimeString().slice(0, 8), module: "Sansad-Hub", text: "Diagnostics loop reset manual signal." }];

@@ -1,24 +1,14 @@
 "use client";
+
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import Image from "next/image";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import { PromptInputWithActions } from "../../../components/PromptInputWithActions";
 import { getPagesFromPdf } from "@/lib/pdf-renderer";
 import { fileToBase64, formatBytes } from "@/lib/utils";
-import { SPRING_NAV, DURATION_SLOW, DURATION_SECTION_FADE, DURATION_VERY_SLOW } from "@/lib/constants";
+import { DURATION_SLOW, DURATION_SECTION_FADE, DURATION_VERY_SLOW } from "@/lib/constants";
 import {
-  Plus,
-  Trash2,
-  MessageSquare,
-  Settings,
-  Home,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  X,
   ChevronLeft,
   ChevronRight
 } from "lucide-react";
@@ -36,12 +26,18 @@ import {
   SourceContent,
   SourceTrigger,
 } from "@/components/ai-components/source";
-import { getSessions, persistSessions, createSession, addMessage, updateTitle, updateRagDocs } from "@/services/sessions";
+import { getSessions, persistSessions } from "@/services/sessions";
 import { getPreloadedDocs, getRandomStaticReply } from "@/services/chat";
-import type { MessageFile, Message, ChatSession } from "@/services/types";
+import type { MessageFile, ChatSession, RagDoc } from "@/services/types";
 import { useMockChatSimulation } from "@/hooks";
 
-const PRELOADED_DOCS = getPreloadedDocs();
+// Import broken down modular components
+import SettingsModal from "./components/SettingsModal";
+import RagDocumentSelectorModal from "./components/RagDocumentSelectorModal";
+import ChatSidebar from "./components/ChatSidebar";
+import MessageItem from "./components/MessageItem";
+import ContextPanel from "./components/ContextPanel";
+import ExpandedFileModal from "./components/ExpandedFileModal";
 
 export default function ManasChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
@@ -49,7 +45,7 @@ export default function ManasChatPage() {
       try {
         const saved = getSessions();
         if (saved && saved.length > 0) return saved;
-      } catch {}
+      } catch { }
     }
     return [];
   });
@@ -97,28 +93,30 @@ export default function ManasChatPage() {
     onDone: () => onDoneRef.current?.(),
   });
 
-  onDoneRef.current = () => {
-    const targetId = thinkingSessionIdRef.current || activeSessionId;
-    if (!targetId) return;
-    const assistantReply = getRandomStaticReply();
-    setSessions((prevSessions) => {
-      return prevSessions.map((session) => {
-        if (session.id !== targetId) return session;
-        return {
-          ...session,
-          messages: [...session.messages, { role: "assistant" as const, content: assistantReply }],
-        };
+  useEffect(() => {
+    onDoneRef.current = () => {
+      const targetId = thinkingSessionIdRef.current || activeSessionId;
+      if (!targetId) return;
+      const assistantReply = getRandomStaticReply();
+      setSessions((prevSessions) => {
+        return prevSessions.map((session) => {
+          if (session.id !== targetId) return session;
+          return {
+            ...session,
+            messages: [...session.messages, { role: "assistant" as const, content: assistantReply }],
+          };
+        });
       });
-    });
-    thinkingSessionIdRef.current = null;
-  };
+      thinkingSessionIdRef.current = null;
+    };
+  });
 
-  // Derived state (declared safely after all state hooks)
+  // Derived state
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) || null : null;
   const hasContext = !!(activeSession?.ragDocs && activeSession.ragDocs.length > 0);
   const contextCount = activeSession?.ragDocs ? activeSession.ragDocs.length : 0;
 
-  const handleToggleContext = (val: boolean) => {
+  const handleToggleContext = useCallback((val: boolean) => {
     setContextEnabled(val);
     if (typeof window !== "undefined") {
       localStorage.setItem("manas_context_enabled", String(val));
@@ -129,14 +127,14 @@ export default function ManasChatPage() {
       );
       setShowRightPanel(false);
     }
-  };
+  }, []);
 
-  const handleToggleAlerts = (val: boolean) => {
+  const handleToggleAlerts = useCallback((val: boolean) => {
     setAlertsEnabled(val);
     if (typeof window !== "undefined") {
       localStorage.setItem("manas_alerts_enabled", String(val));
     }
-  };
+  }, []);
 
   // Mark new sessions as prompted (no auto-open of RAG selector)
   useEffect(() => {
@@ -149,8 +147,10 @@ export default function ManasChatPage() {
   }, [isMounted, activeSessionId, sessions]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMounted(true);
+    const frame = requestAnimationFrame(() => {
+      setIsMounted(true);
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   // When navigated from sansad hub RAG Logs, open a fresh chat with RAG picker
@@ -159,16 +159,18 @@ export default function ManasChatPage() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("rag") === "1") {
         window.history.replaceState({}, "", "/manas/chat");
-        setActiveSessionId(null);
-        setShowRagSelector(true);
-        setShowRightPanel(true);
-        setSelectedPreloadedDocs(getPreloadedDocs().map(d => d.name));
+        const timer = setTimeout(() => {
+          setActiveSessionId(null);
+          setShowRagSelector(true);
+          setShowRightPanel(true);
+          setSelectedPreloadedDocs(getPreloadedDocs().map(d => d.name));
+        }, 0);
+        return () => clearTimeout(timer);
       }
     }
   }, []);
 
-
-  const handleCustomFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCustomFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const newFiles: { name: string; size: string; type: string; pages: string[]; isCustom: boolean }[] = [];
       for (const file of Array.from(e.target.files)) {
@@ -198,8 +200,9 @@ export default function ManasChatPage() {
       }
       setCustomDocs((prev) => [...prev, ...newFiles]);
     }
-  };
-  const handleConfirmRagDocs = (selectedDocs: { name: string; size: string; isCustom?: boolean }[]) => {
+  }, []);
+
+  const handleConfirmRagDocs = useCallback((selectedDocs: RagDoc[]) => {
     if (activeSession && activeSession.messages.length > 0) {
       setSessions((prevSessions) =>
         prevSessions.map((session) => {
@@ -235,9 +238,9 @@ export default function ManasChatPage() {
     setShowRightPanel(true);
     setTriggerToast(`Loaded ${selectedDocs.length} document(s) into context`);
     setTimeout(() => setTriggerToast(null), 100);
-  };
+  }, [activeSession, activeSessionId]);
 
-  const handleOpenConciergeContext = () => {
+  const handleOpenConciergeContext = useCallback(() => {
     setSelectedPreloadedDocs(
       activeSession?.ragDocs
         ? activeSession.ragDocs.filter(d => !d.isCustom).map(d => d.name)
@@ -249,7 +252,7 @@ export default function ManasChatPage() {
         : []
     );
     setShowRagSelector(true);
-  };
+  }, [activeSession]);
 
   // Save sessions to local storage (strip image data to avoid quota)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -262,12 +265,13 @@ export default function ManasChatPage() {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [sessions]);
 
-
   // Auto close Right Panel if context documents are cleared
   useEffect(() => {
     if (!activeSession?.ragDocs || activeSession.ragDocs.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setShowRightPanel(false);
+      const timer = setTimeout(() => {
+        setShowRightPanel(false);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeSession?.ragDocs]);
 
@@ -329,7 +333,7 @@ export default function ManasChatPage() {
         if (session.id !== targetId) return session;
 
         const updatedMessages = [...session.messages, { role: "user" as const, content: messageText, files: attachedFiles }];
-        
+
         // Auto rename title if it was default "New Session"
         const isNew = session.title === "New Session" || session.messages.length === 0;
         const newTitle = isNew
@@ -354,11 +358,11 @@ export default function ManasChatPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeSession?.messages, chatSim.showProcessing]);
 
-  const handleNewSession = () => {
+  const handleNewSession = useCallback(() => {
     setActiveSessionId(null);
-  };
+  }, []);
 
-  const handleDeleteSession = (idToDelete: string) => {
+  const handleDeleteSession = useCallback((idToDelete: string) => {
     setSessions((prev) => {
       const updated = prev.filter((s) => s.id !== idToDelete);
       if (activeSessionId === idToDelete) {
@@ -370,13 +374,23 @@ export default function ManasChatPage() {
       }
       return updated;
     });
-  };
+  }, [activeSessionId]);
 
-  // Filter sessions based on search query, newest on top
-  const filteredSessions = sessions.filter((session) =>
-    session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    session.messages.some((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-  ).reverse();
+  const handleRemoveDoc = useCallback((name: string) => {
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeSessionId) return s;
+        const updated = s.ragDocs ? s.ragDocs.filter((d) => d.name !== name) : [];
+        return {
+          ...s,
+          ragDocs: updated.length > 0 ? updated : undefined,
+        };
+      })
+    );
+    setTriggerToast("Successfully Removed !!");
+    setTimeout(() => setTriggerToast(null), 100);
+  }, [activeSessionId]);
+
   if (!isMounted) {
     return <div className="w-full h-screen bg-[#FAF7F2]" />;
   }
@@ -391,312 +405,18 @@ export default function ManasChatPage() {
       className="relative w-full h-screen bg-[#FAF7F2] flex overflow-hidden pt-0"
     >
       {/* History Sidebar */}
-      <motion.div
-        animate={{ width: sidebarOpen ? 280 : 64 }}
-        transition={{ type: "spring", ...SPRING_NAV }}
-        className="hidden md:flex flex-col h-full shrink-0 overflow-hidden bg-[#F7F4EC] border-r border-zinc-200/80 z-50 pt-4 relative"
-      >
-        {/* Centered Brand Header & Collapse Toggle */}
-        <div className="relative px-4 pb-4 flex items-center justify-center shrink-0 w-full text-center">
-          {sidebarOpen ? (
-            <>
-              <span 
-                className="text-3xl md:text-4xl font-black text-zinc-950 tracking-widest select-none"
-                style={{ fontFamily: "var(--font-pixeloid)" }}
-              >
-                ATAL
-              </span>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="absolute right-4 p-2.5 rounded-xl border border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-colors duration-200 cursor-pointer flex items-center justify-center active:scale-95"
-                title="Collapse Sidebar"
-              >
-                <PanelLeftClose className="w-4.5 h-4.5" />
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-2.5 rounded-xl border border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-colors duration-200 cursor-pointer flex items-center justify-center active:scale-95"
-              title="Expand Sidebar"
-            >
-              <PanelLeftOpen className="w-4.5 h-4.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Search History Bar */}
-        {sidebarOpen && (
-          <div className="px-4 pb-3 shrink-0 border-b border-zinc-100">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search history..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/60 border border-[#1b253c]/15 text-[#1b253c] placeholder:text-[#1b253c]/40 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none transition-all duration-200 font-semibold"
-              />
-              <svg
-                className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-1/2 -translate-y-1/2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth="2.5"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-          </div>
-        )}
-
-        {/* New Session Action (Always above Chat History) */}
-        <div className="px-4 pt-3 pb-2 shrink-0 flex justify-center">
-          {sidebarOpen ? (
-            <button
-              onClick={handleNewSession}
-              className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white hover:bg-orange-600 rounded-xl py-2 text-xs font-bold transition-all duration-300 shadow-sm cursor-pointer active:scale-98 select-none group"
-            >
-              <span>New Session</span>
-              <Plus className="w-4 h-4 transition-transform group-hover:rotate-90 duration-300" />
-            </button>
-          ) : (
-            <button
-              onClick={handleNewSession}
-              className="p-2 rounded-xl border border-zinc-200 bg-zinc-900 text-white hover:bg-orange-600 transition-colors duration-200 cursor-pointer flex items-center justify-center shrink-0 active:scale-95"
-              title="New Session"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Session list */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/12 hover:[&::-webkit-scrollbar-thumb]:bg-[#1b253c]/25 [&::-webkit-scrollbar-thumb]:rounded-full">
-          {sidebarOpen && (
-            <div className="px-2 py-1.5 text-[9px] font-bold text-zinc-400 uppercase tracking-widest select-none">
-              Chat History
-            </div>
-          )}
-
-          {filteredSessions.length === 0 && sidebarOpen ? (
-            <div className="text-center py-8 text-[11px] font-semibold text-zinc-400 select-none">
-              No history found
-            </div>
-          ) : (
-            filteredSessions.map((session) => {
-              const isActive = session.id === activeSessionId;
-              const lastMsg = session.messages[session.messages.length - 1];
-              return (
-                <div
-                  key={session.id}
-                  onClick={() => setActiveSessionId(session.id)}
-                  className={`group relative flex items-center rounded-xl cursor-pointer border transition-all duration-200 select-none ${
-                    sidebarOpen ? "px-3 py-2.5 gap-3" : "p-2 justify-center"
-                  } ${
-                    isActive
-                      ? "bg-orange-50/70 border-orange-100/50 text-orange-950 shadow-xs"
-                      : "hover:bg-zinc-50 border-transparent text-zinc-600 hover:text-zinc-900"
-                  }`}
-                  title={!sidebarOpen ? session.title : undefined}
-                >
-                  <MessageSquare className={`w-4 h-4 shrink-0 ${isActive ? "text-orange-500" : "text-zinc-400"}`} />
-                  {sidebarOpen && (
-                    <div className="flex-1 min-w-0 pr-6">
-                      <div className="text-xs font-bold truncate">
-                        {session.title || "Empty Chat"}
-                      </div>
-                      <div className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
-                        {lastMsg ? lastMsg.content : "No messages yet"}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Delete Button (Only when sidebar open) */}
-                  {sidebarOpen && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteSession(session.id);
-                      }}
-                      className="absolute right-2 opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-all duration-200 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Sidebar Footer: Home, Settings & Logout */}
-        <div className={`p-4 border-t border-zinc-200/60 bg-black/[0.02] shrink-0 flex flex-col gap-2.5 w-full`}>
-          {sidebarOpen ? (
-            <div className="flex flex-col gap-2.5 w-full">
-              <Link
-                href="/"
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-[#1b253c]/20 hover:border-orange-300 bg-white hover:bg-orange-50/40 rounded-xl text-sm font-bold text-[#1b253c] hover:text-orange-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <Home className="w-4 h-4 absolute left-4 shrink-0 text-[#1b253c]/80 group-hover:text-orange-500 transition-colors duration-200" />
-                <span>Back to Home</span>
-              </Link>
-              <button
-                onClick={() => setShowSettings(true)}
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-[#1b253c]/20 hover:border-orange-300 bg-white hover:bg-orange-50/40 rounded-xl text-sm font-bold text-[#1b253c] hover:text-orange-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <Settings className="w-4 h-4 absolute left-4 shrink-0 text-[#1b253c]/80 group-hover:text-orange-500 transition-colors duration-200" />
-                <span>Settings</span>
-              </button>
-              <button
-                onClick={() => window.location.href = "/login"}
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-700 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />
-                <span>Logout</span>
-              </button>
-              <div className="w-full text-center mt-2.5 select-none shrink-0">
-                <span
-                  className="text-lg font-black text-zinc-400 tracking-widest"
-                  style={{ fontFamily: "var(--font-pixeloid)" }}
-                >
-                  ATAL
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-4 py-2">
-              <Link href="/" title="Back to Home" className="text-[#1b253c]/80 hover:text-orange-500 transition-colors duration-200">
-                <Home className="w-4.5 h-4.5" />
-              </Link>
-              <button onClick={() => setShowSettings(true)} title="Settings" className="text-[#1b253c]/80 hover:text-orange-500 transition-colors duration-200 cursor-pointer">
-                <Settings className="w-4.5 h-4.5" />
-              </button>
-              <button onClick={() => window.location.href = "/login"} title="Logout" className="text-red-400 hover:text-red-600 transition-colors duration-200 cursor-pointer">
-                <LogOut className="w-4.5 h-4.5" />
-              </button>
-            </div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* Mobile Drawer Navigation (Slide-out Overlay) */}
-      <AnimatePresence>
-        {!sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(true)}
-            className="fixed inset-0 bg-black/15 backdrop-blur-xs z-40 md:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ x: -280 }}
-            animate={{ x: 0 }}
-            exit={{ x: -280 }}
-            transition={{ type: "spring", ...SPRING_NAV }}
-            className="fixed inset-y-0 left-0 bg-[#F7F4EC] border-r border-zinc-200/80 z-50 flex flex-col h-full w-[280px] shrink-0 overflow-hidden shadow-xl md:hidden pt-4"
-          >
-            {/* Mobile Sidebar Header */}
-            <div className="px-4 pb-4 flex items-center justify-between shrink-0 w-full relative">
-              <span 
-                className="text-3xl font-black text-zinc-950 tracking-widest select-none mx-auto"
-                style={{ fontFamily: "var(--font-pixeloid)" }}
-              >
-                ATAL
-              </span>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="absolute right-4 p-2 rounded-xl border border-zinc-200 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-50 transition-colors duration-200 cursor-pointer"
-              >
-                <PanelLeftClose className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Mobile Search Bar */}
-            <div className="px-4 pb-3 shrink-0 border-b border-zinc-100">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search history..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white/60 border border-[#1b253c]/15 text-[#1b253c] placeholder:text-[#1b253c]/40 focus:bg-white focus:border-orange-500 focus:ring-1 focus:ring-orange-500 rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none font-semibold transition-all duration-200"
-                />
-              </div>
-            </div>
-
-            {/* Mobile New Session */}
-            <div className="px-4 pt-3 pb-2 shrink-0">
-              <button
-                onClick={handleNewSession}
-                className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white hover:bg-orange-600 rounded-xl py-2 text-xs font-bold transition-all duration-300 active:scale-98"
-              >
-                <span>New Session</span>
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Mobile list */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
-              <div className="px-2 py-1.5 text-[9px] font-bold text-zinc-400 uppercase tracking-widest select-none">
-                Chat History
-              </div>
-              {filteredSessions.map((session) => {
-                const isActive = session.id === activeSessionId;
-                const lastMsg = session.messages[session.messages.length - 1];
-                return (
-                  <div
-                    key={session.id}
-                    onClick={() => {
-                      setActiveSessionId(session.id);
-                      setSidebarOpen(false);
-                    }}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all duration-200 ${
-                      isActive ? "bg-orange-50/70 border-orange-100/50 text-orange-950" : "border-transparent text-zinc-600"
-                    }`}
-                  >
-                    <MessageSquare className="w-4 h-4 text-zinc-400" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold truncate">{session.title}</div>
-                      <div className="text-[10px] text-zinc-400 truncate mt-0.5">{lastMsg?.content || "No messages yet"}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Mobile Sidebar Footer Controls */}
-            <div className="p-4 border-t border-zinc-200/60 bg-black/[0.02] shrink-0 flex flex-col gap-2.5 w-full">
-              <Link
-                href="/"
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-[#1b253c]/20 hover:border-orange-300 bg-white rounded-xl text-sm font-bold text-[#1b253c] hover:text-orange-700 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <Home className="w-4 h-4 absolute left-4 shrink-0 text-[#1b253c]/80 group-hover:text-orange-500 transition-colors duration-200" />
-                <span>Back to Home</span>
-              </Link>
-              <button
-                onClick={() => alert("Settings panel under construction")}
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-[#1b253c]/20 hover:border-orange-300 bg-white rounded-xl text-sm font-bold text-[#1b253c] hover:text-orange-700 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <Settings className="w-4 h-4 absolute left-4 shrink-0 text-[#1b253c]/80 group-hover:text-orange-500 transition-colors duration-200" />
-                <span>Settings</span>
-              </button>
-              <button
-                onClick={() => window.location.href = "/login"}
-                className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-700 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
-              >
-                <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />
-                <span>Logout</span>
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ChatSidebar
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onNewSession={handleNewSession}
+        onSelectSession={setActiveSessionId}
+        onDeleteSession={handleDeleteSession}
+        onOpenSettings={() => setShowSettings(true)}
+      />
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
@@ -710,13 +430,16 @@ export default function ManasChatPage() {
             {showRightPanel ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
         )}
-        {/* Floating Mobile Sidebar Toggle Button (when drawer is closed) */}
+
+        {/* Floating Mobile Sidebar Toggle Button */}
         {!sidebarOpen && (
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="absolute top-5 left-6 p-2.5 rounded-xl border border-zinc-200/80 bg-white hover:bg-zinc-50 text-zinc-600 transition-all duration-200 cursor-pointer shadow-sm z-30 flex items-center justify-center active:scale-95 md:hidden"
           >
-            <PanelLeftOpen className="w-4.5 h-4.5" />
+            <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
           </button>
         )}
 
@@ -750,7 +473,7 @@ export default function ManasChatPage() {
                   </div>
                 </div>
                 <motion.div layoutId="chatbox" className="w-full max-w-3xl mx-auto mt-8 shrink-0">
-                   <PromptInputWithActions
+                  <PromptInputWithActions
                     deepThinking={deepThinking}
                     onDeepThinkingChange={setDeepThinking}
                     onSendMessage={handleSendMessage}
@@ -787,68 +510,12 @@ export default function ManasChatPage() {
               >
                 <div className="w-full max-w-3xl mx-auto flex flex-col gap-4 mt-0">
                   {activeSession.messages.map((msg, i) => (
-                    <motion.div
+                    <MessageItem
                       key={msg.role + i}
-                      layout
-                      initial={{ y: 80, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      transition={{ duration: DURATION_VERY_SLOW, ease: [0.22, 1, 0.36, 1], delay: i === 0 ? 0.15 : 0 }}
-                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
-                      <div
-                        className={`leading-relaxed flex flex-col gap-2 ${
-                          msg.role === "user"
-                            ? "max-w-[80%] text-sm font-semibold bg-zinc-900 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-3xs"
-                            : "max-w-full text-base md:text-[17px] font-semibold text-zinc-900 w-full py-2"
-                        }`}
-                      >
-                        {msg.files && msg.files.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mb-1">
-                            {msg.files.map((file, idx) => {
-                              const isPdf = file.type === "application/pdf";
-                              return (
-                                <div
-                                  key={idx}
-                                  onClick={() => setExpandedFile(file)}
-                                  className={`relative group cursor-pointer rounded-xl overflow-hidden border ${
-                                    isPdf 
-                                      ? "flex items-center gap-2 px-3 py-2 bg-zinc-800 text-white border-zinc-700 hover:bg-zinc-750 max-w-[200px]"
-                                      : "w-24 h-24 relative hover:opacity-90 border-zinc-200"
-                                  }`}
-                                >
-                                  {isPdf ? (
-                                    <>
-                                      <svg
-                                        className="w-5 h-5 text-orange-400 shrink-0"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                                        />
-                                      </svg>
-                                      <span className="text-xs truncate font-semibold">{file.name}</span>
-                                    </>
-                                  ) : (
-                                    <img
-                                      src={file.pages[0]}
-                                      alt={file.name}
-                                      className="w-full h-full object-cover"
-                                      draggable={false}
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div>{msg.content}</div>
-                      </div>
-                    </motion.div>
+                      message={msg}
+                      index={i}
+                      onExpandFile={setExpandedFile}
+                    />
                   ))}
 
                   {chatSim.showProcessing && (
@@ -938,163 +605,21 @@ export default function ManasChatPage() {
       {/* Right Sidebar for RAG Documents (Claude-style Right Pane) */}
       <AnimatePresence>
         {activeSession && activeSession.ragDocs && activeSession.ragDocs.length > 0 && showRightPanel && (
-          <motion.div
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 340, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ type: "spring", ...SPRING_NAV }}
-            className="hidden xl:flex flex-col h-full bg-[#F7F4EC] border-l border-zinc-200/80 z-35 shrink-0 overflow-hidden"
-          >
-            <div className="p-6 flex flex-col h-full">
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-200 shrink-0 select-none">
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-tight text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
-                    Context Panel
-                  </h3>
-                  <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-black font-mono">
-                    {activeSession.ragDocs.length} Active Document{activeSession.ragDocs.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowRightPanel(false)}
-                    className="size-7 rounded-full border border-zinc-200 hover:border-zinc-350 hover:bg-zinc-100 flex items-center justify-center transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
-                    title="Close panel"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
-              
-              {/* Document list */}
-              <div className="flex-1 overflow-y-auto py-4 space-y-3 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full pr-1">
-                {activeSession.ragDocs.map((doc, idx) => (
-                  <div key={idx} className="bg-white border border-zinc-250/70 rounded-2xl p-4 shadow-3xs flex flex-col gap-2 transition-all hover:border-[#4A582E]">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 text-[#f97316]">
-                        <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold truncate text-[#1b253c] leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                          {doc.name}
-                        </p>
-                        <span className="text-[10px] text-zinc-400 font-mono font-medium">{doc.size}</span>
-                      </div>
-                    </div>
-                    {doc.pages && doc.pages.length > 0 && doc.pages[0] && (doc.type?.startsWith("image/") || doc.name.match(/\.(png|jpg|jpeg|webp|gif|bmp)$/i)) && (
-                      <div 
-                        className="mt-2 w-full h-24 rounded-lg overflow-hidden border border-zinc-150 relative bg-zinc-50 flex items-center justify-center cursor-pointer group/thumb" 
-                        onClick={() => setExpandedFile({ name: doc.name, type: doc.type || "image/png", pages: doc.pages || [] })}
-                      >
-                        <img src={doc.pages[0]} alt={doc.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-105" />
-                      </div>
-                    )}
-                    
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-155/65">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider font-mono">
-                        {doc.isCustom ? "Custom File" : "Preloaded Guide"}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setSessions(prev =>
-                            prev.map(s => {
-                              if (s.id !== activeSessionId) return s;
-                              const updated = s.ragDocs ? s.ragDocs.filter(d => d.name !== doc.name) : [];
-                              return {
-                                ...s,
-                                ragDocs: updated.length > 0 ? updated : undefined
-                              };
-                            })
-                          );
-                        }}
-                        className="text-[9px] font-bold text-red-500 hover:text-red-750 transition-colors uppercase flex items-center gap-1 cursor-pointer"
-                        title="Remove from conversation context"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-4 border-t border-zinc-200/60 shrink-0 select-none">
-                <button 
-                  onClick={() => {
-                    setSelectedPreloadedDocs(
-                      activeSession.ragDocs
-                        ? activeSession.ragDocs.filter(d => !d.isCustom).map(d => d.name)
-                        : []
-                    );
-                    setCustomDocs(
-                      activeSession.ragDocs
-                        ? (activeSession.ragDocs.filter(d => d.isCustom) as { name: string; size: string; isCustom: boolean }[])
-                        : []
-                    );
-                    setShowRagSelector(true);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl py-2.5 text-xs font-bold transition-all duration-300 shadow-sm cursor-pointer"
-                  style={{ fontFamily: "var(--font-pixeloid)" }}
-                >
-                  <span>Manage Documents</span>
-                </button>
-              </div>
-            </div>
-          </motion.div>
+          <ContextPanel
+            ragDocs={activeSession.ragDocs}
+            onClose={() => setShowRightPanel(false)}
+            onManageDocs={handleOpenConciergeContext}
+            onRemoveDoc={handleRemoveDoc}
+            onExpandFile={setExpandedFile}
+          />
         )}
       </AnimatePresence>
 
       {/* Expanded View Modal */}
-      {expandedFile && expandedFile.pages && expandedFile.pages.length > 0 && (
-        <div
-          className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-6"
-          onClick={() => setExpandedFile(null)}
-        >
-          <div
-            className="bg-white rounded-2xl md:rounded-3xl shadow-2xl flex flex-col overflow-hidden max-w-7xl max-h-[92vh] w-max h-max animate-in fade-in zoom-in duration-250"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-zinc-200 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <p className="text-sm font-semibold text-zinc-700 truncate">{expandedFile.name}</p>
-                {expandedFile.type === "application/pdf" && (
-                  <span className="text-xs text-zinc-400 shrink-0">{expandedFile.pages.length} page{expandedFile.pages.length !== 1 ? "s" : ""}</span>
-                )}
-              </div>
-              <button
-                onClick={() => setExpandedFile(null)}
-                className="size-8 rounded-full flex items-center justify-center hover:bg-red-100 transition-colors cursor-pointer shrink-0 text-zinc-500 hover:text-red-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <div className="overflow-y-auto bg-zinc-100 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400">
-              {expandedFile.pages.length === 1 && expandedFile.type !== "application/pdf" ? (
-                <div className="flex items-center justify-center p-4 min-h-[300px] max-h-[82vh]">
-                  <img
-                    src={expandedFile.pages[0]}
-                    alt={expandedFile.name ?? "Image"}
-                    className="max-w-full max-h-full rounded-lg shadow-md object-contain"
-                    draggable={false}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 py-6 px-4">
-                  {expandedFile.pages.map((src, i) => (
-                    <img
-                      key={i}
-                      src={src}
-                      alt={`${expandedFile.name} - page ${i + 1}`}
-                      className="w-full max-w-3xl rounded-lg shadow-md"
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ExpandedFileModal
+        file={expandedFile}
+        onClose={() => setExpandedFile(null)}
+      />
 
       {/* Rag Document Selector Modal */}
       <RagDocumentSelectorModal
@@ -1124,310 +649,5 @@ export default function ManasChatPage() {
         onToggleAlerts={handleToggleAlerts}
       />
     </ClickSpark>
-  );
-}
-
-interface SettingsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  contextEnabled: boolean;
-  onToggleContext: (val: boolean) => void;
-  alertsEnabled: boolean;
-  onToggleAlerts: (val: boolean) => void;
-}
-
-function SettingsModal({
-  isOpen,
-  onClose,
-  contextEnabled,
-  onToggleContext,
-  alertsEnabled,
-  onToggleAlerts,
-}: SettingsModalProps) {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-[1100] bg-black/55 backdrop-blur-xs flex items-center justify-center p-4">
-      <div 
-        className="bg-[#FAF9F5] border border-zinc-200/85 rounded-3xl shadow-2xl max-w-md w-full flex flex-col overflow-hidden relative animate-in fade-in zoom-in-95 duration-200 text-[#1b253c]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Corner Accents */}
-        <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-        <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-250/80 shrink-0">
-          <div>
-            <h3 className="text-lg font-black uppercase tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
-              Settings
-            </h3>
-            <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-bold">
-              Configure your diagnostic environment preferences
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="size-8 rounded-full flex items-center justify-center hover:bg-zinc-150 transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Content Area */}
-        <div className="p-6 space-y-6 flex-1">
-          {/* Toggle for Concierge Context */}
-          <div className="flex items-center justify-between p-3.5 bg-white border border-zinc-200 rounded-xl">
-            <div className="flex-1 min-w-0 pr-4">
-              <h4 className="text-xs font-bold text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
-                Concierge Context Actions
-              </h4>
-              <p className="text-[10px] text-zinc-400 mt-0.5 leading-snug">
-                Enable contextual document selection menu options inside the prompt input.
-              </p>
-            </div>
-            <button
-              onClick={() => onToggleContext(!contextEnabled)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                contextEnabled ? "bg-[#4A582E]" : "bg-zinc-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                  contextEnabled ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-
-          {/* Toggle for System Alerts */}
-          <div className="flex items-center justify-between p-3.5 bg-white border border-zinc-200 rounded-xl">
-            <div className="flex-1 min-w-0 pr-4">
-              <h4 className="text-xs font-bold text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
-                System Alerts & Toasts
-              </h4>
-              <p className="text-[10px] text-zinc-400 mt-0.5 leading-snug">
-                Show real-time visual alerts and upload status notifications on the top-right of the screen.
-              </p>
-            </div>
-            <button
-              onClick={() => onToggleAlerts(!alertsEnabled)}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                alertsEnabled ? "bg-[#4A582E]" : "bg-zinc-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                  alertsEnabled ? "translate-x-5" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end px-6 py-4 border-t border-zinc-200 shrink-0 bg-white">
-          <button
-            onClick={onClose}
-            className="h-10 px-6 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl transition-all duration-300 font-bold text-xs uppercase cursor-pointer"
-            style={{ fontFamily: "var(--font-pixeloid)" }}
-          >
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface DocumentItem {
-  name: string;
-  size: string;
-  isCustom?: boolean;
-}
-
-interface RagDocumentSelectorModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  selectedPreloaded: string[];
-  onTogglePreloaded: (name: string) => void;
-  customDocs: DocumentItem[];
-  onUploadCustom: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemoveCustom: (name: string) => void;
-  onConfirm: (selected: DocumentItem[]) => void;
-}
-
-function RagDocumentSelectorModal({
-  isOpen,
-  onClose,
-  selectedPreloaded,
-  onTogglePreloaded,
-  customDocs,
-  onUploadCustom,
-  onRemoveCustom,
-  onConfirm,
-}: RagDocumentSelectorModalProps) {
-  if (!isOpen) return null;
-
-  const handleConfirm = () => {
-    const selected: DocumentItem[] = [];
-    PRELOADED_DOCS.forEach((doc) => {
-      if (selectedPreloaded.includes(doc.name)) {
-        selected.push(doc);
-      }
-    });
-    selected.push(...customDocs);
-    onConfirm(selected);
-  };
-
-  return (
-    <div className="fixed inset-0 z-[1100] bg-black/55 backdrop-blur-xs flex items-center justify-center p-4">
-      <div 
-        className="bg-[#FAF9F5] border border-zinc-200/85 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden relative animate-in fade-in zoom-in-95 duration-200 text-[#1b253c]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Corner Accents */}
-        <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-        <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-250/80 shrink-0">
-          <div>
-            <h3 className="text-lg font-black uppercase tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
-              Select Documents for RAG Context
-            </h3>
-            <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-bold">
-              Choose preloaded guides or upload custom files to contextually answer queries
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="size-8 rounded-full flex items-center justify-center hover:bg-zinc-150 transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Content Area */}
-        <div className="overflow-y-auto p-6 space-y-6 flex-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
-          {/* Preloaded Section */}
-          <div>
-            <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Preloaded System Docs</h4>
-            <div className="space-y-2.5">
-              {PRELOADED_DOCS.map((doc) => {
-                const isChecked = selectedPreloaded.includes(doc.name);
-                return (
-                  <div
-                    key={doc.name}
-                    onClick={() => onTogglePreloaded(doc.name)}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer select-none transition-all duration-200 ${
-                      isChecked
-                        ? "bg-[#4A582E]/5 border-[#4A582E] text-[#1b253c]"
-                        : "bg-white border-zinc-200 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        isChecked ? "bg-[#4A582E] text-white" : "bg-zinc-100 text-zinc-400"
-                      }`}>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate pr-2" style={{ fontFamily: "var(--font-questrial)" }}>{doc.name}</p>
-                        <span className="text-[10px] text-zinc-400 font-mono">{doc.size}</span>
-                      </div>
-                    </div>
-                    
-                    {/* Check indicator */}
-                    <div className={`size-5 rounded-md border flex items-center justify-center transition-all ${
-                      isChecked ? "bg-[#4A582E] border-[#4A582E]" : "border-zinc-350 bg-white"
-                    }`}>
-                      {isChecked && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Custom Upload Section */}
-          <div className="border-t border-zinc-200 pt-6">
-            <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Custom Context Documents</h4>
-            
-            {/* Custom files list */}
-            {customDocs.length > 0 && (
-              <div className="space-y-2.5 mb-4">
-                {customDocs.map((doc) => (
-                  <div
-                    key={doc.name}
-                    className="flex items-center justify-between p-3.5 bg-white border border-zinc-200 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 text-[#f97316]">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate pr-2" style={{ fontFamily: "var(--font-questrial)" }}>{doc.name}</p>
-                        <span className="text-[10px] text-zinc-450 font-semibold uppercase tracking-wider font-mono">Custom Upload • {doc.size}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onRemoveCustom(doc.name)}
-                      className="p-1.5 rounded-lg border border-zinc-200 hover:border-red-200 text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Upload Box */}
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-zinc-300 rounded-2xl bg-white hover:bg-zinc-50 cursor-pointer transition-all duration-200 group">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                <svg className="w-8 h-8 text-zinc-400 group-hover:text-[#f97316] transition-colors mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <p className="text-xs font-bold text-zinc-700" style={{ fontFamily: "var(--font-questrial)" }}>
-                  Click or drag files here to upload custom documents
-                </p>
-                <p className="text-[9px] text-zinc-450 font-bold uppercase tracking-wider mt-1 font-mono">
-                  Supports PDF, PNG, TXT, DOCX
-                </p>
-              </div>
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={onUploadCustom}
-                accept=".pdf,.png,.jpg,.jpeg,.txt,.docx"
-              />
-            </label>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-200 shrink-0 select-none bg-white">
-          <button
-            onClick={onClose}
-            className="h-10 px-5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-zinc-650 hover:text-zinc-900 transition-colors font-bold text-xs uppercase cursor-pointer"
-            style={{ fontFamily: "var(--font-pixeloid)" }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleConfirm}
-            className="h-10 px-6 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl transition-all duration-300 font-bold text-xs uppercase cursor-pointer"
-            style={{ fontFamily: "var(--font-pixeloid)" }}
-          >
-            Load Context & Start
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

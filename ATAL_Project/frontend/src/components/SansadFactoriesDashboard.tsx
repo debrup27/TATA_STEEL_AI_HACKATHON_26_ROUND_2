@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { getFactoryTabs } from "@/services/factory";
 import { SPRING_DEFAULT } from "@/lib/constants";
 import type { ProductionLineData } from "@/services/types";
 
