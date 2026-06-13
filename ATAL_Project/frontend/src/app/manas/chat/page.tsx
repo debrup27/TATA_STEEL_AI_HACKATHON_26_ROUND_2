@@ -14,7 +14,9 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 import {
@@ -822,7 +824,7 @@ export default function ManasChatPage() {
             style={{ fontFamily: "var(--font-pixeloid)" }}
             title={showRightPanel ? "Collapse Context Panel" : "Expand Context Panel"}
           >
-            {showRightPanel ? "->" : "<-"}
+            {showRightPanel ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
         )}
         {/* Floating Mobile Sidebar Toggle Button (when drawer is closed) */}

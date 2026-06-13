@@ -261,215 +261,8 @@ const initialHorizonNodes: FlowNode[] = [
 ];
 
 // ----------------------------------------------------
-// Apex Ore Facility (14 Nodes)
+// Zephyr Core Plant (12 Nodes)
 // ----------------------------------------------------
-const initialApexNodes: FlowNode[] = [
-  {
-    id: "apex_1",
-    title: "Coal Loader Drive",
-    subtitle: "Raw Coal Feeder",
-    x: 40,
-    y: 180,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["apex_2"],
-    rulDays: 85,
-    sensors: [
-      { name: "CoalRate", value: "180 T/h", status: "OK" },
-      { name: "Belt_Temp", value: "42°C", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_2",
-    title: "Screening Monitor",
-    subtitle: "Ore Ingestion Unit",
-    x: 320,
-    y: 180,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["apex_3", "apex_4"],
-    rulDays: 110,
-    threshold: { field: "Ore_Flow", operator: ">", value: "240 T/h" }
-  },
-  {
-    id: "apex_3",
-    title: "Main Incline Belt",
-    subtitle: "Belt Conveyor Drive",
-    x: 600,
-    y: 50,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["apex_5"],
-    rulDays: 70,
-    valveName: "BELT_SPRAY_1",
-    valveFlow: 80
-  },
-  {
-    id: "apex_4",
-    title: "Gravity Classifier",
-    subtitle: "Ore Screener Feed",
-    x: 600,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["apex_6"],
-    rulDays: 95,
-    sensors: [
-      { name: "ScreenVibr", value: "4.8 mm/s", status: "OK" },
-      { name: "MeshPressure", value: "1.4b", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_5",
-    title: "Secondary Crusher",
-    subtitle: "Crusher Motor",
-    x: 880,
-    y: 50,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["apex_7"],
-    rulDays: 38,
-    sensors: [
-      { name: "WindingTemp", value: "88°C", status: "OK" },
-      { name: "CrusherVibr", value: "5.2 mm/s", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_6",
-    title: "Ball Mill Cylinder",
-    subtitle: "Ball Mill Slurry",
-    x: 880,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["apex_8"],
-    rulDays: 130,
-    sensors: [
-      { name: "SlurryDensity", value: "1.65 g/cc", status: "OK" },
-      { name: "MillRPM", value: "16.2 rpm", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_7",
-    title: "Feed Recycle Valve",
-    subtitle: "Slurry Pump Flow",
-    x: 1160,
-    y: 50,
-    type: "action",
-    statusColor: "#ef4444",
-    status: "completed",
-    nextNodes: ["apex_9"],
-    rulDays: 12,
-    valveName: "PUMP_VALVE_B",
-    valveFlow: 410
-  },
-  {
-    id: "apex_8",
-    title: "Underflow Pump",
-    subtitle: "Cyclone Classifier",
-    x: 1160,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["apex_10"],
-    rulDays: 80,
-    sensors: [
-      { name: "CyclPressure", value: "2.1b", status: "OK" },
-      { name: "FeedRate", value: "140 m3/h", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_9",
-    title: "Spiral Splitting",
-    subtitle: "Spiral Concentrator",
-    x: 1440,
-    y: 50,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["apex_11"],
-    rulDays: 55,
-    threshold: { field: "Pulp_Density", operator: "<", value: "35%" }
-  },
-  {
-    id: "apex_10",
-    title: "Drum Magnets",
-    subtitle: "Magnetic Separator",
-    x: 1440,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["apex_12"],
-    rulDays: 90,
-    sensors: [
-      { name: "FieldStrength", value: "1.2 Tesla", status: "OK" },
-      { name: "DrumSpeed", value: "24 rpm", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_11",
-    title: "Press Dewatering",
-    subtitle: "Filter Press Unit",
-    x: 1720,
-    y: 50,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["apex_13"],
-    rulDays: 40,
-    valveName: "FILTER_WASH",
-    valveFlow: 150
-  },
-  {
-    id: "apex_12",
-    title: "Dryer Temperature",
-    subtitle: "Rotary Dryer Temp",
-    x: 1720,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["apex_13"],
-    rulDays: 68,
-    sensors: [
-      { name: "DryerTemp", value: "195°C", status: "OK" },
-      { name: "MoistureOut", value: "4.8%", status: "OK" }
-    ]
-  },
-  {
-    id: "apex_13",
-    title: "Silo Capacity Scan",
-    subtitle: "Storage Silo Level",
-    x: 2000,
-    y: 180,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["apex_14"],
-    rulDays: 180,
-    threshold: { field: "Silo_Level", operator: "<", value: "90%" }
-  },
-  {
-    id: "apex_14",
-    title: "Train Loadout Terminal",
-    subtitle: "Delivery Terminal",
-    x: 2280,
-    y: 180,
-    type: "end",
-    statusColor: "#10b981",
-    status: "completed",
-    nextNodes: [],
-    rulDays: 365
-  }
-];
 
 // ----------------------------------------------------
 // Zephyr Core Plant (12 Nodes)
@@ -654,12 +447,13 @@ const initialZephyrNodes: FlowNode[] = [
 ];
 
 interface NodeWorkflowProps {
-  initialFactory?: "horizon" | "apex" | "zephyr";
+  initialFactory?: "horizon" | "zephyr";
+  hidePills?: boolean;
   onBack?: () => void;
 }
 
-export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflowProps) {
-  const [activeFactory, setActiveFactory] = useState<"horizon" | "apex" | "zephyr">(initialFactory);
+export default function NodeWorkflow({ initialFactory = "horizon", hidePills = false }: NodeWorkflowProps) {
+  const [activeFactory, setActiveFactory] = useState<"horizon" | "zephyr">(initialFactory);
   const [prevInitialFactory, setPrevInitialFactory] = useState(initialFactory);
   if (initialFactory !== prevInitialFactory) {
     setPrevInitialFactory(initialFactory);
@@ -671,9 +465,8 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
   const hasDragged = useRef<boolean>(false);
 
   // Main factory data state wrapper
-  const [factoryNodes, setFactoryNodes] = useState<Record<"horizon" | "apex" | "zephyr", FlowNode[]>>({
+  const [factoryNodes, setFactoryNodes] = useState<Record<"horizon" | "zephyr", FlowNode[]>>({
     horizon: initialHorizonNodes,
-    apex: initialApexNodes,
     zephyr: initialZephyrNodes
   });
 
@@ -708,9 +501,30 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Center nodes vertically in container on mount or activeFactory change
+  React.useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { height } = entry.contentRect;
+        if (height > 0) {
+          const nodeYCoords = nodes.map((n) => n.y);
+          const minY = nodeYCoords.length > 0 ? Math.min(...nodeYCoords) : 50;
+          const maxY = nodeYCoords.length > 0 ? Math.max(...nodeYCoords) : 310;
+          const nodesCenterY = (minY + (maxY + 140)) / 2;
+          const initialY = Math.round(height / 2 - nodesCenterY);
+          setPanOffset({ x: 40, y: initialY });
+          observer.disconnect();
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [activeFactory]);
+
   // Bezier curve path constructor
   const getBezierPath = (x1: number, y1: number, x2: number, y2: number) => {
-    const dx = Math.abs(x2 - x1) / 2;
+    const dx = (x2 - x1) / 2;
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   };
 
@@ -726,7 +540,17 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
       setZoomScale((prev) => Math.max(prev - 0.1, 0.5));
     } else {
       setZoomScale(1);
-      setPanOffset({ x: 0, y: 0 });
+      if (containerRef.current) {
+        const height = containerRef.current.clientHeight;
+        const nodeYCoords = nodes.map((n) => n.y);
+        const minY = nodeYCoords.length > 0 ? Math.min(...nodeYCoords) : 50;
+        const maxY = nodeYCoords.length > 0 ? Math.max(...nodeYCoords) : 310;
+        const nodesCenterY = (minY + (maxY + 140)) / 2;
+        const initialY = Math.round(height / 2 - nodesCenterY);
+        setPanOffset({ x: 40, y: initialY });
+      } else {
+        setPanOffset({ x: 40, y: 0 });
+      }
     }
   };
 
@@ -990,9 +814,8 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
       prevNodes.map((node) => {
         if (node.id === nodeId) {
           const origHorizon = initialHorizonNodes.find((n) => n.id === nodeId);
-          const origApex = initialApexNodes.find((n) => n.id === nodeId);
           const origZephyr = initialZephyrNodes.find((n) => n.id === nodeId);
-          const original = origHorizon || origApex || origZephyr;
+          const original = origHorizon || origZephyr;
           if (original) {
             return {
               ...node,
@@ -1017,44 +840,45 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center font-sans">
+    <div className="w-full h-full flex flex-col items-stretch justify-start font-sans">
       
       {/* Factory Tabs Selection Pill Bar */}
-      <div className="flex bg-zinc-900/10 backdrop-blur-xs p-1.5 rounded-full items-center gap-1.5 min-w-[320px] mb-6 border border-black/5 shadow-2xs relative z-20 select-none">
-
-        {(["horizon", "apex", "zephyr"] as const).map((fac) => {
-          const isActive = activeFactory === fac;
-          const label = fac === "horizon" ? "Horizon Foundry" : fac === "apex" ? "Apex Ore Facility" : "Zephyr Core Plant";
-          return (
-            <button
-              key={fac}
-              type="button"
-              onClick={() => {
-                setActiveFactory(fac);
-                setExpandedNodeId(null);
-                setEditingNodeId(null);
-              }}
-              className={`relative px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all duration-300 cursor-pointer select-none z-10 ${
-                isActive ? "text-blue-600" : "text-zinc-500 hover:text-zinc-800"
-              }`}
-            >
-              {label}
-              {isActive && (
-                <motion.div
-                  layoutId="activeFactoryTab"
-                  className="absolute inset-0 bg-white shadow-sm border border-blue-50/50 rounded-full -z-10"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {!hidePills && (
+        <div className="flex bg-zinc-900/10 backdrop-blur-xs p-1.5 rounded-full items-center gap-1.5 min-w-[320px] mb-6 border border-black/5 shadow-2xs relative z-20 select-none mx-auto">
+          {(["horizon", "zephyr"] as const).map((fac) => {
+            const isActive = activeFactory === fac;
+            const label = fac === "horizon" ? "Horizon Foundry" : "Zephyr Core Plant";
+            return (
+              <button
+                key={fac}
+                type="button"
+                onClick={() => {
+                  setActiveFactory(fac);
+                  setExpandedNodeId(null);
+                  setEditingNodeId(null);
+                }}
+                className={`relative px-4 py-2 rounded-full text-[10px] sm:text-xs font-bold transition-all duration-300 cursor-pointer select-none z-10 ${
+                  isActive ? "text-blue-600" : "text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                {label}
+                {isActive && (
+                  <motion.div
+                    layoutId="activeFactoryTab"
+                    className="absolute inset-0 bg-white shadow-sm border border-blue-50/50 rounded-full -z-10"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Main Flow Canvas Card Container */}
       <div 
         ref={containerRef}
-        className="w-full h-[620px] bg-[#FAF9F5] rounded-3xl border border-zinc-200/80 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing flex flex-col justify-end"
+        className="w-full h-full flex-grow min-h-[500px] bg-[#FAF9F5] rounded-3xl border border-zinc-200/80 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing flex flex-col justify-end"
         onMouseDown={handleCanvasMouseDown}
         onMouseMove={handleCanvasMouseMove}
         onMouseUp={handleCanvasMouseUp}
@@ -1079,15 +903,6 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
         >
           {/* SVG Connecting Edges Path Layer */}
           <svg className="absolute inset-0 w-[8000px] h-[8000px] pointer-events-none z-0">
-            <defs>
-              <filter id="glow-filter" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
 
             {/* Render curved connector lines dynamically */}
             {nodes.map((sourceNode) => {
@@ -1110,17 +925,6 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
 
                 return (
                   <g key={`${sourceNode.id}-${targetId}`} className="connector-glow">
-                    {/* Glowing outer shadow line */}
-                    <path
-                      d={pathString}
-                      stroke={isCritical ? "#f87171" : "#a1a1aa"}
-                      strokeWidth={6}
-                      fill="none"
-                      strokeLinecap="round"
-                      opacity={isActive ? 0.35 : 0.04}
-                      className="transition-[stroke,opacity] duration-300"
-                      filter="url(#glow-filter)"
-                    />
                     {/* Core background connection line */}
                     <path
                       d={pathString}
@@ -1165,7 +969,7 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
                   width: cardWidth,
                   height: cardHeight
                 }}
-                transition={{ type: "spring", stiffness: 220, damping: 25 }}
+                transition={{ duration: 0.12, ease: "easeOut" }}
                 className="absolute group z-10"
                 style={{
                   left: node.x,
@@ -1604,7 +1408,7 @@ export default function NodeWorkflow({ initialFactory = "horizon" }: NodeWorkflo
       <style jsx global>{`
         @keyframes strokeFlow {
           from {
-            stroke-dashoffset: 40;
+            stroke-dashoffset: 24;
           }
           to {
             stroke-dashoffset: 0;

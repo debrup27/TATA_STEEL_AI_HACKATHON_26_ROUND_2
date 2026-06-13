@@ -177,7 +177,7 @@ export default function AtalWorkflowFlowchart() {
 
   // Bezier curve calculations
   const getBezierPath = (x1: number, y1: number, x2: number, y2: number) => {
-    const dx = Math.abs(x2 - x1) / 2;
+    const dx = (x2 - x1) / 2;
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   };
 
@@ -483,7 +483,7 @@ export default function AtalWorkflowFlowchart() {
       <style jsx global>{`
         @keyframes strokeFlow {
           from {
-            stroke-dashoffset: 40;
+            stroke-dashoffset: 24;
           }
           to {
             stroke-dashoffset: 0;

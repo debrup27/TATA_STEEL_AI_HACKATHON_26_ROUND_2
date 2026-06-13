@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 import NodeWorkflow from "@/components/NodeWorkflow";
 
-export default function Factory1Page() {
+export default function ZephyrSinterPage() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
@@ -65,7 +65,7 @@ export default function Factory1Page() {
               SANSAD<br />MONITORING
             </h1>
             <p className="text-[9px] text-[#f97316] mt-3 font-bold uppercase tracking-[0.2em]">
-              Factory 01 // Pipeline Editor
+              Zephyr Sinter // Pipeline Editor
             </p>
           </div>
           <div className="bg-white border border-zinc-200 p-6 rounded-2xl">
@@ -104,7 +104,7 @@ export default function Factory1Page() {
           </div>
 
           {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto">
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 min-h-0">
             <div className="w-full flex items-center justify-between mb-4 border-b border-zinc-200 pb-4 select-none">
               {/* Left Side: Back Button */}
               <div className="w-1/4 flex justify-start">
@@ -122,7 +122,7 @@ export default function Factory1Page() {
               {/* Center: Title and Subtitle */}
               <div className="flex-1 text-center">
                 <h2 className="text-xl font-black uppercase text-zinc-950" style={{ fontFamily: "var(--font-pixeloid)" }}>
-                  Asset Troubleshooting Pipeline - Factory 01
+                  Asset Troubleshooting Pipeline — Zephyr Sinter
                 </h2>
                 <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest block mt-1">
                   Active Sandbox // Editing Factory Pipeline Node Path
@@ -133,8 +133,8 @@ export default function Factory1Page() {
               <div className="w-1/4" />
             </div>
             
-            <div className="w-full flex-grow flex items-center justify-center">
-              <NodeWorkflow initialFactory="horizon" />
+            <div className="w-full h-full flex-grow flex flex-col min-h-0">
+              <NodeWorkflow initialFactory="zephyr" hidePills={true} />
             </div>
           </div>
         </div>
@@ -142,3 +142,4 @@ export default function Factory1Page() {
     </ClickSpark>
   );
 }
+

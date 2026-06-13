@@ -56,7 +56,7 @@ export default function PillNav({
     const container = containerRef.current;
     if (!container) return;
     gsap.set(container, { opacity: 0, y: 0, pointerEvents: "none", visibility: "hidden" });
-  }, [ease, pathname]);
+  }, [ease]);
 
   useEffect(() => {
     const layout = () => {
@@ -123,7 +123,7 @@ export default function PillNav({
     }
 
     return () => window.removeEventListener("resize", onResize);
-  }, [items, ease, pathname]);
+  }, [items, ease]);
 
   const animateReveal = useCallback(() => {
     const container = containerRef.current;
@@ -182,7 +182,7 @@ export default function PillNav({
       window.removeEventListener("page-transition-start", onTransitionStart);
       window.removeEventListener("page-transition-complete", onTransitionComplete);
     };
-  }, [initialLoadAnimation, animateReveal, hideNav, pathname]);
+  }, [initialLoadAnimation, animateReveal, hideNav]);
 
   const handleEnter = (i: number) => {
     const tl = tlRefs.current[i];

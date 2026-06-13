@@ -75,6 +75,7 @@ export default function AbnormalityPredictionPage() {
   const activeRisk = risks.find(r => r.id === activeRiskId) || risks[0];
 
 
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-rose-500";
     if (score >= 50) return "text-orange-500";

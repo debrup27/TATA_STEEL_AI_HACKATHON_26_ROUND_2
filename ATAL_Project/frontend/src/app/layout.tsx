@@ -53,9 +53,11 @@ export default function RootLayout({
             pillTextColor="#ffffff"
           />
         </Suspense>
-        <Suspense fallback={null}>
-          <PageTransition>{children}</PageTransition>
-        </Suspense>
+        <PageTransition>
+          <Suspense fallback={null}>
+            {children}
+          </Suspense>
+        </PageTransition>
       </body>
     </html>
   );

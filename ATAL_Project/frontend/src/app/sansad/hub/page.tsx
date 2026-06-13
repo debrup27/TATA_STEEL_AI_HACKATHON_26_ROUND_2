@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ShieldAlert, AlertTriangle, CheckCircle } from "lucide-react";
 import ClickSpark from "../../../animations/ClickSpark";
 import LogoLoop from "../../../animations/LogoLoop";
 
@@ -103,6 +103,13 @@ const ragLogsLogos = [
   { text: "✦", isSeparator: true },
 ];
 
+interface SystemLog {
+  id: number;
+  time: string;
+  module: string;
+  text: string;
+}
+
 export default function SansadMonitoringPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [isSansadHubHovered, setIsSansadHubHovered] = useState(false);
@@ -114,7 +121,7 @@ export default function SansadMonitoringPage() {
   const [strandSpeed, setStrandSpeed] = useState(3.1);
 
   // Live Scrolling Logs State
-  const [systemLogs, setSystemLogs] = useState<Array<{ id: number; time: string; module: string; text: string }>>([
+  const [systemLogs, setSystemLogs] = useState<Array<SystemLog>>([
     { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
     { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
     { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
@@ -123,6 +130,8 @@ export default function SansadMonitoringPage() {
     { id: 6, time: "22:19:26", module: "Sinter-Agent", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
     { id: 7, time: "22:19:30", module: "CokeOven-Agent", text: "NOMINAL: F1-EQ11 Electrostatic Precipitator electrodes stable. RUL at 95 days." },
   ]);
+
+  const [activeLogForModal, setActiveLogForModal] = useState<SystemLog | null>(null);
 
   const systemLogContainerRef = useRef<HTMLDivElement>(null);
 
@@ -249,7 +258,7 @@ export default function SansadMonitoringPage() {
           {/* F1 Mobile */}
           <div className="bg-[#FAF6EE] border border-zinc-200 p-5 rounded-2xl">
             <div className="flex justify-between items-center mb-3">
-              <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase">Factory 01 // COBPP</span>
+              <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase">Horizon Foundry</span>
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
             </div>
             <h3 className="text-sm font-bold text-zinc-800 uppercase">Coke Oven & Exhauster</h3>
@@ -258,7 +267,7 @@ export default function SansadMonitoringPage() {
               <div>Exhauster Health: {exhausterHealth}%</div>
             </div>
             <Link 
-              href="/sansad/hub/factory1"
+              href="/sansad/hub/horizon-foundry"
               className="mt-4 block w-full py-2 bg-zinc-900 text-white text-center rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer"
             >
               Open Pipeline Editor
@@ -268,7 +277,7 @@ export default function SansadMonitoringPage() {
           {/* F2 Mobile */}
           <div className="bg-[#FAF6EE] border border-zinc-200 p-5 rounded-2xl">
             <div className="flex justify-between items-center mb-3">
-              <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase">Factory 02 // Sinter</span>
+              <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase">Zephyr Sinter</span>
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             </div>
             <h3 className="text-sm font-bold text-zinc-800 uppercase">Sintering Plant</h3>
@@ -277,7 +286,7 @@ export default function SansadMonitoringPage() {
               <div>Strand Speed: {strandSpeed} m/min</div>
             </div>
             <Link 
-              href="/sansad/hub/factory2"
+              href="/sansad/hub/zephyr-sinter"
               className="mt-4 block w-full py-2 bg-zinc-950 text-white text-center rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer"
             >
               Open Pipeline Editor
@@ -291,7 +300,7 @@ export default function SansadMonitoringPage() {
               Autonomous bots tracing RUL and thermodynamic physical cascades, reporting directly to Manas.
             </p>
             <div className="mt-4 flex gap-2">
-              <Link href="/sansad/hub/dashboard" className="flex-1 text-center py-2 bg-[#1b253c] text-white rounded-xl text-[10px] font-bold uppercase cursor-pointer">
+              <Link href="/sansad/hub/samvidhaan" className="flex-1 text-center py-2 bg-[#1b253c] text-white rounded-xl text-[10px] font-bold uppercase cursor-pointer">
                 SANSAD SAMVIDHAAN
               </Link>
             </div>
@@ -355,7 +364,7 @@ export default function SansadMonitoringPage() {
                 {/* Column 1 (35% width) */}
                 <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
                   {/* Factory 1 Box */}
-                  <Link href="/sansad/hub/factory1" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                  <Link href="/sansad/hub/horizon-foundry" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
                     <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
                     <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
 
@@ -363,7 +372,7 @@ export default function SansadMonitoringPage() {
                     <div className="flex-[0.4]" />
 
                     <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                      FACTORY<br />01
+                      HORIZON<br />FOUNDRY
                     </h2>
 
                     {/* Italic description */}
@@ -409,7 +418,7 @@ export default function SansadMonitoringPage() {
 
                   {/* Sansad Samvidhaan Box */}
                   <Link 
-                    href="/sansad/hub/dashboard" 
+                    href="/sansad/hub/samvidhaan" 
                     onMouseEnter={() => setIsSansadHubHovered(true)}
                     onMouseLeave={() => setIsSansadHubHovered(false)}
                     className={`group h-[52%] p-8 flex flex-col relative transition-all duration-300 ease-in-out cursor-pointer origin-bottom-left ${
@@ -472,7 +481,7 @@ export default function SansadMonitoringPage() {
                 {/* Column 2 (35% width) */}
                 <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
                   {/* Factory 2 Box */}
-                  <Link href="/sansad/hub/factory2" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                  <Link href="/sansad/hub/zephyr-sinter" className="group h-[48%] p-8 border-b border-zinc-200 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
                     <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
                     <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
 
@@ -480,7 +489,7 @@ export default function SansadMonitoringPage() {
                     <div className="flex-[0.4]" />
 
                     <h2 className="text-5xl font-black text-[#1b253c] uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>
-                      FACTORY<br />02
+                      ZEPHYR<br />SINTER
                     </h2>
 
                     {/* Italic description */}
@@ -607,7 +616,7 @@ export default function SansadMonitoringPage() {
                 <div className="w-[30%] h-full flex flex-col">
                   
                   {/* LOG STREAM (top 48%) */}
-                  <Link href="/sansad/hub/logs" className="group h-[48%] border-b border-zinc-200 p-6 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                  <div className="group h-[48%] border-b border-zinc-200 p-6 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl">
                     <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
                     <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
 
@@ -615,7 +624,10 @@ export default function SansadMonitoringPage() {
                       <h2 className="text-xl font-black text-[#1b253c] uppercase" style={{ fontFamily: "var(--font-questrial)" }}>
                         SYSTEM LOG STREAM
                       </h2>
-                      <ArrowUpRight className="w-5 h-5 text-[#1b253c] group-hover:text-[#f97316] transition-all duration-300 group-hover:rotate-45" />
+                      <Link href="/sansad/hub/logs" className="flex items-center gap-1 text-[10px] font-bold text-[#1b253c]/40 hover:text-[#f97316] uppercase tracking-wider transition-colors duration-300 font-mono group/expand cursor-pointer">
+                        <span>Click here to expand</span>
+                        <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover/expand:rotate-45" />
+                      </Link>
                     </div>
 
                     <div className="flex-1 min-h-0 relative">
@@ -641,7 +653,12 @@ export default function SansadMonitoringPage() {
                                 animate={{ opacity: 1 }}
                                 exit={{ opacity: 0 }}
                                 transition={{ duration: 0.4, ease: "easeOut" }}
-                                className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-2 transition-colors duration-300 ${textStyle}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setActiveLogForModal(log);
+                                }}
+                                className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-2 transition-colors duration-300 cursor-pointer ${textStyle}`}
                               >
                                 <span className={`mt-2 h-1.5 w-1.5 rounded-full flex-shrink-0 transition-colors duration-300 ${dot}`} />
                                 <div>
@@ -654,7 +671,7 @@ export default function SansadMonitoringPage() {
                         </AnimatePresence>
                       </div>
                     </div>
-                  </Link>
+                  </div>
 
                   {/* HISTORICAL LOGS (middle 26%) */}
                   <Link href="/sansad/hub/historical-logs" className="group h-[26%] border-b border-zinc-200 py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
@@ -727,6 +744,91 @@ export default function SansadMonitoringPage() {
                   </Link>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dialog for detailed log view */}
+      {activeLogForModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-6 animate-in fade-in duration-200 cursor-default"
+          onClick={() => setActiveLogForModal(null)}
+        >
+          <div 
+            className="bg-white border border-zinc-200/80 rounded-3xl p-10 max-w-3xl w-full shadow-2xl relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Corner Indicators */}
+            <div className="absolute top-3.5 left-3.5 font-mono text-[10px] text-[#1b253c]/20 select-none">+</div>
+            <div className="absolute bottom-3.5 right-3.5 font-mono text-[10px] text-[#1b253c]/20 select-none">+</div>
+
+            <div className="flex justify-between items-start border-b border-zinc-150 pb-5 mb-6">
+              <div>
+                <span className="font-mono text-sm font-bold text-[#f97316] uppercase tracking-[0.2em]">[{activeLogForModal.time}] SYSTEM LOG</span>
+                <h3 className="text-4xl lg:text-5xl font-black text-[#1b253c] uppercase mt-1 leading-tight" style={{ fontFamily: "var(--font-questrial)" }}>
+                  {activeLogForModal.module}
+                </h3>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider shrink-0 ${
+                activeLogForModal.text.includes("CRITICAL") || activeLogForModal.text.includes("fatigue") || activeLogForModal.text.includes("risk") || activeLogForModal.text.includes("extreme")
+                  ? "text-rose-600 bg-rose-50 border-rose-200/50 animate-pulse"
+                  : activeLogForModal.text.includes("WARNING") || activeLogForModal.text.includes("drift") || activeLogForModal.text.includes("vibration")
+                    ? "text-amber-600 bg-amber-50 border-amber-200/50"
+                    : "text-emerald-600 bg-emerald-50 border-emerald-200/50"
+              }`}>
+                {activeLogForModal.text.includes("CRITICAL") || activeLogForModal.text.includes("fatigue") || activeLogForModal.text.includes("risk") || activeLogForModal.text.includes("extreme")
+                  ? "critical"
+                  : activeLogForModal.text.includes("WARNING") || activeLogForModal.text.includes("drift") || activeLogForModal.text.includes("vibration")
+                    ? "warning"
+                    : "info"}
+              </div>
+            </div>
+
+            {/* Detailed Log Statement container */}
+            <div className="bg-[#FAF9F5] p-8 rounded-2xl border border-zinc-150 mb-8 select-text">
+              <span className="block font-mono text-[11px] text-zinc-400 font-extrabold uppercase tracking-wider mb-2 select-none">Log Statement</span>
+              <p className="text-xl lg:text-2xl font-bold leading-relaxed text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
+                {activeLogForModal.text}
+              </p>
+            </div>
+
+            {/* Simulated Recommendation context based on text/severity */}
+            <div className={`p-6 rounded-2xl border flex items-start gap-4 select-none mb-8 ${
+              activeLogForModal.text.includes("CRITICAL") || activeLogForModal.text.includes("fatigue") || activeLogForModal.text.includes("risk") || activeLogForModal.text.includes("extreme")
+                ? "bg-rose-50 border-rose-100 text-rose-950"
+                : activeLogForModal.text.includes("WARNING") || activeLogForModal.text.includes("drift") || activeLogForModal.text.includes("vibration")
+                  ? "bg-amber-50 border-amber-100 text-amber-950"
+                  : "bg-emerald-50 border-emerald-100 text-emerald-950"
+            }`}>
+              {activeLogForModal.text.includes("CRITICAL") || activeLogForModal.text.includes("fatigue") || activeLogForModal.text.includes("risk") || activeLogForModal.text.includes("extreme") ? (
+                <ShieldAlert className="w-6 h-6 shrink-0 text-rose-500 mt-0.5" />
+              ) : activeLogForModal.text.includes("WARNING") || activeLogForModal.text.includes("drift") || activeLogForModal.text.includes("vibration") ? (
+                <AlertTriangle className="w-6 h-6 shrink-0 text-amber-500 mt-0.5" />
+              ) : (
+                <CheckCircle className="w-6 h-6 shrink-0 text-emerald-500 mt-0.5" />
+              )}
+              <div>
+                <span className="text-xs font-mono font-bold uppercase tracking-wider block text-zinc-500">Recommended SOP Action</span>
+                <p className="text-sm mt-1.5 leading-relaxed font-sans font-medium">
+                  {activeLogForModal.text.includes("CRITICAL") || activeLogForModal.text.includes("fatigue") || activeLogForModal.text.includes("risk") || activeLogForModal.text.includes("extreme")
+                    ? "CRITICAL INCIDENT: Telemetry loop has registered severe anomalous operation. Inspect target device immediately, verify standby device engagement, and notify the site operations command."
+                    : activeLogForModal.text.includes("WARNING") || activeLogForModal.text.includes("drift") || activeLogForModal.text.includes("vibration")
+                      ? "WARNING ALARM: System parameter drift observed. Perform secondary calibration checks, flag the physical components in the asset manager database, and monitor telemetry on the next shift cycle."
+                      : "NOMINAL STATUS: System diagnostics operating within normal boundaries. No intervention required. Logs successfully routed to Manas vector database."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center text-xs font-mono text-zinc-400 border-t border-zinc-150 pt-5">
+              <span>Telemetry Timestamp: {activeLogForModal.time}</span>
+              <button
+                onClick={() => setActiveLogForModal(null)}
+                className="h-9 px-5 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl transition-all duration-300 font-bold uppercase text-[10px] cursor-pointer"
+                style={{ fontFamily: "var(--font-pixeloid)" }}
+              >
+                Close Details
+              </button>
             </div>
           </div>
         </div>

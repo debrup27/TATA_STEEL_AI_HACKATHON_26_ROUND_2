@@ -73,7 +73,13 @@ export default function PageTransition({ children }: { children: React.ReactNode
   const prevPathRef = useRef(pathname);
 
   // Keep phaseRef in sync for use inside non-reactive callbacks
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { 
+    phaseRef.current = phase; 
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__next_transitioning = phase !== "idle";
+    }
+  }, [phase]);
 
   const WASH_DURATION = 1300;
 
@@ -181,6 +187,8 @@ export default function PageTransition({ children }: { children: React.ReactNode
     return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
   }, [phase]);
 
+
+
   const visible = phase === "covering" || phase === "washing";
 
   return (
@@ -191,7 +199,16 @@ export default function PageTransition({ children }: { children: React.ReactNode
         {visible && (
           <motion.div
             key="page-transition-overlay"
-            className="fixed inset-0 z-[9999] pointer-events-none overflow-hidden"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999,
+              pointerEvents: "none",
+              overflow: "hidden",
+            }}
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.15 } }}
@@ -199,8 +216,17 @@ export default function PageTransition({ children }: { children: React.ReactNode
             {/* ── Covering phase: radial blob expand ── */}
             {phase === "covering" && (
               <motion.div
-                className="absolute inset-0 flex items-center justify-center"
                 style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "auto",
                   background:
                     "linear-gradient(135deg, #fb923c 0%, #f97316 45%, #ea580c 100%)",
                 }}
@@ -209,14 +235,23 @@ export default function PageTransition({ children }: { children: React.ReactNode
                 transition={{ duration: 0.7, ease: [0.76, 0, 0.24, 1] }}
               >
                 <motion.div
-                  className="flex flex-col items-center gap-3"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.22, duration: 0.35 }}
                 >
                   <span
-                    className="font-bold tracking-[0.38em] text-sm uppercase select-none"
                     style={{
+                      fontWeight: "bold",
+                      letterSpacing: "0.38em",
+                      fontSize: "14px",
+                      textTransform: "uppercase",
+                      userSelect: "none",
                       fontFamily: "var(--font-questrial), sans-serif",
                       color: "#ffffff",
                       textShadow: "0 2px 12px rgba(0,0,0,0.3)",
@@ -232,11 +267,17 @@ export default function PageTransition({ children }: { children: React.ReactNode
             {/* ── Washing phase: wavy block sweeps downward & exits ── */}
             {phase === "washing" && (
               <svg
-                className="absolute inset-0 w-full h-full"
                 viewBox={`0 0 ${VW} ${VH}`}
                 preserveAspectRatio="none"
                 xmlns="http://www.w3.org/2000/svg"
-                style={{ display: "block" }}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: "100%",
+                  display: "block"
+                }}
               >
                 <defs>
                   <linearGradient
