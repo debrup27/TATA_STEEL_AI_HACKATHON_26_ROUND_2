@@ -7,6 +7,41 @@ import { ArrowLeft } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 import LogoLoop from "@/animations/LogoLoop";
 import NodeWorkflow from "@/components/NodeWorkflow";
+import BottomSplitCard from "./components/BottomSplitCard";
+
+const graphsTickerLogos = [
+  { text: "VIBRATION SPECTRA: ACTIVE", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "RUL PROJECTION: 14d TREND", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "DEGRADATION MODEL: NOMINAL", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "ANOMALY FREQ: 0.02%", isSeparator: false },
+  { text: "✦", isSeparator: true },
+];
+
+const maintenanceTickerLogos = [
+  { text: "REPLACE BEARING: RAISING WO", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "SPARE PARTS: SIGNED & RESERVED", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "CALIBRATION SOP: INSTALLED", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "ALIGNMENT CALENDAR: SYNCED", isSeparator: false },
+  { text: "✦", isSeparator: true },
+];
+
+const reportsTickerLogos = [
+  { text: "DIAGNOSTIC REPORT: SENT", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "SUPERVISOR OVERLAY: APPROVED", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "DIGITAL LOG: MR-2024-441 SYNCED", isSeparator: false },
+  { text: "✦", isSeparator: true },
+  { text: "SAFETY MATRIX: 100% PASS", isSeparator: false },
+  { text: "✦", isSeparator: true },
+];
+
 
 
 
@@ -46,10 +81,10 @@ export default function SamvidhaanPage() {
 
   // Drag coordinates for the 4 nodes
   const [nodes, setNodes] = useState({
-    f1: { x: 60, y: 345 },
-    f2: { x: 960, y: 345 },
-    samvidhaan: { x: 540, y: 120 },
-    manas: { x: 540, y: 480 },
+    f1: { x: 60, y: 195 },
+    f2: { x: 960, y: 195 },
+    samvidhaan: { x: 540, y: 20 },
+    manas: { x: 540, y: 300 },
   });
 
   const [activeDragNode, setActiveDragNode] = useState<"f1" | "f2" | "samvidhaan" | "manas" | null>(null);
@@ -75,7 +110,7 @@ export default function SamvidhaanPage() {
 
   // Set initial coordinates responsively on mount once we can measure the parent canvas
   useEffect(() => {
-    const saved = localStorage.getItem("samvidhaan_node_positions_v3");
+    const saved = localStorage.getItem("samvidhaan_node_positions_v4");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -103,10 +138,10 @@ export default function SamvidhaanPage() {
         const { width, height } = entry.contentRect;
         if (width > 0 && height > 0) {
           const centerY = height / 2;
-          const samvidhaanY = Math.max(20, Math.round(centerY - 340));
-          const manasY = samvidhaanY + 380;
-          const f1Y = samvidhaanY + 160;
-          const f2Y = samvidhaanY + 160;
+          const samvidhaanY = Math.max(15, Math.round(centerY - 220));
+          const manasY = samvidhaanY + 280;
+          const f1Y = samvidhaanY + 90;
+          const f2Y = samvidhaanY + 90;
 
           setNodes({
             f1: { x: Math.round(width * 0.03), y: f1Y },
@@ -127,7 +162,7 @@ export default function SamvidhaanPage() {
 
   useEffect(() => {
     if (hasLoaded && initializedFromContainer) {
-      localStorage.setItem("samvidhaan_node_positions_v3", JSON.stringify(nodes));
+      localStorage.setItem("samvidhaan_node_positions_v4", JSON.stringify(nodes));
     }
   }, [nodes, hasLoaded, initializedFromContainer]);
 
@@ -158,9 +193,9 @@ export default function SamvidhaanPage() {
       const newX = e.clientX - rect.left - dragStartOffset.current.x;
       const newY = e.clientY - rect.top - dragStartOffset.current.y;
       
-      // Node dimension bounds for clamping (factory cards 320×420, others 320×320)
+      // Node dimension bounds for clamping (factory cards 320×420, others 320×260)
       const nodeWidth = 320;
-      let nodeHeight = 320;
+      let nodeHeight = 260;
       if (activeDragNode === "f1" || activeDragNode === "f2") {
         nodeHeight = 420;
       }
@@ -202,10 +237,10 @@ export default function SamvidhaanPage() {
     };
   }, [activeDragNode]);
 
-  // Re-calculate dynamic Bezier curves — factory cards 320×420 (center +210), others 320×320 (center +160)
+  // Re-calculate dynamic Bezier curves — factory cards 320×420 (center +210), others 320×260 (center +130)
   const f1CenterY = nodes.f1.y + 210;
   const f2CenterY = nodes.f2.y + 210;
-  const samvidhaanCenterY = nodes.samvidhaan.y + 160;
+  const samvidhaanCenterY = nodes.samvidhaan.y + 130;
 
   // Bezier curve path constructor (horizontal)
   const getBezierPath = (x1: number, y1: number, x2: number, y2: number) => {
@@ -226,7 +261,7 @@ export default function SamvidhaanPage() {
   const pathF2ToSamvidhaan = getBezierPath(nodes.f2.x, f2CenterY, nodes.samvidhaan.x + 320, samvidhaanCenterY);
 
   // Manas to Samvidhaan (Top center of Manas to Bottom center of Samvidhaan)
-  const pathManasToSamvidhaan = getVerticalBezierPath(nodes.manas.x + 160, nodes.manas.y, nodes.samvidhaan.x + 160, nodes.samvidhaan.y + 320);
+  const pathManasToSamvidhaan = getVerticalBezierPath(nodes.manas.x + 160, nodes.manas.y, nodes.samvidhaan.x + 160, nodes.samvidhaan.y + 260);
 
 
 
@@ -308,6 +343,10 @@ export default function SamvidhaanPage() {
           <div ref={containerRef} className="flex-1 w-full bg-[#FAF9F5] relative overflow-hidden select-none">
             {/* Grid background pattern */}
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:32px_32px] opacity-[0.45] pointer-events-none" />
+
+            {/* Smooth transition gradient masks to fade out grid and connector lines near edges */}
+            <div className="absolute top-0 left-0 right-0 h-14 bg-gradient-to-b from-[#FAF9F5] via-[#FAF9F5]/70 to-transparent pointer-events-none z-[2]" />
+            <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#FAF9F5] via-[#FAF9F5]/80 to-transparent pointer-events-none z-[2]" />
 
             {/* SVG Connectors (NodeWorkflow style) */}
             <div
@@ -449,11 +488,14 @@ export default function SamvidhaanPage() {
                 </div>
 
                 {/* Hover image overlay — factory.webp */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
-                  <div className="relative w-40 h-40 flex items-center justify-center">
+                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
+                  <div className="relative w-36 h-36 flex items-center justify-center">
                     <div className="absolute inset-0 bg-teal-500/10 blur-2xl rounded-full" />
-                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-28 h-28 object-contain relative z-10" />
                   </div>
+                  <span className="text-[10px] font-bold text-teal-600 uppercase tracking-widest mt-1" style={{ fontFamily: "var(--font-pixeloid)" }}>
+                    Click to Expand
+                  </span>
                 </div>
               </div>
             </div>
@@ -523,11 +565,14 @@ export default function SamvidhaanPage() {
                 </div>
 
                 {/* Hover image overlay — factory.webp */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
-                  <div className="relative w-40 h-40 flex items-center justify-center">
+                <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
+                  <div className="relative w-36 h-36 flex items-center justify-center">
                     <div className="absolute inset-0 bg-amber-500/10 blur-2xl rounded-full" />
-                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-28 h-28 object-contain relative z-10" />
                   </div>
+                  <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-1" style={{ fontFamily: "var(--font-pixeloid)" }}>
+                    Click to Expand
+                  </span>
                 </div>
               </div>
             </div>
@@ -545,21 +590,21 @@ export default function SamvidhaanPage() {
               }}
             >
               <div
-                className="w-[320px] h-[320px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-6 shadow-lg shadow-zinc-200/30 hover:shadow-xl hover:border-black hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between group relative overflow-hidden"
+                className="w-[320px] h-[260px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-4.5 shadow-lg shadow-zinc-200/30 hover:shadow-xl hover:border-black hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between group relative overflow-hidden"
                 style={{ fontFamily: "var(--font-questrial)" }}
               >
                 {/* Default Card UI (fades out on hover) */}
                 <div className="flex flex-col justify-between h-full w-full group-hover:opacity-0 transition-opacity duration-300">
-                  <div className="flex-1 flex flex-col justify-start mt-2">
-                    <div className="flex items-center justify-between w-full mb-3">
-                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest">
+                  <div className="flex-1 flex flex-col justify-start mt-0.5">
+                    <div className="flex items-center justify-between w-full mb-1.5">
+                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-widest animate-pulse">
                         SYSTEM STATUS
                       </span>
                     </div>
-                    <h2 className="text-[26px] font-black text-[#1b253c] uppercase leading-none tracking-tighter">
-                      SANSAD<br />SAMVIDHAAN
+                    <h2 className="text-[22px] font-black text-[#1b253c] uppercase leading-none tracking-tighter">
+                      SANSAD SAMVIDHAAN
                     </h2>
-                    <p className="mt-3 text-[11.5px] italic text-zinc-400 leading-snug">
+                    <p className="mt-1.5 text-[10.5px] italic text-zinc-400 leading-snug">
                       System compliance layer, policy enforcement engine, and process RUL optimizer.
                     </p>
                   </div>
@@ -616,21 +661,21 @@ export default function SamvidhaanPage() {
               }}
             >
               <div
-                className="w-[320px] h-[320px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-6 shadow-lg shadow-zinc-200/30 hover:shadow-xl hover:border-black hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between group relative overflow-hidden"
+                className="w-[320px] h-[260px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-4.5 shadow-lg shadow-zinc-200/30 hover:shadow-xl hover:border-black hover:scale-[1.02] transition-all duration-300 flex flex-col justify-between group relative overflow-hidden"
                 style={{ fontFamily: "var(--font-questrial)" }}
               >
                 {/* Default Card UI (fades out on hover) */}
                 <div className="flex flex-col justify-between h-full w-full group-hover:opacity-0 transition-opacity duration-300">
-                  <div className="flex-1 flex flex-col justify-start mt-2">
-                    <div className="flex items-center justify-between w-full mb-3">
-                      <span className="text-[9px] font-bold text-purple-600 uppercase tracking-widest">
+                  <div className="flex-1 flex flex-col justify-start mt-0.5">
+                    <div className="flex items-center justify-between w-full mb-1.5">
+                      <span className="text-[9px] font-bold text-purple-600 uppercase tracking-widest animate-pulse">
                         COGNITIVE BRAIN
                       </span>
                     </div>
-                    <h2 className="text-[26px] font-black text-[#1b253c] uppercase leading-none tracking-tighter">
+                    <h2 className="text-[22px] font-black text-[#1b253c] uppercase leading-none tracking-tighter">
                       MANAS AI
                     </h2>
-                    <p className="mt-3 text-[11.5px] italic text-zinc-400 leading-snug">
+                    <p className="mt-1.5 text-[10.5px] italic text-zinc-400 leading-snug">
                       Cognitive brain orchestrating structural reasoning, vector context retrieval (RAG), and anomaly analysis.
                     </p>
                   </div>
@@ -742,6 +787,28 @@ export default function SamvidhaanPage() {
               </div>
             )}
 
+          </div>
+
+          {/* Bottom Splits Row */}
+          <div className="h-[13vh] min-h-[105px] shrink-0 w-full bg-[#FAF9F5] flex border-t border-zinc-200 z-30 divide-x divide-zinc-200/80">
+            <BottomSplitCard
+              href="/sansad/hub/samvidhaan/graphs"
+              title="Graphs"
+              description="Predictive lifecycle tracking, exhauster vibration spectral graphs, and degradation trendlines."
+              logos={graphsTickerLogos}
+            />
+            <BottomSplitCard
+              href="/sansad/hub/samvidhaan/maintenance"
+              title="Maintenance"
+              description="Step-by-step SOP repairs, immediate action checklists, and optimized spare parts procurement strategy."
+              logos={maintenanceTickerLogos}
+            />
+            <BottomSplitCard
+              href="/sansad/hub/samvidhaan/reports"
+              title="Reports"
+              description="Engineering decision summaries, supervisor sign-offs, abnormal incident alerts, and digital logbook."
+              logos={reportsTickerLogos}
+            />
           </div>
 
         </div>
