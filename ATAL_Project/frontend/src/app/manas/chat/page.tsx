@@ -208,6 +208,26 @@ export default function ManasChatPage() {
     setIsMounted(true);
   }, []);
 
+  // When navigated from sansad hub RAG Logs, open a fresh chat with RAG picker
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("rag") === "1") {
+        window.history.replaceState({}, "", "/manas/chat");
+        const newId = `session-${Date.now()}`;
+        const newSession: ChatSession = {
+          id: newId,
+          title: "New Session",
+          createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          messages: [],
+          ragDocs: [],
+        };
+        setSessions((prev) => [newSession, ...prev]);
+        setActiveSessionId(newId);
+      }
+    }
+  }, []);
+
   
 
 
@@ -284,6 +304,7 @@ export default function ManasChatPage() {
         })
       );
       setShowRagSelector(false);
+      setShowRightPanel(true);
     } else {
       // Update the active empty session with confirmed docs and start welcome message
       setSessions((prevSessions) =>
@@ -303,6 +324,7 @@ export default function ManasChatPage() {
         })
       );
       setShowRagSelector(false);
+      setShowRightPanel(true);
     }
   };
 

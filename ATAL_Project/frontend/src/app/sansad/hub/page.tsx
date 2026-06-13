@@ -709,12 +709,12 @@ export default function SansadMonitoringPage() {
                   </Link>
 
                   {/* RAG LOGS (bottom 26%) */}
-                  <Link href="/manas/chat" className="group h-[26%] py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
+                  <Link href="/manas/chat?rag=1" className="group h-[26%] py-6 px-8 flex flex-col relative overflow-hidden transition-all duration-300 ease-in-out hover:bg-[#4A582E] hover:scale-[1.01] hover:z-10 hover:shadow-2xl cursor-pointer">
                     <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
                     <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-white/40 transition-colors duration-300 select-none">+</div>
 
                     <div className="flex-[0.2]" />
-                    <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>RAG Logs</h3>
+                    <h3 className="text-3xl font-black text-[#1b253c] group-hover:text-white uppercase leading-none transition-colors duration-300" style={{ fontFamily: "var(--font-questrial)" }}>RAG</h3>
                     <p className="mt-2 text-sm italic text-zinc-400 group-hover:text-white/80 transition-colors duration-300 leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
                       Manas vector search queries, agent prompts, and context retrievals.
                     </p>
