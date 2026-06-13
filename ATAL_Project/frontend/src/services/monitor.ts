@@ -1,0 +1,123 @@
+import type { FactoryData } from "./types";
+
+export function getFactories(): FactoryData[] {
+  return [
+    {
+      id: "factory-1",
+      name: "Factory 01",
+      code: "COBPP",
+      description: "Coke Oven By-Product Plant",
+      parts: [
+        {
+          id: "asset-1",
+          name: "F1-EQ09 Centrifugal Exhauster",
+          section: "Coke Oven By-Product",
+          rulDays: 14,
+          health: 24,
+          status: "critical",
+          lastMaintenance: "2026-03-12",
+          vibration: "6.42 mm/s",
+          temp: "1085°C",
+          comments: "Immediate replacement needed. Centrifugal exhauster F1-EQ09 bearing frequency exceeds vibration threshold. Schedule downtime immediately.",
+        },
+        {
+          id: "asset-4",
+          name: "F1-EQ11 Electrostatic Precipitator",
+          section: "Coke Gas De-tarring Unit",
+          rulDays: 95,
+          health: 96,
+          status: "nominal",
+          lastMaintenance: "2026-04-20",
+          vibration: "0.22 mm/s",
+          temp: "68°C",
+          comments: "Telemetry matches nominal reference index curves. No immediate action required. Telemetry loop is stable.",
+        },
+        {
+          id: "asset-5",
+          name: "F1-EQ01 Gas Collector Main Valve",
+          section: "COG Collector Loop",
+          rulDays: 120,
+          health: 88,
+          status: "nominal",
+          lastMaintenance: "2026-05-01",
+          vibration: "0.45 mm/s",
+          temp: "85°C",
+          comments: "Collector grid valve seal showing minor leakage but within spec boundaries. Next inspection in 30 days.",
+        },
+        {
+          id: "asset-6",
+          name: "F1-EQ04 Ammonia Washer Pump",
+          section: "By-Product Washer Unit",
+          rulDays: 8,
+          health: 12,
+          status: "critical",
+          lastMaintenance: "2026-01-15",
+          vibration: "8.91 mm/s",
+          temp: "92°C",
+          comments: "CRITICAL: Impeller cavitation detected. Seal failure imminent. Swap with standby pump immediately to prevent wash bottleneck.",
+        },
+      ],
+    },
+    {
+      id: "factory-2",
+      name: "Factory 02",
+      code: "SINTER",
+      description: "Sintering Plant",
+      parts: [
+        {
+          id: "asset-2",
+          name: "F2-EQ04 Drive Sprocket",
+          section: "Sintering Strand A",
+          rulDays: 18,
+          health: 38,
+          status: "warning",
+          lastMaintenance: "2026-02-28",
+          vibration: "3.12 mm/s",
+          temp: "82°C",
+          comments: "Tooth root fatigue detected. Plan belt re-alignment and sprocket swap on next scheduled turnaround cycle.",
+        },
+        {
+          id: "asset-3",
+          name: "F2-EQ09 Waste Gas Fan Impeller",
+          section: "Sintering Emission Control",
+          rulDays: 42,
+          health: 84,
+          status: "nominal",
+          lastMaintenance: "2026-05-15",
+          vibration: "1.45 mm/s",
+          temp: "115°C",
+          comments: "Impeller surface showing moderate pitting. Structural reinforcement and dynamic balancing stable. Regular telemetry loop check.",
+        },
+        {
+          id: "asset-7",
+          name: "F2-EQ02 Sinter Belt Feeder",
+          section: "Strand Feed Conveyor",
+          rulDays: 5,
+          health: 10,
+          status: "critical",
+          lastMaintenance: "2026-03-01",
+          vibration: "9.15 mm/s",
+          temp: "98°C",
+          comments: "Belt alignment drift exceeded critical threshold. Gearbox output shaft bearing heating up. Immediate lubrication flush and replacement scheduled.",
+        },
+        {
+          id: "asset-8",
+          name: "F2-EQ15 Ignition Furnace Burner",
+          section: "Sinter Ignition Hearth",
+          rulDays: 210,
+          health: 92,
+          status: "nominal",
+          lastMaintenance: "2026-05-20",
+          vibration: "0.11 mm/s",
+          temp: "1250°C",
+          comments: "Burner nozzle pressure profile is nominal. Combustion efficiency high. No dynamic adjustments required.",
+        },
+      ],
+    },
+  ];
+}
+
+export function getFactoryById(id: string): FactoryData | undefined {
+  const factories = getFactories();
+  return factories.find((f) => f.id === id);
+}

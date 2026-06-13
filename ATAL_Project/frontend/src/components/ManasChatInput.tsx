@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import { TEXTAREA_MAX_LENGTH } from "@/lib/constants";
 
 const suggestedPrompts = [
   "Predict RUL for Hot Strip Mill Roller Coiler",
@@ -61,7 +62,7 @@ export default function ManasChatInput() {
               onKeyDown={handleKeyDown}
               placeholder="Ask about asset health, predict RUL, or analyze equipment degradation..."
               rows={1}
-              maxLength={2000}
+              maxLength={TEXTAREA_MAX_LENGTH}
               className="w-full text-sm md:text-base text-zinc-800 placeholder-zinc-400 bg-transparent border-none resize-none focus:outline-none focus:ring-0 leading-relaxed font-sans min-h-[28px]"
             />
           </div>

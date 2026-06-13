@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { SCROLL_THRESHOLD } from "@/lib/constants";
 
 interface ScrollButtonProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -16,7 +17,7 @@ function ScrollButton({ containerRef, className = "" }: ScrollButtonProps) {
     if (!el) return;
 
     const check = () => {
-      const threshold = 100;
+      const threshold = SCROLL_THRESHOLD;
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
       setVisible(!atBottom);
     };

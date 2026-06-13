@@ -9,10 +9,119 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-questrial), sans-serif;
+
+  --color-brand-dark: #1b253c;
+  --color-brand-darker: #120F17;
+  --color-brand-orange: #f97316;
+  --color-brand-green: #4A582E;
+
+  --color-bg-page: #FAF9F5;
+  --color-bg-warm: #FAF6EE;
+  --color-bg-sidebar: #F7F4EC;
+  --color-bg-chat: #FAF7F2;
+
+  --color-traffic-red: #ff5f56;
+  --color-traffic-yellow: #ffbd2e;
+  --color-traffic-green: #27c93f;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-questrial), sans-serif;
+}
+
+/* ─── Shared Marquee Animations ─── */
+
+@keyframes marqueeDown {
+  0% { transform: translateY(-50%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes marqueeUp {
+  0% { transform: translateY(0%); }
+  100% { transform: translateY(-50%); }
+}
+
+.animate-marquee-down {
+  animation: marqueeDown 35s linear infinite;
+}
+
+.animate-marquee-up {
+  animation: marqueeUp 35s linear infinite;
+}
+
+/* ─── Rotated Text Gutters ─── */
+
+.atal-text-filled,
+.manas-text-filled {
+  font-family: var(--font-pixeloid);
+  font-weight: 900;
+  color: var(--color-foreground);
+  transition: color 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: rotate(90deg);
+  display: inline-block;
+  will-change: transform;
+}
+
+.atal-text-filled:hover {
+  color: var(--color-brand-orange);
+  transform: scale(1.1) rotate(90deg);
+}
+
+.manas-text-filled:hover {
+  color: var(--color-brand-orange);
+  transform: scale(1.15) rotate(90deg);
+}
+
+/* ─── Scrollbar Utilities ─── */
+
+.sansad-scroll-hide::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+.sansad-scroll-hide {
+  scrollbar-width: none;
+}
+
+.sansad-scroll-styled::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sansad-scroll-styled::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--color-brand-dark) 4%, transparent);
+  border-radius: 10px;
+}
+
+.sansad-scroll-styled::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-brand-green) 30%, transparent);
+  border-radius: 10px;
+}
+
+.sansad-scroll-styled::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-brand-green) 60%, transparent);
+}
+
+.sansad-scroll-styled {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-brand-green) 30%, transparent) color-mix(in srgb, var(--color-brand-dark) 4%, transparent);
+}
+
+/* ─── Samvidhaan-specific ─── */
+
+@keyframes statusBlinkAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes strokeFlow {
+  from { stroke-dashoffset: 24; }
+  to { stroke-dashoffset: 0; }
+}
+
+.stroke-dasharray-anim {
+  stroke-dasharray: 8, 4;
+  animation: strokeFlow 1.2s linear infinite;
 }

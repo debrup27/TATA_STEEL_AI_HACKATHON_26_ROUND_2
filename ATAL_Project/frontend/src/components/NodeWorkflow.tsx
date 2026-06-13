@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   RotateCcw, Plus, Trash2, Copy, Edit3, X, AlertTriangle
 } from "lucide-react";
+import { SPRING_DEFAULT } from "@/lib/constants";
 
 interface SensorReading {
   name: string;
@@ -877,7 +878,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
                   <motion.div
                     layoutId="activeFactoryTab"
                     className="absolute inset-0 bg-white shadow-sm border border-blue-50/50 rounded-full -z-10"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    transition={{ type: "spring", ...SPRING_DEFAULT }}
                   />
                 )}
               </button>

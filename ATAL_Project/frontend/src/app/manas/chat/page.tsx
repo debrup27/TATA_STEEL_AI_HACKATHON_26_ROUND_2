@@ -2,9 +2,13 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import { PromptInputWithActions } from "../../../components/PromptInputWithActions";
+import { getPagesFromPdf } from "@/lib/pdf-renderer";
+import { fileToBase64, formatBytes } from "@/lib/utils";
+import { SPRING_NAV, DURATION_SLOW, DURATION_SECTION_FADE, DURATION_VERY_SLOW } from "@/lib/constants";
 import {
   Plus,
   Trash2,
@@ -32,102 +36,27 @@ import {
   SourceContent,
   SourceTrigger,
 } from "@/components/ai-components/source";
+import { getSessions, persistSessions, createSession, addMessage, updateTitle, updateRagDocs } from "@/services/sessions";
+import { getPreloadedDocs, getRandomStaticReply } from "@/services/chat";
+import type { MessageFile, Message, ChatSession } from "@/services/types";
+import { useMockChatSimulation } from "@/hooks";
 
-interface MessageFile {
-  name: string;
-  type: string;
-  pages: string[];
-}
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  files?: MessageFile[];
-}
-
-interface ChatSession {
-  id: string;
-  title: string;
-  createdAt: string;
-  messages: Message[];
-  ragDocs?: { name: string; size: string; type?: string; pages?: string[]; isCustom?: boolean }[];
-}
-
-const PRELOADED_DOCS = [
-  { name: "Standard Operating Procedure - Blast Furnace F3.pdf", size: "2.4 MB" },
-  { name: "Ladle Transfer Optimization Manual v2.pdf", size: "1.8 MB" },
-  { name: "Exhauster Bearing Repair Guide - F1-EQ09.pdf", size: "4.1 MB" },
-  { name: "Coke Oven Precipitator Calibration Logs.pdf", size: "920 KB" },
-  { name: "Sinter Plant Maintenance Records - Q1 2026.pdf", size: "3.5 MB" }
-];
-
-const MOCK_SESSIONS: ChatSession[] = [
-  {
-    id: "session-1",
-    title: "Turbine Wear Check",
-    createdAt: "10:24 AM",
-    messages: [
-      { role: "user", content: "Analyze predictive wear patterns for Turbine #3" },
-      { role: "assistant", content: "Analysis complete. Asset integrity levels are nominal. Predictive wear models estimate 1,200 run hours before replacement. Let me know if you would like me to schedule a diagnostic run." }
-    ]
-  },
-  {
-    id: "session-2",
-    title: "Furnace 3 Telemetry",
-    createdAt: "Yesterday",
-    messages: [
-      { role: "user", content: "Generate telemetry report for furnace 3" },
-      { role: "assistant", content: "Furnace 3 telemetry check: Temperature gradient is within normal bounds. Core sensor report is nominal." }
-    ]
-  },
-  {
-    id: "session-3",
-    title: "Hydraulic Valve Status",
-    createdAt: "2 days ago",
-    messages: [
-      { role: "user", content: "Is the hydraulic valve leaking?" },
-      { role: "assistant", content: "No leakage detected. Pressure stability index is at 98.4%, indicating normal seal integrity." }
-    ]
-  }
-];
+const PRELOADED_DOCS = getPreloadedDocs();
 
 export default function ManasChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("manas_chat_sessions");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
-          }
-        } catch (e) {
-          console.error("Failed to parse chat sessions", e);
-        }
-      }
+      try {
+        const saved = getSessions();
+        if (saved && saved.length > 0) return saved;
+      } catch {}
     }
-    return MOCK_SESSIONS;
+    return [];
   });
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("manas_chat_sessions");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-            return parsed[0].id;
-          }
-        } catch {}
-      }
-    }
-    return MOCK_SESSIONS[0].id;
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deepThinking, setDeepThinking] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showProcessing, setShowProcessing] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFile, setExpandedFile] = useState<MessageFile | null>(null);
 
@@ -137,6 +66,7 @@ export default function ManasChatPage() {
   const [customDocs, setCustomDocs] = useState<{ name: string; size: string; isCustom: boolean }[]>([]);
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [triggerToast, setTriggerToast] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [contextEnabled, setContextEnabled] = useState(() => {
     if (typeof window !== "undefined") {
@@ -159,11 +89,34 @@ export default function ManasChatPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const promptedSessionsRef = useRef<Record<string, boolean>>({});
+  const onDoneRef = useRef<(() => void) | null>(null);
+
+  const chatSim = useMockChatSimulation({
+    stepInterval: 1500,
+    extraDoneDelay: 500,
+    onDone: () => onDoneRef.current?.(),
+  });
+
+  onDoneRef.current = () => {
+    const targetId = thinkingSessionIdRef.current || activeSessionId;
+    if (!targetId) return;
+    const assistantReply = getRandomStaticReply();
+    setSessions((prevSessions) => {
+      return prevSessions.map((session) => {
+        if (session.id !== targetId) return session;
+        return {
+          ...session,
+          messages: [...session.messages, { role: "assistant" as const, content: assistantReply }],
+        };
+      });
+    });
+    thinkingSessionIdRef.current = null;
+  };
 
   // Derived state (declared safely after all state hooks)
-  const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
-  const hasContext = !!(activeSession && activeSession.ragDocs && activeSession.ragDocs.length > 0);
-  const contextCount = activeSession && activeSession.ragDocs ? activeSession.ragDocs.length : 0;
+  const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) || null : null;
+  const hasContext = !!(activeSession?.ragDocs && activeSession.ragDocs.length > 0);
+  const contextCount = activeSession?.ragDocs ? activeSession.ragDocs.length : 0;
 
   const handleToggleContext = (val: boolean) => {
     setContextEnabled(val);
@@ -185,20 +138,12 @@ export default function ManasChatPage() {
     }
   };
 
-  // Automatically prompt document context selection on a new chat
+  // Mark new sessions as prompted (no auto-open of RAG selector)
   useEffect(() => {
     if (isMounted && activeSessionId) {
       const active = sessions.find((s) => s.id === activeSessionId);
       if (active && active.messages.length === 0 && (!active.ragDocs || active.ragDocs.length === 0)) {
-        if (!promptedSessionsRef.current[activeSessionId]) {
-          promptedSessionsRef.current[activeSessionId] = true;
-          setSelectedPreloadedDocs([
-            PRELOADED_DOCS[0].name,
-            PRELOADED_DOCS[2].name
-          ]);
-          setCustomDocs([]);
-          setShowRagSelector(true);
-        }
+        promptedSessionsRef.current[activeSessionId] = true;
       }
     }
   }, [isMounted, activeSessionId, sessions]);
@@ -214,39 +159,14 @@ export default function ManasChatPage() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("rag") === "1") {
         window.history.replaceState({}, "", "/manas/chat");
-        const newId = `session-${Date.now()}`;
-        const newSession: ChatSession = {
-          id: newId,
-          title: "New Session",
-          createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          messages: [],
-          ragDocs: [],
-        };
-        setSessions((prev) => [newSession, ...prev]);
-        setActiveSessionId(newId);
+        setActiveSessionId(null);
+        setShowRagSelector(true);
+        setShowRightPanel(true);
+        setSelectedPreloadedDocs(getPreloadedDocs().map(d => d.name));
       }
     }
   }, []);
 
-  
-
-
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
-    });
-  };
 
   const handleCustomFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -256,19 +176,7 @@ export default function ManasChatPage() {
           let pages: string[] = [];
           if (file.type === "application/pdf") {
             try {
-              const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist");
-              GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@6.0.227/build/pdf.worker.min.mjs`;
-              const data = await file.arrayBuffer();
-              const pdf = await getDocument({ data }).promise;
-              for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const viewport = page.getViewport({ scale: 1.5 });
-                const canvas = document.createElement("canvas");
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                await page.render({ canvas, viewport }).promise;
-                pages.push(canvas.toDataURL("image/webp", 0.92));
-              }
+              pages = await getPagesFromPdf(file);
             } catch (err) {
               console.error("Failed to render PDF page, using fallback", err);
               pages = [];
@@ -293,39 +201,40 @@ export default function ManasChatPage() {
   };
   const handleConfirmRagDocs = (selectedDocs: { name: string; size: string; isCustom?: boolean }[]) => {
     if (activeSession && activeSession.messages.length > 0) {
-      // Update active session (managing documents of an ongoing chat)
       setSessions((prevSessions) =>
         prevSessions.map((session) => {
           if (session.id !== activeSessionId) return session;
-          return {
-            ...session,
-            ragDocs: selectedDocs
-          };
+          return { ...session, ragDocs: selectedDocs };
         })
       );
-      setShowRagSelector(false);
-      setShowRightPanel(true);
-    } else {
-      // Update the active empty session with confirmed docs and start welcome message
+    } else if (activeSessionId) {
       setSessions((prevSessions) =>
         prevSessions.map((session) => {
           if (session.id !== activeSessionId) return session;
           return {
             ...session,
             title: `RAG Session: ${selectedDocs.length} Doc${selectedDocs.length !== 1 ? "s" : ""} Loaded`,
-            messages: [
-              {
-                role: "assistant" as const,
-                content: `Hi! I have loaded the selected ${selectedDocs.length} document(s) into my context. Ask me anything referencing their content.`
-              }
-            ],
+            messages: [],
             ragDocs: selectedDocs,
           };
         })
       );
-      setShowRagSelector(false);
-      setShowRightPanel(true);
+    } else {
+      const newId = `session-${Date.now()}`;
+      const newSession: ChatSession = {
+        id: newId,
+        title: `RAG Session: ${selectedDocs.length} Doc${selectedDocs.length !== 1 ? "s" : ""} Loaded`,
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        messages: [],
+        ragDocs: selectedDocs,
+      };
+      setSessions((prev) => [...prev, newSession]);
+      setActiveSessionId(newId);
     }
+    setShowRagSelector(false);
+    setShowRightPanel(true);
+    setTriggerToast(`Loaded ${selectedDocs.length} document(s) into context`);
+    setTimeout(() => setTriggerToast(null), 100);
   };
 
   const handleOpenConciergeContext = () => {
@@ -342,10 +251,15 @@ export default function ManasChatPage() {
     setShowRagSelector(true);
   };
 
-  // Save sessions to local storage
+  // Save sessions to local storage (strip image data to avoid quota)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!isLoaded.current) return;
-    localStorage.setItem("manas_chat_sessions", JSON.stringify(sessions));
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      persistSessions(sessions);
+    }, 500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [sessions]);
 
 
@@ -373,7 +287,7 @@ export default function ManasChatPage() {
         ],
         ragDocs: []
       };
-      setSessions((prev) => [newSession, ...prev]);
+      setSessions((prev) => [...prev, newSession]);
       setActiveSessionId(newId);
       targetSessionId = newId;
     }
@@ -390,15 +304,29 @@ export default function ManasChatPage() {
       })
     );
     setShowRightPanel(true);
+    setTriggerToast(`Context document "${file.name}" loaded`);
+    setTimeout(() => setTriggerToast(null), 100);
   }, [activeSessionId]);
 
   const handleSendMessage = useCallback((messageText: string, attachedFiles?: MessageFile[]) => {
-    if (!activeSessionId) return;
-    thinkingSessionIdRef.current = activeSessionId;
+    let targetId = activeSessionId;
+    if (!targetId) {
+      targetId = `session-${Date.now()}`;
+      const newSession: ChatSession = {
+        id: targetId,
+        title: messageText.slice(0, 40) || "New Chat",
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        messages: [],
+        ragDocs: [],
+      };
+      setSessions((prev) => [...prev, newSession]);
+      setActiveSessionId(targetId);
+    }
+    thinkingSessionIdRef.current = targetId;
 
     setSessions((prevSessions) => {
       return prevSessions.map((session) => {
-        if (session.id !== activeSessionId) return session;
+        if (session.id !== targetId) return session;
 
         const updatedMessages = [...session.messages, { role: "user" as const, content: messageText, files: attachedFiles }];
         
@@ -418,73 +346,16 @@ export default function ManasChatPage() {
       });
     });
 
-    setIsLoading(true);
-    setCurrentStep(0);
-  }, [activeSessionId]);
-
-  useEffect(() => {
-    if (!isLoading) return;
-    const timer = setTimeout(() => {
-      setShowProcessing(true);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (!showProcessing) return;
-    const stepCount = 3;
-    const stepTimer = setInterval(() => {
-      setCurrentStep((prev) => {
-        if (prev >= stepCount - 1) {
-          clearInterval(stepTimer);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 1500);
-
-    const doneTimer = setTimeout(() => {
-      const targetId = thinkingSessionIdRef.current || activeSessionId;
-      const assistantReply = "Analysis complete. Asset integrity levels are nominal. Predictive wear models estimate 1,200 run hours before replacement. Let me know if you would like me to schedule a diagnostic run.";
-
-      setSessions((prevSessions) => {
-        return prevSessions.map((session) => {
-          if (session.id !== targetId) return session;
-          return {
-            ...session,
-            messages: [...session.messages, { role: "assistant" as const, content: assistantReply }],
-          };
-        });
-      });
-      setShowProcessing(false);
-      setIsLoading(false);
-      setCurrentStep(0);
-      thinkingSessionIdRef.current = null;
-    }, 1500 * stepCount + 500);
-
-    return () => {
-      clearInterval(stepTimer);
-      clearTimeout(doneTimer);
-    };
-  }, [showProcessing, deepThinking, activeSessionId]);
+    chatSim.start();
+  }, [activeSessionId, chatSim.start]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeSession?.messages, showProcessing]);
+  }, [activeSession?.messages, chatSim.showProcessing]);
 
   const handleNewSession = () => {
-    // Create new empty session first
-    const newId = `session-${Date.now()}`;
-    const newSession: ChatSession = {
-      id: newId,
-      title: "New Session",
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      messages: [],
-      ragDocs: []
-    };
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newId);
+    setActiveSessionId(null);
   };
 
   const handleDeleteSession = (idToDelete: string) => {
@@ -492,30 +363,20 @@ export default function ManasChatPage() {
       const updated = prev.filter((s) => s.id !== idToDelete);
       if (activeSessionId === idToDelete) {
         if (updated.length > 0) {
-          setActiveSessionId(updated[0].id);
+          setActiveSessionId(updated[updated.length - 1].id);
         } else {
-          // If no sessions remain, auto-create a new empty one
-          const newId = `session-${Date.now()}`;
-          const newSession: ChatSession = {
-            id: newId,
-            title: "New Session",
-            createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            messages: [],
-            ragDocs: []
-          };
-          setActiveSessionId(newId);
-          return [newSession];
+          setActiveSessionId(null);
         }
       }
       return updated;
     });
   };
 
-  // Filter sessions based on search query
+  // Filter sessions based on search query, newest on top
   const filteredSessions = sessions.filter((session) =>
     session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     session.messages.some((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  ).reverse();
   if (!isMounted) {
     return <div className="w-full h-screen bg-[#FAF7F2]" />;
   }
@@ -532,7 +393,7 @@ export default function ManasChatPage() {
       {/* History Sidebar */}
       <motion.div
         animate={{ width: sidebarOpen ? 280 : 64 }}
-        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        transition={{ type: "spring", ...SPRING_NAV }}
         className="hidden md:flex flex-col h-full shrink-0 overflow-hidden bg-[#F7F4EC] border-r border-zinc-200/80 z-50 pt-4 relative"
       >
         {/* Centered Brand Header & Collapse Toggle */}
@@ -737,7 +598,7 @@ export default function ManasChatPage() {
             initial={{ x: -280 }}
             animate={{ x: 0 }}
             exit={{ x: -280 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            transition={{ type: "spring", ...SPRING_NAV }}
             className="fixed inset-y-0 left-0 bg-[#F7F4EC] border-r border-zinc-200/80 z-50 flex flex-col h-full w-[280px] shrink-0 overflow-hidden shadow-xl md:hidden pt-4"
           >
             {/* Mobile Sidebar Header */}
@@ -869,12 +730,12 @@ export default function ManasChatPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
+                transition={{ duration: DURATION_SLOW, ease: "easeOut" }}
                 className="flex-1 flex flex-col items-center justify-center px-6"
               >
                 <div className="flex flex-col items-center gap-2 -mt-16 text-center">
                   <Image
-                    src="/long_form_logo.png"
+                    src="/long_form_logo.webp"
                     alt="Project ATAL Logo"
                     width={320}
                     height={213}
@@ -893,7 +754,7 @@ export default function ManasChatPage() {
                     deepThinking={deepThinking}
                     onDeepThinkingChange={setDeepThinking}
                     onSendMessage={handleSendMessage}
-                    isLoading={isLoading}
+                    isLoading={chatSim.isLoading}
                     hasContext={hasContext}
                     contextCount={contextCount}
                     onContextClick={() => setShowRightPanel((prev) => !prev)}
@@ -908,6 +769,7 @@ export default function ManasChatPage() {
                     contextEnabled={contextEnabled}
                     alertsEnabled={alertsEnabled}
                     onDisableAlerts={() => handleToggleAlerts(false)}
+                    triggerToast={triggerToast}
                     className="w-full px-3 pb-3 md:px-5 md:pb-5"
                   />
                 </motion.div>
@@ -920,7 +782,7 @@ export default function ManasChatPage() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
+                transition={{ duration: DURATION_SECTION_FADE, ease: "easeOut" }}
                 className="flex-1 flex flex-col px-6 pt-20 pb-4 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#1b253c]/15 hover:[&::-webkit-scrollbar-thumb]:bg-[#1b253c]/35 [&::-webkit-scrollbar-thumb]:rounded-full scroll-smooth"
               >
                 <div className="w-full max-w-3xl mx-auto flex flex-col gap-4 mt-0">
@@ -930,7 +792,7 @@ export default function ManasChatPage() {
                       layout
                       initial={{ y: 80, opacity: 0 }}
                       animate={{ y: 0, opacity: 1 }}
-                      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: i === 0 ? 0.15 : 0 }}
+                      transition={{ duration: DURATION_VERY_SLOW, ease: [0.22, 1, 0.36, 1], delay: i === 0 ? 0.15 : 0 }}
                       className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                       <div
@@ -989,12 +851,12 @@ export default function ManasChatPage() {
                     </motion.div>
                   ))}
 
-                  {showProcessing && (
+                  {chatSim.showProcessing && (
                     <motion.div
                       layout
                       initial={{ y: 80, opacity: 0 }}
                       animate={{ y: 0, opacity: 1 }}
-                      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                      transition={{ duration: DURATION_VERY_SLOW, ease: [0.22, 1, 0.36, 1] }}
                       className="max-w-[80%]"
                     >
                       <Steps defaultOpen>
@@ -1008,14 +870,14 @@ export default function ManasChatPage() {
                           <div className="space-y-1">
                             {deepThinking ? (
                               <>
-                                <StepsItem status={currentStep > 0 ? "complete" : currentStep === 0 ? "active" : "pending"}>Reasoning through asset data</StepsItem>
-                                <StepsItem status={currentStep > 1 ? "complete" : currentStep === 1 ? "active" : "pending"}>Evaluating equipment history logs</StepsItem>
-                                <StepsItem status={currentStep > 2 ? "complete" : currentStep === 2 ? "active" : "pending"}>Compiling wear projections</StepsItem>
+                                <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>Reasoning through asset data</StepsItem>
+                                <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>Evaluating equipment history logs</StepsItem>
+                                <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>Compiling wear projections</StepsItem>
                               </>
                             ) : (
                               <>
-                                <StepsItem status={currentStep > 0 ? "complete" : currentStep === 0 ? "active" : "pending"}>Parsing telemetry feeds</StepsItem>
-                                <StepsItem status={currentStep > 1 ? "complete" : currentStep === 1 ? "active" : "pending"}>
+                                <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>Parsing telemetry feeds</StepsItem>
+                                <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
                                   <Source href="https://example.com">
                                     <SourceTrigger label="datalake.atal" showFavicon />
                                     <SourceContent
@@ -1025,7 +887,7 @@ export default function ManasChatPage() {
                                   </Source>{" "}
                                   referenced
                                 </StepsItem>
-                                <StepsItem status={currentStep > 2 ? "complete" : currentStep === 2 ? "active" : "pending"}>Formulating diagnosis</StepsItem>
+                                <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>Formulating diagnosis</StepsItem>
                               </>
                             )}
                           </div>
@@ -1050,7 +912,7 @@ export default function ManasChatPage() {
                 deepThinking={deepThinking}
                 onDeepThinkingChange={setDeepThinking}
                 onSendMessage={handleSendMessage}
-                isLoading={isLoading}
+                isLoading={chatSim.isLoading}
                 hasContext={hasContext}
                 contextCount={contextCount}
                 onContextClick={() => setShowRightPanel((prev) => !prev)}
@@ -1065,6 +927,7 @@ export default function ManasChatPage() {
                 contextEnabled={contextEnabled}
                 alertsEnabled={alertsEnabled}
                 onDisableAlerts={() => handleToggleAlerts(false)}
+                triggerToast={triggerToast}
                 className="w-full max-w-3xl mx-auto px-3 pb-3 md:px-5 md:pb-5"
               />
             </motion.div>
@@ -1079,7 +942,7 @@ export default function ManasChatPage() {
             initial={{ width: 0, opacity: 0 }}
             animate={{ width: 340, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            transition={{ type: "spring", ...SPRING_NAV }}
             className="hidden xl:flex flex-col h-full bg-[#F7F4EC] border-l border-zinc-200/80 z-35 shrink-0 overflow-hidden"
           >
             <div className="p-6 flex flex-col h-full">

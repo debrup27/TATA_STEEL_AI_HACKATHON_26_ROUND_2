@@ -2,89 +2,28 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 import ClickSpark from "../../animations/ClickSpark";
 import AtalFooter from "../../components/AtalFooter";
-
-interface TelemetryCell {
-  label: string;
-  value: string;
-  status: "nominal" | "warning" | "critical";
-}
+import { useMockTelemetryCells } from "@/hooks";
+import { SPRING_SOFT, SPRING_MEDIUM } from "@/lib/constants";
+import SansadGrid from "@/components/SansadGrid";
 
 export default function SansadScrollGridCrossPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // 9x9 Grid layout for drawing letter 'A'
-  const gridA = [
-    [0, 0, 0, 1, 1, 1, 0, 0, 0],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 1, 1, 1, 1, 1, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0]
-  ];
-
-  const gridCells = [];
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      gridCells.push({ row: r, col: c, isActive: gridA[r][c] === 1 });
-    }
-  }
-
   const [isMobile, setIsMobile] = useState(false);
 
-  const [cells, setCells] = useState<TelemetryCell[]>([
-    { label: "BF1_TMP", value: "98°C", status: "warning" },
-    { label: "BF1_PRS", value: "3.1b", status: "nominal" },
-    { label: "VLV_04", value: "OPEN", status: "critical" },
-    { label: "ANOM_ST", value: "WARN", status: "warning" },
-    { label: "FLW_RT", value: "240L", status: "nominal" },
-    { label: "SYS_CK", value: "NOM", status: "nominal" }
-  ]);
+  const cells = useMockTelemetryCells();
 
-  // Live updates for telemetry cells
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
     };
     handleResize();
     window.addEventListener("resize", handleResize);
-
-    const interval = setInterval(() => {
-      setCells((prev) =>
-        prev.map((cell) => {
-          if (Math.random() > 0.85) {
-            const statuses: ("nominal" | "warning" | "critical")[] = ["nominal", "warning", "critical"];
-            const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-            
-            let val = cell.value;
-            if (cell.label === "BF1_TMP") {
-              val = randomStatus === "critical" ? "106°C" : randomStatus === "warning" ? "98°C" : "89°C";
-            } else if (cell.label === "ANOM_ST") {
-              val = randomStatus === "critical" ? "CRIT" : randomStatus === "warning" ? "WARN" : "NOM";
-            } else if (cell.label === "SYS_CK") {
-              val = randomStatus === "critical" ? "FAIL" : "NOM";
-            }
-
-            return {
-              ...cell,
-              status: randomStatus,
-              value: val
-            };
-          }
-          return cell;
-        })
-      );
-    }, 2000);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      clearInterval(interval);
-    };
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
 
@@ -201,45 +140,6 @@ export default function SansadScrollGridCrossPage() {
           {/* Sticky viewport content box */}
           <div className="sticky top-0 left-0 right-0 h-screen w-screen overflow-hidden bg-[#FAF9F5] relative">
             
-            {/* Custom styles for vertical marquee and rotated text elements */}
-            <style dangerouslySetInnerHTML={{
-              __html: `
-                @keyframes marqueeDown {
-                  0% {
-                    transform: translateY(-50%);
-                  }
-                  100% {
-                    transform: translateY(0%);
-                  }
-                }
-                @keyframes marqueeUp {
-                  0% {
-                    transform: translateY(0%);
-                  }
-                  100% {
-                    transform: translateY(-50%);
-                  }
-                }
-                .animate-marquee-down {
-                  animation: marqueeDown 35s linear infinite;
-                }
-                .animate-marquee-up {
-                  animation: marqueeUp 35s linear infinite;
-                }
-                .atal-text-filled {
-                  font-family: var(--font-pixeloid);
-                  font-weight: 900;
-                  color: #000000;
-                  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-                  transform: rotate(90deg);
-                  display: inline-block;
-                }
-                .atal-text-filled:hover {
-                  color: #f97316;
-                  transform: scale(1.15) rotate(90deg);
-                }
-              `
-            }} />
 
             {/* Left Gutter Vertical Carousel (scrolling up, text rotated 90 degrees) */}
             <div className="absolute left-0 top-0 bottom-0 w-[8vw] overflow-hidden hidden md:block z-20 pointer-events-none flex flex-col justify-start">
@@ -303,75 +203,8 @@ export default function SansadScrollGridCrossPage() {
 
                 {/* Bottom-Left — Orange Grid Shape 'A' widget */}
                 <div className="flex-1 min-h-0 flex flex-col items-center justify-between p-6 md:p-10 pointer-events-auto select-none overflow-hidden">
-                  
-                  {/* Grid container with flexible centering */}
                   <div className="flex-1 flex items-center justify-center w-full">
-                    <div className="relative p-12 bg-[#FAF6EE]/40 border border-black/20 rounded-3xl flex items-center justify-center">
-                      
-                      {/* Top Ruler */}
-                      <div className="absolute top-3 left-12 right-12 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                        <span>0.0</span>
-                        <span className="opacity-40 tracking-[0.25em] font-black uppercase">X-AXIS</span>
-                        <span>9.0</span>
-                      </div>
-
-                      {/* Bottom Ruler */}
-                      <div className="absolute bottom-3 left-12 right-12 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                        <span>0.0</span>
-                        <span className="text-orange-500 font-bold tracking-[0.25em] uppercase">SYS_OK</span>
-                        <span>9.0</span>
-                      </div>
-
-                      {/* Left Ruler */}
-                      <div className="absolute left-3 top-12 bottom-12 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                        <span>9.0</span>
-                        <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">SANSAD</span>
-                        <span>0.0</span>
-                      </div>
-
-                      {/* Right Ruler */}
-                      <div className="absolute right-3 top-12 bottom-12 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                        <span>9.0</span>
-                        <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">ATAL</span>
-                        <span>0.0</span>
-                      </div>
-
-                      {/* Grid of Squares */}
-                      <div className="grid grid-cols-9 gap-1.5 p-2 bg-[#FAF9F5] border border-black/20 rounded-xl relative">
-                        {/* Corner crop marks / ticks */}
-                        <div className="absolute -top-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                        <div className="absolute -top-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                        <div className="absolute -bottom-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                        <div className="absolute -bottom-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-
-                        {/* Animated Squares */}
-                        {gridCells.map((cell, idx) => {
-                          return (
-                            <motion.div
-                              key={idx}
-                              initial={{ scale: 0, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{
-                                type: "spring",
-                                stiffness: 260,
-                                damping: 20,
-                                delay: idx * 0.006
-                              }}
-                              whileHover={
-                                cell.isActive
-                                  ? { scale: 1.25, rotate: 90, backgroundColor: "#ea580c" }
-                                  : { scale: 1.2, backgroundColor: "rgba(249, 115, 22, 0.2)" }
-                              }
-                              className={`w-5 h-5 sm:w-6 sm:h-6 md:w-6 md:h-6 lg:w-7 lg:h-7 xl:w-8 xl:h-8 rounded-[4px] cursor-pointer transition-shadow ${
-                                cell.isActive
-                                  ? "bg-[#f97316] shadow-md shadow-orange-500/20 border border-black/15"
-                                  : "border border-black/15 bg-[#FAF9F5]/60 hover:border-orange-300"
-                              }`}
-                            />
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <SansadGrid animated />
                   </div>
                   
                   <span 
@@ -425,14 +258,14 @@ export default function SansadScrollGridCrossPage() {
                       }}
                       className="absolute flex gap-20 items-center text-zinc-800 stroke-[1.5] pointer-events-none"
                     >
-                      <img src="/bag.png" alt="Bag" className="w-28 h-28 object-contain select-none pointer-events-none" />
-                      <img src="/factory.png" alt="Factory" className="w-28 h-28 object-contain select-none pointer-events-none" />
-                      <img src="/world.png" alt="World" className="w-28 h-28 object-contain select-none pointer-events-none" />
+                      <Image src="/bag.webp" alt="Bag" width={1536} height={1024} className="w-28 h-28 object-contain select-none pointer-events-none" />
+                      <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-28 h-28 object-contain select-none pointer-events-none" />
+                      <Image src="/world.webp" alt="World" width={1536} height={1024} className="w-28 h-28 object-contain select-none pointer-events-none" />
                     </motion.div>
 
                     <motion.div 
                       layout
-                      transition={{ type: "spring", stiffness: 140, damping: 22 }}
+                      transition={{ type: "spring", ...SPRING_SOFT }}
                       style={{ fontSize: textSize }}
                       className={`font-bold text-zinc-950 leading-tight tracking-tight flex mt-20 md:mt-24 lg:mt-28 xl:mt-32 ${
                         isExpanded 
@@ -440,8 +273,8 @@ export default function SansadScrollGridCrossPage() {
                           : "flex-col items-start text-left"
                       }`}
                     >
-                      <motion.span layout transition={{ type: "spring", stiffness: 140, damping: 22 }} className="whitespace-nowrap">The frontier</motion.span>
-                      <motion.span layout transition={{ type: "spring", stiffness: 140, damping: 22 }} className="whitespace-nowrap">is now yours.</motion.span>
+                      <motion.span layout transition={{ type: "spring", ...SPRING_SOFT }} className="whitespace-nowrap">The frontier</motion.span>
+                      <motion.span layout transition={{ type: "spring", ...SPRING_SOFT }} className="whitespace-nowrap">is now yours.</motion.span>
                     </motion.div>
                   </motion.div>
                   <motion.div style={{ opacity: buttonOpacity }} className="flex flex-col items-center gap-4 mt-12">
@@ -455,7 +288,7 @@ export default function SansadScrollGridCrossPage() {
                         }}
                         initial="rest"
                         whileHover="hover"
-                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                        transition={{ type: "spring", ...SPRING_MEDIUM }}
                       >
                         <motion.span>Try sansad now</motion.span>
                         <motion.div
@@ -464,7 +297,7 @@ export default function SansadScrollGridCrossPage() {
                             rest: { width: 0, opacity: 0 },
                             hover: { width: "auto", opacity: 1 }
                           }}
-                          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                          transition={{ type: "spring", ...SPRING_MEDIUM }}
                         >
                           <span className="ml-2">→</span>
                         </motion.div>

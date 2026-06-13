@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { COPY_FEEDBACK_DURATION } from "@/lib/constants";
 
 type LanguageTab = "Python" | "JavaScript" | "cURL";
 type CapabilityId = "copilot" | "predictive" | "rca" | "digitisation";
@@ -279,13 +280,13 @@ console.log(\`Found \${result.tablesFound.length} tables.\`);`,
   const handleCopyCode = () => {
     navigator.clipboard.writeText(currentSnippet);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION);
   };
 
   const handleCopySdk = () => {
     navigator.clipboard.writeText("pip install atal-sdk");
     setSdkCopied(true);
-    setTimeout(() => setSdkCopied(false), 2000);
+    setTimeout(() => setSdkCopied(false), COPY_FEEDBACK_DURATION);
   };
 
   const syntaxHighlight = (code: string) => {

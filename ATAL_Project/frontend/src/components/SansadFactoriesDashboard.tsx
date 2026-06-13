@@ -2,6 +2,9 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
+import { getFactoryTabs } from "@/services/factory";
+import { SPRING_DEFAULT } from "@/lib/constants";
+import type { ProductionLineData } from "@/services/types";
 
 interface FactoryTab {
   id: "jamshedpur" | "kalinganagar" | "meramandali";
@@ -9,12 +12,7 @@ interface FactoryTab {
   location: string;
 }
 
-interface ProductionLine {
-  name: string;
-  statusText: string;
-  type: "active" | "warning" | "normal" | "critical";
-  outputRate: string;
-  iconBgColor: string;
+interface ProductionLineWithIcon extends ProductionLineData {
   icon: React.ReactNode;
 }
 
@@ -29,7 +27,7 @@ export default function SansadFactoriesDashboard() {
   ];
 
   // Mock data for each factory's production lines
-  const productionData: Record<string, ProductionLine[]> = {
+  const productionData: Record<string, ProductionLineWithIcon[]> = {
     jamshedpur: [
       {
         name: "Coke Plant 1",
@@ -181,7 +179,7 @@ export default function SansadFactoriesDashboard() {
                     <motion.div
                       layoutId="activeFactoryTabBackground"
                       className="absolute inset-0 bg-white shadow-[0_2px_8px_rgba(59,130,246,0.15)] border border-blue-50/50 rounded-full -z-10"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      transition={{ type: "spring", ...SPRING_DEFAULT }}
                     />
                   )}
                 </button>

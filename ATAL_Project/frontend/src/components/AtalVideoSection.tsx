@@ -29,7 +29,7 @@ export default function AtalVideoSection() {
           <div className="relative aspect-video w-full rounded-3xl overflow-hidden border border-zinc-100 shadow-lg group bg-zinc-900">
             {/* Background Image */}
             <Image
-              src="/steel_factory_operations.png"
+              src="/steel_factory_operations.webp"
               alt="Steel Factory Operations Video Preview"
               fill
               sizes="(max-width: 1024px) 100vw, 700px"

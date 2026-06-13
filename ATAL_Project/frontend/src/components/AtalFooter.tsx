@@ -322,7 +322,7 @@ export default function AtalFooter() {
           {/* ATAL LOGO AND HEADER (Middle) */}
           <div className="flex flex-col items-center justify-center text-center w-full md:w-1/3 md:mt-[50px] z-10">
             <Image
-              src="/long_form_logo.png"
+              src="/long_form_logo.webp"
               alt="ATAL Long Form Logo"
               width={400}
               height={133}
@@ -381,9 +381,12 @@ export default function AtalFooter() {
       <div className="absolute left-0 right-0 bottom-0 h-32 pointer-events-none z-10 flex flex-col justify-end">
         {/* Sun GIF setting/rising behind the grass tiles with full opacity for proper masking (lines vanish near sun) */}
         <div className={`absolute w-60 h-60 md:w-120 md:h-120 left-1/2 -translate-x-1/2 bottom-6 z-0 select-none overflow-hidden transition-opacity duration-500 ${isNight ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-          <img
-            src="/sun.gif?v=2"
+          <Image
+            src="/sun.gif"
             alt="Sun"
+            width={480}
+            height={480}
+            unoptimized
             style={{ imageRendering: "pixelated" }}
             className="w-full h-auto object-contain translate-y-[10%] opacity-100"
           />
@@ -391,9 +394,12 @@ export default function AtalFooter() {
 
         {/* Moon GIF setting/rising behind the grass tiles in dark mode */}
         <div className={`absolute w-60 h-60 md:w-120 md:h-120 left-1/2 -translate-x-1/2 bottom-6 z-0 select-none overflow-hidden transition-opacity duration-500 ${isNight ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <img
-            src="/moon.gif?v=2"
+          <Image
+            src="/moon.gif"
             alt="Moon"
+            width={480}
+            height={480}
+            unoptimized
             style={{ imageRendering: "pixelated" }}
             className="w-full h-auto object-contain translate-y-[10%] opacity-100"
           />
@@ -410,7 +416,7 @@ export default function AtalFooter() {
           <div
             className="absolute bottom-14 left-[20vw] w-[52px] h-5 bg-no-repeat"
             style={{
-              backgroundImage: "url(/grass.png?v=2)",
+              backgroundImage: "url(/grass.webp?v=2)",
               backgroundSize: "52px 20px"
             }}
           />
@@ -418,7 +424,7 @@ export default function AtalFooter() {
           <div
             className="absolute bottom-14 left-[70vw] w-[52px] h-5 bg-no-repeat"
             style={{
-              backgroundImage: "url(/grass.png?v=2)",
+              backgroundImage: "url(/grass.webp?v=2)",
               backgroundSize: "52px 20px"
             }}
           />
@@ -426,7 +432,7 @@ export default function AtalFooter() {
           <div
             className="absolute bottom-14 left-[120vw] w-[52px] h-5 bg-no-repeat"
             style={{
-              backgroundImage: "url(/grass.png?v=2)",
+              backgroundImage: "url(/grass.webp?v=2)",
               backgroundSize: "52px 20px"
             }}
           />
@@ -434,7 +440,7 @@ export default function AtalFooter() {
           <div
             className="absolute bottom-14 left-[170vw] w-[52px] h-5 bg-no-repeat"
             style={{
-              backgroundImage: "url(/grass.png?v=2)",
+              backgroundImage: "url(/grass.webp?v=2)",
               backgroundSize: "52px 20px"
             }}
           />
@@ -449,9 +455,12 @@ export default function AtalFooter() {
             <FlowerSVG color="red" className="w-10 h-10 md:w-14 md:h-14 pixelated -translate-x-8 translate-y-1" />
           </div>
           <div className="absolute bottom-0" style={{ right: "8%" }}>
-            <img
-              src="/tree.png?v=2"
+            <Image
+              src="/tree.webp"
               alt="Tree"
+              width={208}
+              height={320}
+              unoptimized
               style={{ imageRendering: "pixelated" }}
               className="h-32 w-auto md:h-48 object-contain translate-y-1 select-none pointer-events-none"
             />
@@ -469,9 +478,12 @@ export default function AtalFooter() {
           }}
           className="absolute z-35 select-none bottom-14 w-26 h-26 md:w-36 md:h-36 flex items-end justify-center"
         >
-          <img
-            src="/dog_walk.webp?v=2"
+          <Image
+            src="/dog_walk.webp"
             alt="Walking Dog"
+            width={208}
+            height={208}
+            unoptimized
             className="w-full h-auto object-contain pixelated translate-y-[2px]"
           />
         </div>
@@ -481,7 +493,7 @@ export default function AtalFooter() {
           className="w-full h-14 bg-repeat-x z-20 relative -mt-0.5"
           style={{
             animation: "groundDrift 44s linear infinite",
-            backgroundImage: "url(/ground_sprite.png?v=2)",
+            backgroundImage: "url(/ground_sprite.webp?v=2)",
             backgroundSize: "59px 56px"
           }}
         />

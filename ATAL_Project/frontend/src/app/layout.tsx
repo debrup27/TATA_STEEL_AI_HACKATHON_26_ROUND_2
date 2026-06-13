@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   title: "ATAL",
   description: "Autonomous Troubleshooting, Asset Intelligence & Lifecycle Management",
   icons: {
-    icon: "/short_form_logo.png",
+    icon: "/short_form_logo.webp",
   },
 };
 
@@ -44,7 +44,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col overflow-x-hidden">
         <Suspense fallback={null}>
           <PillNav
-            logo="/short_form_logo.png"
+            logo="/short_form_logo.webp"
             logoAlt="ATAL Logo"
             items={navItems}
             baseColor="#ffffff"

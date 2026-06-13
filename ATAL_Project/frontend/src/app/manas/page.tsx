@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 import ClickSpark from "../../animations/ClickSpark";
 import { Send, RefreshCw } from "lucide-react";
@@ -19,19 +20,57 @@ import {
   SourceContent,
   SourceTrigger
 } from "@/components/ai-components/source";
+import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
+import { useMockChatSimulation } from "@/hooks";
+import { SPRING_SOFT, SPRING_MEDIUM, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
+
+const DemoMessage = React.memo(function DemoMessage({ 
+  msg, 
+  compact 
+}: { 
+  msg: { role: string; content: string }; 
+  compact?: boolean 
+}) {
+  return (
+    <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[85%] font-semibold ${
+          compact 
+            ? "rounded-xl px-2.5 py-1.5 leading-normal shadow-3xs text-[10px]" 
+            : "rounded-2xl px-4 py-2.5 leading-normal shadow-xs text-[11px] sm:text-xs"
+        } ${
+          msg.role === "user"
+            ? `bg-zinc-900 text-white ${compact ? "rounded-tr-xs" : "rounded-tr-sm"}`
+            : `bg-white border border-zinc-200/80 text-zinc-700 ${compact ? "rounded-tl-xs" : "rounded-tl-sm"}`
+        }`}
+      >
+        {msg.content}
+      </div>
+    </div>
+  );
+});
 
 export default function ManasLandingPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   
   // Interactive Chat Demo states
   const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
+    getWelcomeMessage(),
   ]);
   const [inputText, setInputText] = useState("");
-  const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [showDemoProcessing, setShowDemoProcessing] = useState(false);
-  const [demoStep, setDemoStep] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+
+  const chatSim = useMockChatSimulation({
+    stepInterval: CHAT_SIM_OVERRIDE_STEP_INTERVAL,
+    extraDoneDelay: CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY,
+    onDone: () => {
+      setDemoMessages((prev) => {
+        const lastUserMsg = prev[prev.length - 1]?.content || "";
+        const reply = generateDemoReply(lastUserMsg);
+        return [...prev, { role: "assistant", content: reply }];
+      });
+    },
+  });
 
   useEffect(() => {
     const handleResize = () => {
@@ -44,59 +83,18 @@ export default function ManasLandingPage() {
 
   const handleSendDemoMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || isDemoLoading) return;
+    if (!inputText.trim() || chatSim.isLoading) return;
     const userMsg = inputText.trim();
     setDemoMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setInputText("");
-    setIsDemoLoading(true);
-    setDemoStep(0);
+    chatSim.start();
   };
 
-  useEffect(() => {
-    if (!isDemoLoading) return;
-    const timer = setTimeout(() => {
-      setShowDemoProcessing(true);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [isDemoLoading]);
-
-  useEffect(() => {
-    if (!showDemoProcessing) return;
-    const stepCount = 3;
-    const stepTimer = setInterval(() => {
-      setDemoStep((prev) => {
-        if (prev >= stepCount - 1) {
-          clearInterval(stepTimer);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 1200);
-
-    const doneTimer = setTimeout(() => {
-      setDemoMessages((prev) => {
-        const lastUserMsg = prev[prev.length - 1]?.content || "";
-        let reply = "Analysis complete. Asset integrity levels are nominal. Predictive wear models estimate 1,200 run hours before replacement. Let me know if you would like me to schedule a diagnostic run.";
-        const query = lastUserMsg.toLowerCase();
-        if (query.includes("status") || query.includes("check")) {
-          reply = "System status checks: SYS_OK. Telemetry readings are nominal and stable across all furnace segments.";
-        } else if (query.includes("valve") || query.includes("flow")) {
-          reply = "Optimal valve flow rate calculated at 240L/min. Command stages ready to execute.";
-        } else if (query.includes("ticket") || query.includes("generate")) {
-          reply = "Ticket ATAL-889 generated successfully for turbine diagnostic inspections.";
-        }
-        return [...prev, { role: "assistant", content: reply }];
-      });
-      setShowDemoProcessing(false);
-      setIsDemoLoading(false);
-      setDemoStep(0);
-    }, 1200 * stepCount + 400);
-
-    return () => {
-      clearInterval(stepTimer);
-      clearTimeout(doneTimer);
-    };
-  }, [showDemoProcessing]);
+  const resetDemo = () => {
+    setDemoMessages([getWelcomeMessage()]);
+    setInputText("");
+    chatSim.reset();
+  };
 
   // Scroll Progress Hooks (Desktop)
   const { scrollYProgress } = useScroll({
@@ -168,7 +166,7 @@ export default function ManasLandingPage() {
           <div 
             className="relative p-6 border border-black/10 rounded-2xl flex items-center justify-center overflow-hidden w-full"
             style={{
-              backgroundImage: "url('/pastel.png')",
+              backgroundImage: "url('/pastel.webp')",
               backgroundSize: "cover",
               backgroundPosition: "center"
             }}
@@ -191,37 +189,16 @@ export default function ManasLandingPage() {
                 <RefreshCw 
                   size={8} 
                   className="text-zinc-400 cursor-pointer hover:text-orange-500 transition-colors" 
-                  onClick={() => {
-                    setDemoMessages([
-                      { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
-                    ]);
-                    setInputText("");
-                    setIsDemoLoading(false);
-                    setShowDemoProcessing(false);
-                    setDemoStep(0);
-                  }}
+                  onClick={resetDemo}
                 />
               </div>
 
               {/* Chat Screen Messages area */}
               <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-transparent text-[10px] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
                 {demoMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-xl px-2.5 py-1.5 leading-normal shadow-3xs font-semibold ${
-                        msg.role === "user"
-                          ? "bg-zinc-900 text-white rounded-tr-xs"
-                          : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-xs"
-                      }`}
-                    >
-                      {msg.content}
-                    </div>
-                  </div>
+                  <DemoMessage key={i} msg={msg} compact />
                 ))}
-                {showDemoProcessing && (
+                {chatSim.showProcessing && (
                   <div className="max-w-[90%] self-start text-[9px]">
                     <Steps defaultOpen>
                       <StepsTrigger>
@@ -232,13 +209,13 @@ export default function ManasLandingPage() {
                       </StepsTrigger>
                       <StepsContent bar={<StepsBar />}>
                         <div className="space-y-1 mt-0.5 font-medium">
-                          <StepsItem status={demoStep > 0 ? "complete" : demoStep === 0 ? "active" : "pending"}>
+                          <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
                             Parsing telemetry
                           </StepsItem>
-                          <StepsItem status={demoStep > 1 ? "complete" : demoStep === 1 ? "active" : "pending"}>
+                          <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
                             Source referenced
                           </StepsItem>
-                          <StepsItem status={demoStep > 2 ? "complete" : demoStep === 2 ? "active" : "pending"}>
+                          <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
                             Formulating diagnosis
                           </StepsItem>
                         </div>
@@ -258,12 +235,12 @@ export default function ManasLandingPage() {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="Ask Manas..."
-                  disabled={isDemoLoading}
+                  disabled={chatSim.isLoading}
                   className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
                 />
                 <button
                   type="submit"
-                  disabled={!inputText.trim() || isDemoLoading}
+                  disabled={!inputText.trim() || chatSim.isLoading}
                   className="p-1 bg-zinc-950 text-white rounded-lg hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   <Send size={8} />
@@ -289,37 +266,6 @@ export default function ManasLandingPage() {
           
           <div className="sticky top-0 left-0 right-0 h-screen w-screen overflow-hidden bg-[#FAF9F5] relative">
             
-            {/* Styles for vertical gutters */}
-            <style dangerouslySetInnerHTML={{
-              __html: `
-                @keyframes marqueeDown {
-                  0% { transform: translateY(-50%); }
-                  100% { transform: translateY(0%); }
-                }
-                @keyframes marqueeUp {
-                  0% { transform: translateY(0%); }
-                  100% { transform: translateY(-50%); }
-                }
-                .animate-marquee-down {
-                  animation: marqueeDown 35s linear infinite;
-                }
-                .animate-marquee-up {
-                  animation: marqueeUp 35s linear infinite;
-                }
-                .manas-text-filled {
-                  font-family: var(--font-pixeloid);
-                  font-weight: 900;
-                  color: #000000;
-                  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-                  transform: rotate(90deg);
-                  display: inline-block;
-                }
-                .manas-text-filled:hover {
-                  color: #f97316;
-                  transform: scale(1.15) rotate(90deg);
-                }
-              `
-            }} />
 
             {/* Left Gutter - scrolling "CHAT WITH MANAS" */}
             <div className="absolute left-0 top-0 bottom-0 w-[8vw] overflow-hidden z-20 pointer-events-none flex flex-col justify-start">
@@ -371,7 +317,7 @@ export default function ManasLandingPage() {
                 <div 
                   className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 pointer-events-auto select-none overflow-hidden relative"
                   style={{
-                    backgroundImage: "url('/pastel.png')",
+                    backgroundImage: "url('/pastel.webp')",
                     backgroundSize: "cover",
                     backgroundPosition: "center"
                   }}
@@ -403,13 +349,7 @@ export default function ManasLandingPage() {
                             size={10} 
                             className="text-zinc-400 cursor-pointer hover:text-orange-500 transition-colors" 
                             onClick={() => {
-                              setDemoMessages([
-                                { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
-                              ]);
-                              setInputText("");
-                              setIsDemoLoading(false);
-                              setShowDemoProcessing(false);
-                              setDemoStep(0);
+                              resetDemo();
                             }}
                           />
                         </div>
@@ -418,22 +358,9 @@ export default function ManasLandingPage() {
                       {/* Chat Messages Panel */}
                       <div className="flex-1 p-4 overflow-y-auto flex flex-col gap-3.5 bg-transparent text-[11px] sm:text-xs [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
                         {demoMessages.map((msg, i) => (
-                          <div
-                            key={i}
-                            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                          >
-                            <div
-                              className={`max-w-[85%] rounded-2xl px-4 py-2.5 leading-normal shadow-xs font-semibold ${
-                                msg.role === "user"
-                                  ? "bg-zinc-900 text-white rounded-tr-sm"
-                                  : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-sm"
-                              }`}
-                            >
-                              {msg.content}
-                            </div>
-                          </div>
+                          <DemoMessage key={i} msg={msg} />
                         ))}
-                        {showDemoProcessing && (
+                        {chatSim.showProcessing && (
                           <div className="max-w-[85%] self-start text-[11px]">
                             <Steps defaultOpen>
                               <StepsTrigger>
@@ -444,10 +371,10 @@ export default function ManasLandingPage() {
                               </StepsTrigger>
                               <StepsContent bar={<StepsBar />}>
                                 <div className="space-y-1 mt-1 font-medium">
-                                  <StepsItem status={demoStep > 0 ? "complete" : demoStep === 0 ? "active" : "pending"}>
+                                  <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
                                     Parsing telemetry feeds
                                   </StepsItem>
-                                  <StepsItem status={demoStep > 1 ? "complete" : demoStep === 1 ? "active" : "pending"}>
+                                  <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
                                     <Source>
                                       <SourceTrigger label="datalake.atal" showFavicon />
                                       <SourceContent
@@ -457,7 +384,7 @@ export default function ManasLandingPage() {
                                     </Source>{" "}
                                     referenced
                                   </StepsItem>
-                                  <StepsItem status={demoStep > 2 ? "complete" : demoStep === 2 ? "active" : "pending"}>
+                                  <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
                                     Formulating diagnosis
                                   </StepsItem>
                                 </div>
@@ -477,12 +404,12 @@ export default function ManasLandingPage() {
                           value={inputText}
                           onChange={(e) => setInputText(e.target.value)}
                           placeholder="Ask Manas..."
-                          disabled={isDemoLoading}
+                          disabled={chatSim.isLoading}
                           className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
                         />
                         <button
                           type="submit"
-                          disabled={!inputText.trim() || isDemoLoading}
+                          disabled={!inputText.trim() || chatSim.isLoading}
                           className="p-2.5 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
                         >
                           <Send size={14} />
@@ -534,14 +461,14 @@ export default function ManasLandingPage() {
                       }}
                       className="absolute flex gap-16 items-center pointer-events-none"
                     >
-                      <img src="/message.png" alt="Message Icon" className="w-28 h-28 object-contain" />
-                      <img src="/leaf.png" alt="Leaf Icon" className="w-28 h-28 object-contain" />
-                      <img src="/brain.png" alt="Brain Icon" className="w-28 h-28 object-contain" />
+                      <Image src="/message.webp" alt="Message Icon" width={1536} height={1024} className="w-28 h-28 object-contain" />
+                      <Image src="/leaf.webp" alt="Leaf Icon" width={1536} height={1024} className="w-28 h-28 object-contain" />
+                      <Image src="/brain.webp" alt="Brain Icon" width={1536} height={1024} className="w-28 h-28 object-contain" />
                     </motion.div>
 
                     <motion.div 
                       layout
-                      transition={{ type: "spring", stiffness: 140, damping: 22 }}
+                      transition={{ type: "spring", ...SPRING_SOFT }}
                       style={{ fontSize: textSize }}
                       className={`font-bold text-zinc-950 leading-tight tracking-tight flex mt-20 md:mt-24 lg:mt-28 xl:mt-32 ${
                         isExpanded 
@@ -549,8 +476,8 @@ export default function ManasLandingPage() {
                           : "flex-col items-start text-left"
                       }`}
                     >
-                      <motion.span layout transition={{ type: "spring", stiffness: 140, damping: 22 }} className="whitespace-nowrap">Conversational agent</motion.span>
-                      <motion.span layout transition={{ type: "spring", stiffness: 140, damping: 22 }} className="whitespace-nowrap">is now yours.</motion.span>
+                      <motion.span layout transition={{ type: "spring", ...SPRING_SOFT }} className="whitespace-nowrap">Conversational agent</motion.span>
+                      <motion.span layout transition={{ type: "spring", ...SPRING_SOFT }} className="whitespace-nowrap">is now yours.</motion.span>
                     </motion.div>
                   </motion.div>
 
@@ -566,7 +493,7 @@ export default function ManasLandingPage() {
                         }}
                         initial="rest"
                         whileHover="hover"
-                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                        transition={{ type: "spring", ...SPRING_MEDIUM }}
                       >
                         <motion.span>Try manas now</motion.span>
                         <motion.div
@@ -575,7 +502,7 @@ export default function ManasLandingPage() {
                             rest: { width: 0, opacity: 0 },
                             hover: { width: "auto", opacity: 1 }
                           }}
-                          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                          transition={{ type: "spring", ...SPRING_MEDIUM }}
                         >
                           <span className="ml-2">→</span>
                         </motion.div>

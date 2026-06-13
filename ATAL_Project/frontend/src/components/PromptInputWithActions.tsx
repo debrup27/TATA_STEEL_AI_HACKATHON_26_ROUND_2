@@ -17,6 +17,9 @@ import { ArrowUp, Brain, Globe, Mic, Paperclip, Plus, Sparkles, X } from "lucide
 import type React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
+import { getPagesFromPdf } from "@/lib/pdf-renderer"
+import { fileToBase64, formatBytes } from "@/lib/utils"
+import { TOAST_DURATION, DURATION_SLOW, DURATION_FAST } from "@/lib/constants"
 
 const MAX_FILES = 5
 
@@ -30,44 +33,6 @@ interface UploadedFile {
 interface Toast {
   id: string
   message: string
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-  });
-}
-
-function formatBytes(bytes: number) {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-}
-
-async function renderPdfPages(file: File): Promise<string[]> {
-  const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist")
-  GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@6.0.227/build/pdf.worker.min.mjs`
-
-  const data = await file.arrayBuffer()
-  const pdf = await getDocument({ data }).promise
-  const urls: string[] = []
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const viewport = page.getViewport({ scale: 1.5 })
-    const canvas = document.createElement("canvas")
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    await page.render({ canvas, viewport }).promise
-    urls.push(canvas.toDataURL("image/webp", 0.92))
-  }
-
-  return urls
 }
 
 function genId() {
@@ -89,6 +54,7 @@ function PromptInputWithActions({
   contextEnabled = true,
   alertsEnabled = true,
   onDisableAlerts,
+  triggerToast,
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
@@ -104,31 +70,18 @@ function PromptInputWithActions({
   contextEnabled?: boolean
   alertsEnabled?: boolean
   onDisableAlerts?: () => void
+  triggerToast?: string | null
 }) {
   const [prompt, setPrompt] = useState("")
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [expandedFile, setExpandedFile] = useState<UploadedFile | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
-  const [showTooltip, setShowTooltip] = useState(false)
-  const prevHasContextRef = useRef(hasContext)
-
   useEffect(() => {
     if (!hasContext) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFiles([])
     }
-  }, [hasContext])
-
-  useEffect(() => {
-    if (hasContext && !prevHasContextRef.current) {
-      setShowTooltip(true)
-      const timer = setTimeout(() => {
-        setShowTooltip(false)
-      }, 3000)
-      return () => clearTimeout(timer)
-    }
-    prevHasContextRef.current = hasContext
   }, [hasContext])
 
   const toastTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -140,7 +93,7 @@ function PromptInputWithActions({
     toastTimers.current[id] = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
       delete toastTimers.current[id]
-    }, 3150)
+    }, TOAST_DURATION)
   }, [alertsEnabled])
 
   useEffect(() => {
@@ -149,6 +102,12 @@ function PromptInputWithActions({
       Object.values(currentTimers).forEach(clearTimeout)
     }
   }, [])
+
+  useEffect(() => {
+    if (triggerToast && alertsEnabled) {
+      addToast(triggerToast)
+    }
+  }, [triggerToast, addToast, alertsEnabled])
 
   const handleFilesAdded = useCallback(async (newFiles: File[]) => {
     const remaining = MAX_FILES - (contextCount || 0) - files.length
@@ -175,7 +134,7 @@ function PromptInputWithActions({
       addToast(`${uf.file.name} uploading...`)
       try {
         const pages = uf.file.type === "application/pdf"
-          ? await renderPdfPages(uf.file)
+          ? await getPagesFromPdf(uf.file)
           : [await fileToBase64(uf.file)]
 
         // Push directly to RAG conversation context
@@ -195,7 +154,7 @@ function PromptInputWithActions({
         addToast(`Failed to process ${uf.file.name}`)
       }
     }
-  }, [files.length, addToast])
+  }, [files.length, addToast, onUploadContextDoc, contextCount])
 
   const handleRemoveFile = useCallback((id: string, fileName: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id))
@@ -237,12 +196,24 @@ function PromptInputWithActions({
                 initial={{ opacity: 0, y: -8, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
+                transition={{ duration: DURATION_SLOW, ease: "easeOut" }}
                 className="pointer-events-auto max-w-[360px]"
               >
                 <SystemMessage variant="action" fill>
-                  <div className="flex flex-col gap-1">
-                    <span>{t.message}</span>
+                  <div className="flex flex-col gap-1 relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearTimeout(toastTimers.current[t.id]);
+                        delete toastTimers.current[t.id];
+                        setToasts((prev) => prev.filter((x) => x.id !== t.id));
+                      }}
+                      className="absolute top-0 right-0 p-0.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 transition-colors cursor-pointer pointer-events-auto"
+                      aria-label="Dismiss alert"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <span className="pr-5">{t.message}</span>
                     <button
                       type="button"
                       onClick={() => onDisableAlerts?.()}
@@ -467,27 +438,11 @@ function PromptInputWithActions({
                 )}
 
                 {hasContext && (
-                  <div className="relative">
-                    <AnimatePresence>
-                      {showTooltip && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 8, scale: 0.95, x: "-50%" }}
-                          animate={{ opacity: 1, y: 0, scale: 1, x: "-50%" }}
-                          exit={{ opacity: 0, y: 8, scale: 0.95, x: "-50%" }}
-                          transition={{ duration: 0.25, ease: "easeOut" }}
-                          className="absolute bottom-full left-1/2 mb-2 bg-[#1b253c]/95 backdrop-blur-md text-[#FAF9F5] text-[10px] font-bold py-1 px-3 rounded-lg whitespace-nowrap z-50 shadow-md border border-[#1b253c]/10"
-                        >
-                          Click to expand context panel
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1b253c]/95" />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                    <ContextPill
-                      count={contextCount}
-                      onClick={onContextClick || (() => {})}
-                      onDismiss={onClearContext || (() => {})}
-                    />
-                  </div>
+                  <ContextPill
+                    count={contextCount}
+                    onClick={onContextClick || (() => {})}
+                    onDismiss={onClearContext || (() => {})}
+                  />
                 )}
               </div>
               <div className="flex items-center gap-2">

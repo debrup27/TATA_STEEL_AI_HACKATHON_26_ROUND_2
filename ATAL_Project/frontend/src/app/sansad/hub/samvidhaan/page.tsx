@@ -2,49 +2,13 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 import LogoLoop from "@/animations/LogoLoop";
 import NodeWorkflow from "@/components/NodeWorkflow";
 
-// ─── CSS Animations ──────────────────────────────────────────────────────────
 
-const CSS_ANIMATIONS = `
-  @keyframes marqueeDown {
-    0% { transform: translateY(-50%); }
-    100% { transform: translateY(0%); }
-  }
-  @keyframes marqueeUp {
-    0% { transform: translateY(0%); }
-    100% { transform: translateY(-50%); }
-  }
-  @keyframes statusBlinkAnim {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-  @keyframes strokeFlow {
-    from { stroke-dashoffset: 24; }
-    to { stroke-dashoffset: 0; }
-  }
-  .animate-marquee-up { animation: marqueeUp 35s linear infinite; }
-  .animate-marquee-down { animation: marqueeDown 35s linear infinite; }
-  .atal-text-filled {
-    font-family: var(--font-pixeloid);
-    font-weight: 900;
-    color: #000000;
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    transform: rotate(90deg);
-    display: inline-block;
-  }
-  .atal-text-filled:hover {
-    color: #f97316;
-    transform: scale(1.1) rotate(90deg);
-  }
-  .stroke-dasharray-anim {
-    stroke-dasharray: 8, 4;
-    animation: strokeFlow 1.2s linear infinite;
-  }
-`;
 
 
 
@@ -271,7 +235,6 @@ export default function SamvidhaanPage() {
     return (
       <ClickSpark sparkColor="#f97316" sparkSize={8} sparkRadius={18} sparkCount={6} duration={350}
         className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none">
-        <style dangerouslySetInnerHTML={{ __html: CSS_ANIMATIONS }} />
         <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 max-w-lg mx-auto z-10">
           <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-xs">
             <h1 className="text-3xl font-black text-zinc-950 tracking-tighter uppercase leading-none" style={{ fontFamily: "var(--font-pixeloid)" }}>
@@ -294,15 +257,13 @@ export default function SamvidhaanPage() {
   return (
     <ClickSpark sparkColor="#f97316" sparkSize={8} sparkRadius={18} sparkCount={6} duration={350}
       className="relative w-full h-screen bg-[#FAF9F5] overflow-hidden select-none">
-      <style dangerouslySetInnerHTML={{ __html: CSS_ANIMATIONS }} />
-
       <div className="w-screen h-screen overflow-hidden bg-[#FAF9F5] relative flex">
 
         {/* Left Marquee */}
         <div className="absolute left-0 top-0 bottom-0 w-[8vw] overflow-hidden z-20 pointer-events-none flex flex-col border-r border-zinc-200/80 bg-[#FAF9F5]">
           <div className="animate-marquee-up flex flex-col items-center w-full">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12">
+              <div key={i} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12 pointer-events-auto">
                 <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider">SANSAD</span>
               </div>
             ))}
@@ -313,7 +274,7 @@ export default function SamvidhaanPage() {
         <div className="absolute right-0 top-0 bottom-0 w-[8vw] overflow-hidden z-20 pointer-events-none flex flex-col border-l border-zinc-200/80 bg-[#FAF9F5]">
           <div className="animate-marquee-down flex flex-col items-center w-full">
             {[...Array(12)].map((_, i) => (
-              <div key={i} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12">
+              <div key={i} className="w-full h-[33.33vh] flex items-center justify-center border-b border-zinc-200/60 py-12 pointer-events-auto">
                 <span className="atal-text-filled text-4xl lg:text-5xl xl:text-6xl tracking-wider">ATAL</span>
               </div>
             ))}
@@ -487,11 +448,11 @@ export default function SamvidhaanPage() {
                   </div>
                 </div>
 
-                {/* Hover image overlay — factory.png */}
+                {/* Hover image overlay — factory.webp */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
                   <div className="relative w-40 h-40 flex items-center justify-center">
                     <div className="absolute inset-0 bg-teal-500/10 blur-2xl rounded-full" />
-                    <img src="/factory.png" alt="Factory" className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
                   </div>
                 </div>
               </div>
@@ -561,11 +522,11 @@ export default function SamvidhaanPage() {
                   </div>
                 </div>
 
-                {/* Hover image overlay — factory.png */}
+                {/* Hover image overlay — factory.webp */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
                   <div className="relative w-40 h-40 flex items-center justify-center">
                     <div className="absolute inset-0 bg-amber-500/10 blur-2xl rounded-full" />
-                    <img src="/factory.png" alt="Factory" className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/factory.webp" alt="Factory" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
                   </div>
                 </div>
               </div>
@@ -636,7 +597,7 @@ export default function SamvidhaanPage() {
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
                   <div className="relative w-40 h-40 flex items-center justify-center">
                     <div className="absolute inset-0 bg-emerald-500/10 blur-2xl rounded-full" />
-                    <img src="/samvidhaan.png" alt="Samvidhaan" className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/samvidhaan.webp" alt="Samvidhaan" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
                   </div>
                 </div>
               </div>
@@ -707,7 +668,7 @@ export default function SamvidhaanPage() {
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
                   <div className="relative w-40 h-40 flex items-center justify-center">
                     <div className="absolute inset-0 bg-purple-500/10 blur-2xl rounded-full" />
-                    <img src="/brain.png" alt="Brain" className="w-32 h-32 object-contain relative z-10" />
+                    <Image src="/brain.webp" alt="Brain" width={1536} height={1024} className="w-32 h-32 object-contain relative z-10" />
                   </div>
                 </div>
               </div>

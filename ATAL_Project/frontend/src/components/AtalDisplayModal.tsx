@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Send, RefreshCw } from "lucide-react";
 import { triggerPageTransition } from "../animations/PageTransition";
@@ -17,6 +17,27 @@ import {
   SourceContent,
   SourceTrigger
 } from "./ai-components/source";
+import { useMockTelemetryCells, useMockChatSimulation } from "@/hooks";
+import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
+import { getManasPredictions } from "@/services/prediction";
+import { SPRING_DEFAULT, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
+import SansadGrid from "@/components/SansadGrid";
+
+const DemoMessage = React.memo(function DemoMessage({ msg }: { msg: { role: string; content: string } }) {
+  return (
+    <div className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[85%] rounded-2xl px-3.5 py-2 leading-normal shadow-xs ${
+          msg.role === "user"
+            ? "bg-zinc-900 text-white rounded-tr-sm"
+            : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-sm"
+        }`}
+      >
+        {msg.content}
+      </div>
+    </div>
+  );
+});
 
 interface TabItem {
   id: "atal_sansad" | "atal_manas";
@@ -33,126 +54,46 @@ interface RightPanelItem {
   icon: React.ReactNode;
 }
 
-interface TelemetryCell {
-  label: string;
-  value: string;
-  status: "nominal" | "warning" | "critical";
-}
-
 export default function AtalDisplayModal() {
   const [activeTab, setActiveTab] = useState<"atal_sansad" | "atal_manas">("atal_sansad");
 
-  // Sansad State
-  const [cells, setCells] = useState<TelemetryCell[]>([
-    { label: "BF1_TMP", value: "98°C", status: "warning" },
-    { label: "BF1_PRS", value: "3.1b", status: "nominal" },
-    { label: "VLV_04", value: "OPEN", status: "critical" },
-    { label: "ANOM_ST", value: "WARN", status: "warning" },
-    { label: "FLW_RT", value: "240L", status: "nominal" },
-    { label: "SYS_CK", value: "NOM", status: "nominal" }
-  ]);
+  const cells = useMockTelemetryCells();
 
-  // Manas State
   const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
+    getWelcomeMessage(),
   ]);
   const [manasInput, setManasInput] = useState("");
-  const [isDemoLoading, setIsDemoLoading] = useState(false);
-  const [showDemoProcessing, setShowDemoProcessing] = useState(false);
-  const [demoStep, setDemoStep] = useState(0);
+
+  const chatSim = useMockChatSimulation({
+    stepInterval: CHAT_SIM_OVERRIDE_STEP_INTERVAL,
+    extraDoneDelay: CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY,
+    onDone: () => {
+      setDemoMessages((prev) => {
+        const lastUserMsg = prev[prev.length - 1]?.content || "";
+        const reply = generateDemoReply(lastUserMsg);
+        return [...prev, { role: "assistant", content: reply }];
+      });
+    },
+  });
 
   const handleTabChange = (tabId: "atal_sansad" | "atal_manas") => {
     setActiveTab(tabId);
   };
 
-  // Live updates for telemetry cells (always active to feel alive)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCells((prev) =>
-        prev.map((cell) => {
-          if (Math.random() > 0.85) {
-            const statuses: ("nominal" | "warning" | "critical")[] = ["nominal", "warning", "critical"];
-            const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-            
-            let val = cell.value;
-            if (cell.label === "BF1_TMP") {
-              val = randomStatus === "critical" ? "106°C" : randomStatus === "warning" ? "98°C" : "89°C";
-            } else if (cell.label === "ANOM_ST") {
-              val = randomStatus === "critical" ? "CRIT" : randomStatus === "warning" ? "WARN" : "NOM";
-            } else if (cell.label === "SYS_CK") {
-              val = randomStatus === "critical" ? "FAIL" : "NOM";
-            }
-
-            return {
-              ...cell,
-              status: randomStatus,
-              value: val
-            };
-          }
-          return cell;
-        })
-      );
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Simulated AI diagnostics handler for Manas demo
   const handleSendDemoMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manasInput.trim() || isDemoLoading) return;
+    if (!manasInput.trim() || chatSim.isLoading) return;
     const userMsg = manasInput.trim();
     setDemoMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setManasInput("");
-    setIsDemoLoading(true);
-    setDemoStep(0);
+    chatSim.start();
   };
 
-  useEffect(() => {
-    if (!isDemoLoading) return;
-    const timer = setTimeout(() => {
-      setShowDemoProcessing(true);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [isDemoLoading]);
-
-  useEffect(() => {
-    if (!showDemoProcessing) return;
-    const stepCount = 3;
-    const stepTimer = setInterval(() => {
-      setDemoStep((prev) => {
-        if (prev >= stepCount - 1) {
-          clearInterval(stepTimer);
-          return prev;
-        }
-        return prev + 1;
-      });
-    }, 1200);
-
-    const doneTimer = setTimeout(() => {
-      setDemoMessages((prev) => {
-        const lastUserMsg = prev[prev.length - 1]?.content || "";
-        let reply = "Analysis complete. Asset integrity levels are nominal. Predictive wear models estimate 1,200 run hours before replacement. Let me know if you would like me to schedule a diagnostic run.";
-        const query = lastUserMsg.toLowerCase();
-        if (query.includes("status") || query.includes("check")) {
-          reply = "System status checks: SYS_OK. Telemetry readings are nominal and stable across all furnace segments.";
-        } else if (query.includes("valve") || query.includes("flow")) {
-          reply = "Optimal valve flow rate calculated at 240L/min. Command stages ready to execute.";
-        } else if (query.includes("ticket") || query.includes("generate")) {
-          reply = "Ticket ATAL-889 generated successfully for turbine diagnostic inspections.";
-        }
-        return [...prev, { role: "assistant", content: reply }];
-      });
-      setShowDemoProcessing(false);
-      setIsDemoLoading(false);
-      setDemoStep(0);
-    }, 1200 * stepCount + 400);
-
-    return () => {
-      clearInterval(stepTimer);
-      clearTimeout(doneTimer);
-    };
-  }, [showDemoProcessing]);
+  const resetDemo = () => {
+    setDemoMessages([getWelcomeMessage()]);
+    setManasInput("");
+    chatSim.reset();
+  };
 
   const tabs: TabItem[] = [
     {
@@ -175,76 +116,33 @@ export default function AtalDisplayModal() {
     }
   ];
 
-  const manasPredictions: RightPanelItem[] = [
-    {
-      title: "BF Taphole Drill",
-      badgeText: "RUL: 14d",
-      badgeType: "critical",
-      subtext: "Degradation Rate: Fast • Risk: High",
-      iconBgColor: "#3b82f6",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-      )
-    },
-    {
-      title: "HSM Roller Coiler",
-      badgeText: "RUL: 45d",
-      badgeType: "healthy",
-      subtext: "Degradation Rate: Normal • Risk: Low",
-      iconBgColor: "#22c55e",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      )
-    },
-    {
-      title: "BOF Lance Motor",
-      badgeText: "RUL: 8d",
-      badgeType: "critical",
-      subtext: "Degradation Rate: Accelerated • Risk: High",
-      iconBgColor: "#ef4444",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      )
-    },
-    {
-      title: "Sinter Exhaust Blower",
-      badgeText: "RUL: 120d",
-      badgeType: "healthy",
-      subtext: "Degradation Rate: Minimal • Risk: Normal",
-      iconBgColor: "#eab308",
-      icon: (
-        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
-      )
-    }
-  ];
+  const predictionIcons: Record<number, React.ReactNode> = {
+    0: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    1: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    2: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    3: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+    ),
+  };
 
-  // 9x9 Grid layout for drawing letter 'A'
-  const gridA = [
-    [0, 0, 0, 1, 1, 1, 0, 0, 0],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0],
-    [0, 0, 1, 0, 0, 0, 1, 0, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 1, 1, 1, 1, 1, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0],
-    [0, 1, 0, 0, 0, 0, 0, 1, 0]
-  ];
-
-  const gridCells = [];
-  for (let r = 0; r < 9; r++) {
-    for (let c = 0; c < 9; c++) {
-      gridCells.push({ row: r, col: c, isActive: gridA[r][c] === 1 });
-    }
-  }
+  const manasPredictions: RightPanelItem[] = getManasPredictions().map((p, i) => ({
+    ...p,
+    icon: predictionIcons[i] ?? null,
+  }));
 
   return (
     <div className="w-full flex flex-col items-center justify-center p-4">
@@ -280,7 +178,7 @@ export default function AtalDisplayModal() {
                     <motion.div
                       layoutId="activeTabBackground"
                       className="absolute inset-0 bg-white shadow-[0_2px_8px_rgba(59,130,246,0.15)] border border-blue-50/50 rounded-full -z-10"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                      transition={{ type: "spring", ...SPRING_DEFAULT }}
                     />
                   )}
                 </button>
@@ -295,72 +193,18 @@ export default function AtalDisplayModal() {
           {/* Left Panel: (8 Columns) - Displays page visual layout */}
           <div className="md:col-span-7 flex flex-col items-center justify-center relative min-h-[350px]">
             {activeTab === "atal_sansad" ? (
-              /* Sansad Page Redesign Visual: Interactive 9x9 Grid layout */
               <div className="w-full h-full flex flex-col items-center justify-center border border-zinc-100 rounded-2xl p-6 bg-zinc-50/40 relative">
-                <div className="relative p-8 bg-[#FAF6EE]/50 border border-black/15 rounded-3xl flex items-center justify-center w-full max-w-sm aspect-square shadow-sm">
-                  {/* Top Ruler */}
-                  <div className="absolute top-2.5 left-10 right-10 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                    <span>0.0</span>
-                    <span className="opacity-40 tracking-[0.25em] font-black uppercase">X-AXIS</span>
-                    <span>9.0</span>
-                  </div>
-
-                  {/* Bottom Ruler */}
-                  <div className="absolute bottom-2.5 left-10 right-10 flex justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                    <span>0.0</span>
-                    <span className="text-orange-500 font-bold tracking-[0.25em] uppercase">SYS_OK</span>
-                    <span>9.0</span>
-                  </div>
-
-                  {/* Left Ruler */}
-                  <div className="absolute left-2.5 top-10 bottom-10 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                    <span>9.0</span>
-                    <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">SANSAD</span>
-                    <span>0.0</span>
-                  </div>
-
-                  {/* Right Ruler */}
-                  <div className="absolute right-2.5 top-10 bottom-10 flex flex-col justify-between items-center text-[9px] font-mono text-zinc-400 select-none">
-                    <span>9.0</span>
-                    <span className="origin-center rotate-90 opacity-40 tracking-[0.25em] font-black uppercase my-4">ATAL</span>
-                    <span>0.0</span>
-                  </div>
-
-                  {/* Grid of Squares */}
-                  <div className="grid grid-cols-9 gap-1.5 p-2 bg-[#FAF9F5] border border-black/25 rounded-xl relative">
-                    {/* Corner crop marks / ticks */}
-                    <div className="absolute -top-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                    <div className="absolute -top-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                    <div className="absolute -bottom-1.5 -left-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-                    <div className="absolute -bottom-1.5 -right-1.5 font-mono text-[9px] text-zinc-400 font-bold select-none leading-none">+</div>
-
-                    {/* Animated Squares */}
-                    {gridCells.map((cell, idx) => {
-                      return (
-                        <motion.div
-                          key={idx}
-                          whileHover={
-                            cell.isActive
-                              ? { scale: 1.25, rotate: 90, backgroundColor: "#ea580c" }
-                              : { scale: 1.2, backgroundColor: "rgba(249, 115, 22, 0.2)" }
-                          }
-                          className={`w-5 h-5 sm:w-6 sm:h-6 rounded-[4px] cursor-pointer transition-shadow ${
-                            cell.isActive
-                              ? "bg-[#f97316] shadow-md shadow-orange-500/20 border border-black/15"
-                              : "border border-black/15 bg-[#FAF9F5]/60 hover:border-orange-300"
-                          }`}
-                        />
-                      );
-                    })}
-                  </div>
-                </div>
+                <SansadGrid
+                  className="p-8 bg-[#FAF6EE]/50 border border-black/15 rounded-3xl w-full max-w-sm aspect-square shadow-sm"
+                  cellSizeClass="w-5 h-5 sm:w-6 sm:h-6"
+                />
               </div>
             ) : (
               /* Manas Page Redesign Visual: Safari Browser mockup Chat Client */
               <div 
                 className="w-full h-full flex flex-col items-center justify-center p-4 border border-zinc-100 bg-zinc-50/40 rounded-2xl overflow-hidden relative"
                 style={{
-                  backgroundImage: "url('/pastel.png')",
+                  backgroundImage: "url('/pastel.webp')",
                   backgroundSize: "cover",
                   backgroundPosition: "center"
                 }}
@@ -380,15 +224,7 @@ export default function AtalDisplayModal() {
                       ATAL MANAS
                     </span>
                     <button 
-                      onClick={() => {
-                        setDemoMessages([
-                          { role: "assistant", content: "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics." }
-                        ]);
-                        setManasInput("");
-                        setIsDemoLoading(false);
-                        setShowDemoProcessing(false);
-                        setDemoStep(0);
-                      }}
+                      onClick={resetDemo}
                       className="text-zinc-400 hover:text-orange-500 transition-colors bg-transparent border-none p-0 cursor-pointer"
                     >
                       <RefreshCw size={12} />
@@ -398,22 +234,9 @@ export default function AtalDisplayModal() {
                   {/* Chat Messages Panel */}
                   <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-transparent text-[11px] sm:text-xs [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {demoMessages.map((msg, i) => (
-                      <div
-                        key={i}
-                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 leading-normal shadow-xs ${
-                            msg.role === "user"
-                              ? "bg-zinc-900 text-white rounded-tr-sm"
-                              : "bg-white border border-zinc-200/80 text-zinc-700 rounded-tl-sm"
-                          }`}
-                        >
-                          {msg.content}
-                        </div>
-                      </div>
+                      <DemoMessage key={i} msg={msg} />
                     ))}
-                    {showDemoProcessing && (
+                    {chatSim.showProcessing && (
                       <div className="max-w-[85%] self-start text-[11px]">
                         <Steps defaultOpen>
                           <StepsTrigger>
@@ -424,10 +247,10 @@ export default function AtalDisplayModal() {
                           </StepsTrigger>
                           <StepsContent bar={<StepsBar />}>
                             <div className="space-y-1 mt-1 font-medium">
-                              <StepsItem status={demoStep > 0 ? "complete" : demoStep === 0 ? "active" : "pending"}>
+                              <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
                                 Parsing telemetry feeds
                               </StepsItem>
-                              <StepsItem status={demoStep > 1 ? "complete" : demoStep === 1 ? "active" : "pending"}>
+                              <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
                                 <Source>
                                   <SourceTrigger label="datalake.atal" showFavicon />
                                   <SourceContent
@@ -437,7 +260,7 @@ export default function AtalDisplayModal() {
                                 </Source>{" "}
                                 referenced
                               </StepsItem>
-                              <StepsItem status={demoStep > 2 ? "complete" : demoStep === 2 ? "active" : "pending"}>
+                              <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
                                 Formulating diagnosis
                               </StepsItem>
                             </div>
@@ -457,12 +280,12 @@ export default function AtalDisplayModal() {
                       value={manasInput}
                       onChange={(e) => setManasInput(e.target.value)}
                       placeholder="Ask Manas..."
-                      disabled={isDemoLoading}
+                      disabled={chatSim.isLoading}
                       className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
                     />
                     <button
                       type="submit"
-                      disabled={!manasInput.trim() || isDemoLoading}
+                      disabled={!manasInput.trim() || chatSim.isLoading}
                       className="p-2 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
                     >
                       <Send size={12} />

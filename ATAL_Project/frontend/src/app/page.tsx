@@ -14,22 +14,14 @@ import AtalBottomBanner from "../components/AtalBottomBanner";
 import AtalFooter from "../components/AtalFooter";
 import { triggerPageTransition } from "../animations/PageTransition";
 
-// Short, custom transition animation for the website content
-const blurRevealVariants: Variants = {
-  hidden: {
-    filter: "blur(12px)",
-    opacity: 0,
-    y: 10
-  },
+const blurReveal: Variants = {
+  hidden: { filter: "blur(6px)", opacity: 0, y: 8 },
   visible: {
     filter: "blur(0px)",
     opacity: 1,
     y: 0,
-    transition: {
-      duration: 1.2,
-      ease: [0.25, 0.1, 0.25, 1] as const
-    }
-  }
+    transition: { duration: 1.0, ease: [0.25, 0.1, 0.25, 1] },
+  },
 };
 
 const textLogos: LogoItem[] = [
@@ -108,17 +100,16 @@ export default function Home() {
           <GLSLHills speed={0.4} />
         </div>
 
-        {/* Centered Content Wrapper (Logo & Text) with faster Blur Reveal Animation */}
-        {/* Shifted slightly downwards using translate-y-8 */}
+        {/* Centered Content Wrapper */}
         <motion.div
-          variants={blurRevealVariants}
+          variants={blurReveal}
           initial="hidden"
           animate="visible"
           className="relative z-20 w-full max-w-2xl px-6 flex flex-col items-center text-center transform translate-y-8 pointer-events-none"
         >
           {/* Logo */}
           <Image
-            src="/long_form_logo.png"
+            src="/long_form_logo.webp"
             alt="Project ATAL Logo"
             width={600}
             height={400}
@@ -148,7 +139,7 @@ export default function Home() {
         <div className="w-full max-w-6xl mx-auto flex flex-col items-center gap-4 relative z-20">
           <div className="flex flex-col items-center">
             <Image
-              src="/motif.png"
+              src="/motif.webp"
               alt="ATAL Motif"
               width={160}
               height={160}
@@ -191,9 +182,12 @@ export default function Home() {
               style={{ x: leftX, rotate: leftRotate, y: "-50%" }}
               className="absolute right-full mr-6 top-1/2 w-[700px] lg:w-[1000px] h-auto pointer-events-none z-10 origin-right hidden md:block"
             >
-              <img
-                src="/left_hand.png"
+              <Image
+                src="/left_hand.webp"
                 alt="Left Hand pointing"
+                width={1536}
+                height={1024}
+                priority
                 className="w-full h-auto object-contain"
               />
             </motion.div>
@@ -203,9 +197,12 @@ export default function Home() {
               style={{ x: rightX, rotate: rightRotate, y: "-50%" }}
               className="absolute left-full ml-6 top-1/2 w-[700px] lg:w-[1000px] h-auto pointer-events-none z-10 origin-left hidden md:block"
             >
-              <img
-                src="/right_hand.png"
+              <Image
+                src="/right_hand.webp"
                 alt="Right Hand pointing"
+                width={1536}
+                height={1024}
+                priority
                 className="w-full h-auto object-contain"
               />
             </motion.div>
@@ -245,6 +242,7 @@ function HoverButton() {
       <span>Get Started</span>
       <motion.span
         className="inline-block overflow-hidden text-lg md:text-xl font-bold align-middle"
+        initial={{ width: 0, opacity: 0, marginLeft: 0 }}
         animate={{
           width: isHovered ? 20 : 0,
           opacity: isHovered ? 1 : 0,

@@ -53,12 +53,6 @@ export default function PillNav({
   const logoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    gsap.set(container, { opacity: 0, y: 0, pointerEvents: "none", visibility: "hidden" });
-  }, [ease]);
-
-  useEffect(() => {
     const layout = () => {
       circleRefs.current.forEach((circle) => {
         if (!circle?.parentElement) return;
@@ -131,14 +125,14 @@ export default function PillNav({
     const navItems = navItemsRef.current;
 
     if (container) {
-      gsap.set(container, { visibility: "visible", pointerEvents: "auto" });
+      gsap.set(container, { opacity: 1, visibility: "visible", pointerEvents: "auto" });
     }
 
     if (logoEl) {
       gsap.set(logoEl, { scale: 0 });
       gsap.to(logoEl, {
         scale: 1,
-        duration: 0.6,
+        duration: 0.7,
         ease,
       });
     }
@@ -147,7 +141,7 @@ export default function PillNav({
       gsap.set(navItems, { width: 0, overflow: "hidden" });
       gsap.to(navItems, {
         width: "auto",
-        duration: 0.6,
+        duration: 0.7,
         ease,
       });
     }
@@ -170,7 +164,7 @@ export default function PillNav({
   useEffect(() => {
     if (!initialLoadAnimation) return;
 
-    const timer = setTimeout(animateReveal, 100);
+    const frame = requestAnimationFrame(() => animateReveal());
 
     const onTransitionStart = () => hideNav();
     const onTransitionComplete = () => animateReveal();
@@ -178,7 +172,7 @@ export default function PillNav({
     window.addEventListener("page-transition-complete", onTransitionComplete);
 
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(frame);
       window.removeEventListener("page-transition-start", onTransitionStart);
       window.removeEventListener("page-transition-complete", onTransitionComplete);
     };
@@ -355,6 +349,8 @@ export default function PillNav({
                       style={{
                         color: "var(--hover-text, #fff)",
                         willChange: "transform, opacity",
+                        opacity: 0,
+                        transform: "translateY(100%)",
                       }}
                       aria-hidden="true"
                     >

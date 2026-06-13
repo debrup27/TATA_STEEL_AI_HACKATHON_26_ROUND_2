@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
+import { TEXTAREA_MAX_ROWS, TEXTAREA_MAX_LENGTH } from "@/lib/constants";
 
 interface PromptInputContextValue {
   value: string;
@@ -64,8 +65,8 @@ interface PromptInputTextareaProps {
 function PromptInputTextarea({
   placeholder = "",
   className = "",
-  maxRows = 10,
-  maxLength = 2000,
+  maxRows = TEXTAREA_MAX_ROWS,
+  maxLength = TEXTAREA_MAX_LENGTH,
 }: PromptInputTextareaProps) {
   const { value, onValueChange, onSubmit, isLoading } = usePromptInput();
   const textareaRef = useRef<HTMLTextAreaElement>(null);

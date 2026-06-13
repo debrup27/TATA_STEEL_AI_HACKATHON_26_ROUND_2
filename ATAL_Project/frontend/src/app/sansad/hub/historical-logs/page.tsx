@@ -5,19 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Search, Terminal, FileText, Calendar, FileDown, FileCode, Maximize2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import ClickSpark from "@/animations/ClickSpark";
-
-interface MaintenanceLog {
-  id: string;
-  code: string;
-  date: string;
-  asset: string;
-  module: string;
-  description: string;
-  verdict: string;
-  operator: string;
-  pdfUrl?: string;
-  onlineContent?: string;
-}
+import { getMaintenanceLogs } from "@/services/maintenance";
+import type { MaintenanceLog } from "@/services/types";
 
 const problemStatementMd = `# AI Hackathon | Round 2 - Agentic AI Challenge | Problem Statement
 
@@ -257,36 +246,7 @@ export default function HistoricalLogsPage() {
       duration={350}
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes marqueeDown {
-            0% { transform: translateY(-50%); }
-            100% { transform: translateY(0%); }
-          }
-          @keyframes marqueeUp {
-            0% { transform: translateY(0%); }
-            100% { transform: translateY(-50%); }
-          }
-          .animate-marquee-up {
-            animation: marqueeUp 35s linear infinite;
-          }
-          .animate-marquee-down {
-            animation: marqueeDown 35s linear infinite;
-          }
-          .atal-text-filled {
-            font-family: var(--font-pixeloid);
-            font-weight: 900;
-            color: #000000;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            transform: rotate(90deg);
-            display: inline-block;
-          }
-          .atal-text-filled:hover {
-            color: #f97316;
-            transform: scale(1.1) rotate(90deg);
-          }
-        `
-      }} />
+
 
       {isMobile ? (
         <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 select-none max-w-lg mx-auto z-10">

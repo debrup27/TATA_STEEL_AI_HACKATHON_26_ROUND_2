@@ -4,28 +4,58 @@ import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, Play, Pause, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
+import { getModulesList } from "@/services/chat";
+import { useMockTelemetryLogs } from "@/hooks";
+import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
+import type { LogEntry } from "@/services/types";
 
-interface LogEntry {
-  id: number;
-  time: string;
-  module: string;
-  text: string;
-}
+const LogEntryCard = React.memo(function LogEntryCard({ 
+  log, 
+  onSelect 
+}: { 
+  log: LogEntry; 
+  onSelect: (log: LogEntry) => void;
+}) {
+  const isCritical = log.text.includes("CRITICAL");
+  const isWarning = log.text.includes("WARNING");
+  
+  let cardStyle = "bg-white border-zinc-200/80 hover:border-[#4A582E] hover:bg-zinc-50/40 text-zinc-700";
+  let badgeColor = "text-zinc-600 bg-zinc-100/80 border-zinc-200/60";
+  let indicatorIcon = <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />;
+  
+  if (isCritical) {
+    cardStyle = "bg-rose-50/20 border-rose-200 hover:border-rose-400 hover:bg-rose-50/40 text-rose-700 font-semibold";
+    badgeColor = "text-rose-600 bg-rose-50 border-rose-200/50";
+    indicatorIcon = <ShieldAlert className="w-5 h-5 text-rose-500 shrink-0 mt-0.5 animate-pulse" />;
+  } else if (isWarning) {
+    cardStyle = "bg-amber-50/25 border-amber-200 hover:border-amber-400 hover:bg-amber-50/40 text-amber-700";
+    badgeColor = "text-amber-600 bg-amber-50 border-amber-200/50";
+    indicatorIcon = <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />;
+  }
 
-const systemLogsPool = [
-  { module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
-  { module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
-  { module: "LadleTransfer-Optimizer", text: "Ladle transfer transit lag calculated at 42 minutes." },
-  { module: "Calibration-Service", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
-  { module: "LadleTransfer-Optimizer", text: "Liquid iron mass flow matches SMS caster throughput." },
-  { module: "ThermalCascade-Predictor", text: "No cascade anomalies detected in HSM coil coiler yard." },
-  { module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
-  { module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-  { module: "CokeOven-Agent", text: "F1-EQ11 electrostatic precipitator electrode voltage at 48 kV." },
-  { module: "CokeOven-Agent", text: "CRITICAL: F1-EQ09 Exhauster bearing RUL at 14 days. Extreme vibration peaks." },
-  { module: "Sinter-Agent", text: "WARNING: F2-EQ04 Drive sprocket tooth root fatigue. RUL at 18 days." },
-  { module: "Sinter-Agent", text: "NOMINAL: F2-EQ09 Waste Gas Fan Impeller wear level normal. RUL at 42 days." },
-];
+  return (
+    <div 
+      onClick={() => onSelect(log)}
+      className={`flex gap-4 items-start border rounded-2xl p-5 transition-colors duration-200 cursor-pointer group/log ${cardStyle}`}
+    >
+      {indicatorIcon}
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2 select-none">
+          <span className="text-sm font-semibold font-mono text-zinc-400 group-hover/log:text-zinc-500 transition-colors duration-300">[{log.time}]</span>
+          <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all duration-300 ${badgeColor}`}>
+            {log.module}
+          </span>
+        </div>
+        <span 
+          className="text-base leading-relaxed break-words font-medium block"
+          style={{ fontFamily: "var(--font-questrial)" }}
+        >
+          {log.text}
+        </span>
+      </div>
+    </div>
+  );
+});
 
 export default function LogsConsolePage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -36,8 +66,7 @@ export default function LogsConsolePage() {
   const [isLive, setIsLive] = useState(true);
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
 
-  // Expanded log stream logs
-  const [logs, setLogs] = useState<LogEntry[]>([
+  const { logs, clear } = useMockTelemetryLogs(2500, 50, isLive, [
     { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
     { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
     { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
@@ -65,32 +94,13 @@ export default function LogsConsolePage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSearchLoading(true);
-    const delay = searchQuery === "" ? 500 : 400;
+    const delay = searchQuery === "" ? SEARCH_DEBOUNCE_MS : 400;
     const timer = setTimeout(() => {
       setDebouncedSearchQuery(searchQuery);
       setSearchLoading(false);
     }, delay);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  // Log simulation updates (always running in background, but reactively filtered in view)
-  useEffect(() => {
-    if (!isLive) return;
-
-    let logIdCounter = 200;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
-      const template = systemLogsPool[Math.floor(Math.random() * systemLogsPool.length)];
-      
-      setLogs((prev) => {
-        const nextLogs = [...prev, { id: logIdCounter++, time: timeStr, module: template.module, text: template.text }];
-        return nextLogs.slice(-50); // Keep last 50 logs in expanded console
-      });
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [isLive]);
 
   // Autoscroll watcher
   useEffect(() => {
@@ -99,15 +109,7 @@ export default function LogsConsolePage() {
     }
   }, [logs]);
 
-  const modulesList = [
-    "ALL MODULES",
-    "Sansad-Hub",
-    "CokeOven-Agent",
-    "Sinter-Agent",
-    "ThermalCascade-Predictor",
-    "LadleTransfer-Optimizer",
-    "Calibration-Service"
-  ];
+  const modulesList = getModulesList();
 
   // Filtering logic
   const filteredLogs = logs.filter((log) => {
@@ -129,57 +131,7 @@ export default function LogsConsolePage() {
       duration={350}
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes marqueeDown {
-            0% { transform: translateY(-50%); }
-            100% { transform: translateY(0%); }
-          }
-          @keyframes marqueeUp {
-            0% { transform: translateY(0%); }
-            100% { transform: translateY(-50%); }
-          }
-          .animate-marquee-up {
-            animation: marqueeUp 35s linear infinite;
-          }
-          .animate-marquee-down {
-            animation: marqueeDown 35s linear infinite;
-          }
-          .atal-text-filled {
-            font-family: var(--font-pixeloid);
-            font-weight: 900;
-            color: #000000;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            transform: rotate(90deg);
-            display: inline-block;
-          }
-          .atal-text-filled:hover {
-            color: #f97316;
-            transform: scale(1.1) rotate(90deg);
-          }
-          
-          /* Sleek Custom Scrollbar */
-          .sansad-custom-scroll::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-          }
-          .sansad-custom-scroll::-webkit-scrollbar-track {
-            background: rgba(27, 37, 60, 0.04);
-            border-radius: 10px;
-          }
-          .sansad-custom-scroll::-webkit-scrollbar-thumb {
-            background: rgba(74, 88, 46, 0.3);
-            border-radius: 10px;
-          }
-          .sansad-custom-scroll::-webkit-scrollbar-thumb:hover {
-            background: rgba(74, 88, 46, 0.6);
-          }
-          .sansad-custom-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(74, 88, 46, 0.3) rgba(27, 37, 60, 0.04);
-          }
-        `
-      }} />
+
 
       {isMobile ? (
         <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 select-none max-w-lg mx-auto z-10">
@@ -317,11 +269,7 @@ export default function LogsConsolePage() {
                       {isLive ? "Pause" : "Resume"}
                     </button>
                     <button 
-                      onClick={() => {
-                        setLogs([
-                          { id: 1, time: new Date().toTimeString().split(" ")[0], module: "Sansad-Hub", text: "Diagnostics loop reset manual signal." }
-                        ]);
-                      }}
+                      onClick={clear}
                       className="h-10 px-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 font-bold text-xs uppercase cursor-pointer select-none"
                       style={{ fontFamily: "var(--font-pixeloid)" }}
                     >
@@ -384,7 +332,7 @@ export default function LogsConsolePage() {
                 <div className="flex-1 min-h-0 relative bg-[#FAF9F5] border border-zinc-200/70 rounded-2xl p-6">
                   <div 
                     ref={logContainerRef}
-                    className="sansad-custom-scroll h-full overflow-y-auto space-y-3 scroll-smooth pr-2 select-text"
+                    className="sansad-scroll-styled h-full overflow-y-auto space-y-3 scroll-smooth pr-2 select-text"
                   >
                     {searchLoading ? (
                       <div className="h-full w-full flex flex-col items-center justify-center text-center p-8 select-none animate-pulse">
@@ -407,48 +355,9 @@ export default function LogsConsolePage() {
                         </span>
                       </div>
                     ) : (
-                      filteredLogs.map((log) => {
-                        const isCritical = log.text.includes("CRITICAL");
-                        const isWarning = log.text.includes("WARNING");
-                        
-                        let cardStyle = "bg-white border-zinc-200/80 hover:border-[#4A582E] hover:bg-zinc-50/40 text-zinc-700";
-                        let badgeColor = "text-zinc-600 bg-zinc-100/80 border-zinc-200/60";
-                        let indicatorIcon = <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />;
-                        
-                        if (isCritical) {
-                          cardStyle = "bg-rose-50/20 border-rose-200 hover:border-rose-400 hover:bg-rose-50/40 text-rose-700 font-semibold";
-                          badgeColor = "text-rose-600 bg-rose-50 border-rose-200/50";
-                          indicatorIcon = <ShieldAlert className="w-5 h-5 text-rose-500 shrink-0 mt-0.5 animate-pulse" />;
-                        } else if (isWarning) {
-                          cardStyle = "bg-amber-50/25 border-amber-200 hover:border-amber-400 hover:bg-amber-50/40 text-amber-700";
-                          badgeColor = "text-amber-600 bg-amber-50 border-amber-200/50";
-                          indicatorIcon = <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />;
-                        }
-
-                        return (
-                          <div 
-                            key={log.id}
-                            onClick={() => setActiveLogForModal(log)}
-                            className={`flex gap-4 items-start border rounded-2xl p-5 transition-colors duration-200 cursor-pointer group/log ${cardStyle}`}
-                          >
-                            {indicatorIcon}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center justify-between gap-3 mb-2 select-none">
-                                <span className="text-sm font-semibold font-mono text-zinc-400 group-hover/log:text-zinc-500 transition-colors duration-300">[{log.time}]</span>
-                                <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all duration-300 ${badgeColor}`}>
-                                  {log.module}
-                                </span>
-                              </div>
-                              <span 
-                                className="text-base leading-relaxed break-words font-medium block"
-                                style={{ fontFamily: "var(--font-questrial)" }}
-                              >
-                                {log.text}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })
+                      filteredLogs.map((log) => (
+                        <LogEntryCard key={log.id} log={log} onSelect={setActiveLogForModal} />
+                      ))
                     )}
                   </div>
                 </div>

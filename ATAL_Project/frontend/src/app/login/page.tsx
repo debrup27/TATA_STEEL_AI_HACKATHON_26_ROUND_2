@@ -8,6 +8,7 @@ import AnimatedGradientBackground from "../../animations/AnimatedGradientBackgro
 import { GLSLHills } from "../../animations/GLSLHills";
 import ClickSpark from "../../animations/ClickSpark";
 import { triggerPageTransition } from "../../animations/PageTransition";
+import { SPRING_DEFAULT, SPRING_STIFF, DURATION_MEDIUM } from "@/lib/constants";
 
 // Memoized Background component to prevent re-renders when form states change
 const BackgroundLayers = React.memo(() => {
@@ -63,13 +64,13 @@ export default function LoginPage() {
       {/* Main Glassmorphic Auth Card with layout transition */}
       <motion.div
         layout
-        transition={{ type: "spring", stiffness: 220, damping: 26 }}
+        transition={{ type: "spring", ...SPRING_STIFF }}
         className="relative z-20 w-full max-w-md bg-white/45 backdrop-blur-xl border border-white/35 rounded-3xl shadow-2xl p-6 md:p-8 flex flex-col items-center select-none"
       >
         {/* Brand Header */}
         <motion.div layout className="flex flex-col items-center text-center mb-6">
           <Image
-            src="/long_form_logo.png"
+            src="/long_form_logo.webp"
             alt="ATAL Logo"
             width={220}
             height={44}
@@ -98,7 +99,7 @@ export default function LoginPage() {
                 <motion.div
                   layoutId="activeAuthTab"
                   className="absolute inset-0 bg-white shadow-sm rounded-full -z-10 border border-blue-50/50"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  transition={{ type: "spring", ...SPRING_DEFAULT }}
                 />
               )}
             </button>
@@ -114,7 +115,7 @@ export default function LoginPage() {
                 <motion.div
                   layoutId="activeAuthTab"
                   className="absolute inset-0 bg-white shadow-sm rounded-full -z-10 border border-blue-50/50"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  transition={{ type: "spring", ...SPRING_DEFAULT }}
                 />
               )}
             </button>
@@ -210,7 +211,7 @@ export default function LoginPage() {
             animate={{
               backgroundColor: isButtonHovered ? "#f97316" : "#1b253c", // Turns orange on hover
             }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
+            transition={{ duration: DURATION_MEDIUM, ease: "easeInOut" }}
             style={{ fontFamily: "var(--font-pixeloid), monospace" }}
             className="w-full mt-2 text-white py-3.5 rounded-2xl font-bold text-sm tracking-wide shadow-md transition-shadow flex items-center justify-center cursor-pointer select-none group transform active:scale-98"
           >
@@ -222,7 +223,7 @@ export default function LoginPage() {
                   opacity: isButtonHovered ? 1 : 0,
                   marginLeft: isButtonHovered ? 8 : 0,
                 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
+                transition={{ duration: DURATION_MEDIUM, ease: "easeOut" }}
                 className="inline-flex items-center overflow-hidden shrink-0"
               >
                 <ArrowRight className="size-4" />

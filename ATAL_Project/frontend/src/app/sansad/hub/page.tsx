@@ -1,114 +1,82 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpRight, ShieldAlert, AlertTriangle, CheckCircle } from "lucide-react";
 import ClickSpark from "../../../animations/ClickSpark";
 import LogoLoop from "../../../animations/LogoLoop";
+import {
+  getHubTelemetry,
+  tickExhausterVibration,
+  tickSinterFeO,
+  tickStrandSpeed,
+  tickExhausterHealth,
+  HUB_TICK_INTERVAL,
+} from "@/services/telemetry";
+import { useMockTelemetryLogs } from "@/hooks";
+import { DURATION_SECTION_FADE } from "@/lib/constants";
+import {
+  getFactory1Notifications,
+  getFactory2Notifications,
+  getSansadHubLogos,
+  getRulMonitorLogos,
+  getHistoricalLogsLogos,
+  getRiskPriorityLogos,
+  getRagLogsLogos,
+} from "@/services/tickers";
+import type { SystemLog, LogEntry } from "@/services/types";
 
-// Pre-defined list of potential live logs for simulation (focused on Sansad & Agent Army)
-const systemLogsPool = [
-  { module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
-  { module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
-  { module: "LadleTransfer-Optimizer", text: "Ladle transfer transit lag calculated at 42 minutes." },
-  { module: "Calibration-Service", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
-  { module: "LadleTransfer-Optimizer", text: "Liquid iron mass flow matches SMS caster throughput." },
-  { module: "ThermalCascade-Predictor", text: "No cascade anomalies detected in HSM coil coiler yard." },
-  { module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
-  { module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-  { module: "CokeOven-Agent", text: "F1-EQ11 electrostatic precipitator electrode voltage at 48 kV." },
-];
+const factory1Notifications = getFactory1Notifications();
+const factory2Notifications = getFactory2Notifications();
+const sansadHubLogos = getSansadHubLogos();
+const rulMonitorLogos = getRulMonitorLogos();
+const historicalLogsLogos = getHistoricalLogsLogos();
+const riskPriorityLogos = getRiskPriorityLogos();
+const ragLogsLogos = getRagLogsLogos();
 
-
-// Factory notification ticker data
-const factory1Notifications = [
-  { text: "EXHAUSTER VIBRATION: 6.42 mm/s", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "BEARING RUL: 14 DAYS", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "COG PRESSURE: NOMINAL", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F1-EQ09: CRITICAL ALERT", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "HEARTH TEMP: 1085°C", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const factory2Notifications = [
-  { text: "BELT FeO CONTENT: 8.3%", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "STRAND SPEED: 3.1 m/min", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "BTP POSITION: STABLE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F2-EQ04: WARN — FATIGUE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "SINTER YIELD: OPTIMAL", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const sansadHubLogos = [
-  { text: "CokeOven-Agent: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "Sinter-Agent: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "Cascade-Predictor: RUNNING", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "Manas Sync: LIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "LadleTransfer-Optimizer: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const rulMonitorLogos = [
-  { text: "F1-EQ09 Exhauster — 14d ⚠ CRITICAL", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F2-EQ04 Drive Sprocket — 18d WARN", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F2-EQ09 Waste Fan — 42d OK", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F1-EQ11 Precipitator — 95d OK", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const historicalLogsLogos = [
-  { text: "MR-2024-441 — Bearing replacement · F1-EQ09", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "MR-2024-388 — Sprocket lubrication · F2-EQ04", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "MR-2024-301 — Fan blade inspection · F2-EQ09", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const riskPriorityLogos = [
-  { text: "F1-EQ09 Exhauster — CRITICAL · Score 97", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F2-EQ04 Sprocket — HIGH · Score 81", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F2-EQ09 Waste Fan — MEDIUM · Score 54", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "F1-EQ11 Precipitator — LOW · Score 22", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const ragLogsLogos = [
-  { text: "QUERY: F1-EQ09 EXHAUSTER BEARING — RAG MATCH 98.4%", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "VECTOR SEARCH: CASCADE SIMILARITY INDEX", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "PROMPT COMPILED: SANSAD WORK ORDER PAYLOAD", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "CONTEXT RETRIEVED: 3 HISTORICAL CASES", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-interface SystemLog {
-  id: number;
-  time: string;
-  module: string;
-  text: string;
-}
+const SystemLogItem = React.memo(function SystemLogItem({ 
+  log, 
+  onSelect 
+}: { 
+  log: LogEntry;
+  onSelect: (log: LogEntry) => void;
+}) {
+  const handleClick = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(log);
+  }, [onSelect, log]);
+  const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
+  const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
+  let timeColor = "text-[#1b253c]/40 group-hover:text-[#1b253c]/60";
+  let moduleColor = "text-[#1b253c]/65 group-hover:text-[#1b253c]/85";
+  let textStyle = "text-[#1b253c]/80 group-hover:text-[#1b253c]";
+  let dot = "bg-zinc-300 group-hover:bg-zinc-400";
+  if (isCritical) { timeColor = "text-rose-500/60 group-hover:text-rose-600/80"; moduleColor = "text-rose-600 group-hover:text-rose-700"; textStyle = "text-rose-600 group-hover:text-rose-700 font-semibold"; dot = "bg-rose-500 group-hover:bg-rose-600"; }
+  else if (isWarning) { timeColor = "text-amber-600/60 group-hover:text-amber-700/80"; moduleColor = "text-amber-600 group-hover:text-amber-700"; textStyle = "text-amber-600 group-hover:text-amber-700"; dot = "bg-amber-500 group-hover:bg-amber-600"; }
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: DURATION_SECTION_FADE, ease: "easeOut" }}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(log);
+      }}
+      className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-2 transition-colors duration-300 cursor-pointer ${textStyle}`}
+    >
+      <span className={`mt-2 h-1.5 w-1.5 rounded-full flex-shrink-0 transition-colors duration-300 ${dot}`} />
+      <div>
+        <span style={{ fontFamily: "var(--font-questrial)" }} className={`text-[11px] block mb-0.5 transition-colors duration-300 ${timeColor}`}>[{log.time}]&nbsp;<span className={`font-bold transition-colors duration-300 ${moduleColor}`}>{log.module}</span></span>
+        <span style={{ fontFamily: "var(--font-questrial)" }} className="text-[14px] leading-snug transition-colors duration-300">{log.text}</span>
+      </div>
+    </motion.div>
+  );
+});
 
 export default function SansadMonitoringPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -121,7 +89,7 @@ export default function SansadMonitoringPage() {
   const [strandSpeed, setStrandSpeed] = useState(3.1);
 
   // Live Scrolling Logs State
-  const [systemLogs, setSystemLogs] = useState<Array<SystemLog>>([
+  const { logs: systemLogs } = useMockTelemetryLogs(HUB_TICK_INTERVAL, 25, true, [
     { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
     { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
     { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
@@ -132,6 +100,9 @@ export default function SansadMonitoringPage() {
   ]);
 
   const [activeLogForModal, setActiveLogForModal] = useState<SystemLog | null>(null);
+  const handleSelectLog = useCallback((log: LogEntry) => {
+    setActiveLogForModal(log);
+  }, []);
 
   const systemLogContainerRef = useRef<HTMLDivElement>(null);
 
@@ -145,44 +116,14 @@ export default function SansadMonitoringPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Fluctuating values and log appending simulation
+  // Fluctuating values simulation
   useEffect(() => {
-    let logIdCounter = 100;
     const interval = setInterval(() => {
-      setExhausterVibration((prev) => {
-        const delta = (Math.random() - 0.5) * 0.12;
-        const next = prev + delta;
-        return parseFloat(Math.max(6.2, Math.min(6.8, next)).toFixed(2));
-      });
-
-      setSinterFeO((prev) => {
-        const delta = (Math.random() - 0.5) * 0.08;
-        const next = prev + delta;
-        return parseFloat(Math.max(8.0, Math.min(8.48, next)).toFixed(2));
-      });
-
-      setStrandSpeed((prev) => {
-        const delta = (Math.random() - 0.5) * 0.05;
-        const next = prev + delta;
-        return parseFloat(Math.max(2.8, Math.min(3.4, next)).toFixed(1));
-      });
-
-      setExhausterHealth((prev) => {
-        if (Math.random() > 0.8) {
-          return Math.max(20, prev - 1);
-        }
-        return prev;
-      });
-
-      // Append new log to system logs
-      const now = new Date();
-      const timeStr = now.toTimeString().split(" ")[0];
-      const template = systemLogsPool[Math.floor(Math.random() * systemLogsPool.length)];
-      setSystemLogs((prev) => {
-        const nextLogs = [...prev, { id: logIdCounter++, time: timeStr, module: template.module, text: template.text }];
-        return nextLogs.slice(-25);
-      });
-    }, 3500);
+      setExhausterVibration((prev) => tickExhausterVibration(prev));
+      setSinterFeO((prev) => tickSinterFeO(prev));
+      setStrandSpeed((prev) => tickStrandSpeed(prev));
+      setExhausterHealth((prev) => tickExhausterHealth(prev));
+    }, HUB_TICK_INTERVAL);
 
     return () => clearInterval(interval);
   }, []);
@@ -203,45 +144,7 @@ export default function SansadMonitoringPage() {
       duration={350}
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes marqueeDown {
-            0% { transform: translateY(-50%); }
-            100% { transform: translateY(0%); }
-          }
-          @keyframes marqueeUp {
-            0% { transform: translateY(0%); }
-            100% { transform: translateY(-50%); }
-          }
-          .animate-marquee-up {
-            animation: marqueeUp 35s linear infinite;
-          }
-          .animate-marquee-down {
-            animation: marqueeDown 35s linear infinite;
-          }
-          .atal-text-filled {
-            font-family: var(--font-pixeloid);
-            font-weight: 900;
-            color: #000000;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            transform: rotate(90deg);
-            display: inline-block;
-          }
-          .atal-text-filled:hover {
-            color: #f97316;
-            transform: scale(1.1) rotate(90deg);
-          }
-          
-          /* Hide scrollbar but keep scroll functional */
-          .sansad-custom-scroll::-webkit-scrollbar {
-            width: 0px;
-            background: transparent;
-          }
-          .sansad-custom-scroll {
-            scrollbar-width: none;
-          }
-        `
-      }} />
+
 
       {isMobile ? (
         // MOBILE FALLBACK VIEW
@@ -344,7 +247,7 @@ export default function SansadMonitoringPage() {
               <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-10 bg-[#FAF9F5] z-30 select-none flex-shrink-0">
                 <div className="absolute left-1/2 -translate-x-1/2">
                   <span 
-                    className="text-2xl font-black uppercase tracking-tight text-[#1b253c] hover:text-[#f97316] hover:scale-105 transition-all duration-300 cursor-pointer inline-block" 
+                    className="text-2xl font-black uppercase tracking-tight text-[#1b253c] inline-block" 
                     style={{ fontFamily: "var(--font-pixeloid)" }}
                   >
                     SANSAD
@@ -633,41 +536,12 @@ export default function SansadMonitoringPage() {
                     <div className="flex-1 min-h-0 relative">
                       <div
                         ref={systemLogContainerRef}
-                        className="sansad-custom-scroll h-full overflow-y-auto space-y-3 scroll-smooth"
+                        className="sansad-scroll-hide h-full overflow-y-auto space-y-3 scroll-smooth"
                       >
                         <AnimatePresence mode="popLayout">
-                          {systemLogs.map((log) => {
-                            const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
-                            const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
-                            let timeColor = "text-[#1b253c]/40 group-hover:text-[#1b253c]/60";
-                            let moduleColor = "text-[#1b253c]/65 group-hover:text-[#1b253c]/85";
-                            let textStyle = "text-[#1b253c]/80 group-hover:text-[#1b253c]";
-                            let dot = "bg-zinc-300 group-hover:bg-zinc-400";
-                            if (isCritical) { timeColor = "text-rose-500/60 group-hover:text-rose-600/80"; moduleColor = "text-rose-600 group-hover:text-rose-700"; textStyle = "text-rose-600 group-hover:text-rose-700 font-semibold"; dot = "bg-rose-500 group-hover:bg-rose-600"; }
-                            else if (isWarning) { timeColor = "text-amber-600/60 group-hover:text-amber-700/80"; moduleColor = "text-amber-600 group-hover:text-amber-700"; textStyle = "text-amber-600 group-hover:text-amber-700"; dot = "bg-amber-500 group-hover:bg-amber-600"; }
-                            return (
-                              <motion.div
-                                key={log.id}
-                                layout
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                exit={{ opacity: 0 }}
-                                transition={{ duration: 0.4, ease: "easeOut" }}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setActiveLogForModal(log);
-                                }}
-                                className={`flex gap-2 items-start border-b border-[#1b253c]/5 group-hover:border-[#1b253c]/10 pb-2 transition-colors duration-300 cursor-pointer ${textStyle}`}
-                              >
-                                <span className={`mt-2 h-1.5 w-1.5 rounded-full flex-shrink-0 transition-colors duration-300 ${dot}`} />
-                                <div>
-                                  <span style={{ fontFamily: "var(--font-questrial)" }} className={`text-[11px] block mb-0.5 transition-colors duration-300 ${timeColor}`}>[{log.time}]&nbsp;<span className={`font-bold transition-colors duration-300 ${moduleColor}`}>{log.module}</span></span>
-                                  <span style={{ fontFamily: "var(--font-questrial)" }} className="text-[14px] leading-snug transition-colors duration-300">{log.text}</span>
-                                </div>
-                              </motion.div>
-                            );
-                          })}
+                          {systemLogs.map((log) => (
+                            <SystemLogItem key={log.id} log={log} onSelect={handleSelectLog} />
+                          ))}
                         </AnimatePresence>
                       </div>
                     </div>

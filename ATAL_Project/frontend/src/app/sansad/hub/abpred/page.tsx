@@ -4,17 +4,8 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ShieldAlert, TrendingUp, Clock, Package } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-
-interface RiskAsset {
-  id: string;
-  name: string;
-  score: number;
-  urgency: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-  impact: string;
-  sparesAvailable: boolean;
-  downtimeHours: number;
-  recommendation: string;
-}
+import { getRiskAssets, getScoreColor } from "@/services/prediction";
+import type { RiskAsset } from "@/services/types";
 
 export default function AbnormalityPredictionPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -29,59 +20,9 @@ export default function AbnormalityPredictionPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const risks: RiskAsset[] = [
-    {
-      id: "risk-1",
-      name: "F1-EQ09 Exhauster Bearing",
-      score: 97,
-      urgency: "CRITICAL",
-      impact: "Total Coke Gas flow bottleneck. High cascade risk: downstream blast furnace gas injection failure within 14 days.",
-      sparesAvailable: true,
-      downtimeHours: 6,
-      recommendation: "Purchase order approved. Schedule replacement on the upcoming Tuesday afternoon outage window.",
-    },
-    {
-      id: "risk-2",
-      name: "F2-EQ04 Drive Sprocket",
-      score: 81,
-      urgency: "HIGH",
-      impact: "Sintering strand speed degradation. Potential 15% throughput loss in iron ore burden feeding.",
-      sparesAvailable: false,
-      downtimeHours: 12,
-      recommendation: "Spares on backorder (estimated delivery 5 days). Implement speed cap limits on strand A.",
-    },
-    {
-      id: "risk-3",
-      name: "F2-EQ09 Waste Gas Fan Impeller",
-      score: 54,
-      urgency: "MEDIUM",
-      impact: "Minor emission regulation drift. Low process impact. Secondary ventilation loop redundancy matches spec.",
-      sparesAvailable: true,
-      downtimeHours: 4,
-      recommendation: "Add to inspection task list for regular check. Keep monitoring vibration spectral alarms.",
-    },
-    {
-      id: "risk-4",
-      name: "F1-EQ11 Electrostatic Precipitator",
-      score: 22,
-      urgency: "LOW",
-      impact: "Negligible process risk. Collector grid capacity operating at 92%. Nominal redundant plates clean.",
-      sparesAvailable: true,
-      downtimeHours: 2,
-      recommendation: "Schedule clean-out during standard monthly preventive maintenance cycle.",
-    },
-  ];
+  const risks: RiskAsset[] = getRiskAssets();
 
   const activeRisk = risks.find(r => r.id === activeRiskId) || risks[0];
-
-
-
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return "text-rose-500";
-    if (score >= 50) return "text-orange-500";
-    if (score >= 25) return "text-amber-500";
-    return "text-emerald-500";
-  };
 
   return (
     <ClickSpark
@@ -92,36 +33,7 @@ export default function AbnormalityPredictionPage() {
       duration={350}
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @keyframes marqueeDown {
-            0% { transform: translateY(-50%); }
-            100% { transform: translateY(0%); }
-          }
-          @keyframes marqueeUp {
-            0% { transform: translateY(0%); }
-            100% { transform: translateY(-50%); }
-          }
-          .animate-marquee-up {
-            animation: marqueeUp 35s linear infinite;
-          }
-          .animate-marquee-down {
-            animation: marqueeDown 35s linear infinite;
-          }
-          .atal-text-filled {
-            font-family: var(--font-pixeloid);
-            font-weight: 900;
-            color: #000000;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            transform: rotate(90deg);
-            display: inline-block;
-          }
-          .atal-text-filled:hover {
-            color: #f97316;
-            transform: scale(1.1) rotate(90deg);
-          }
-        `
-      }} />
+
 
       {isMobile ? (
         <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 select-none max-w-lg mx-auto z-10">
