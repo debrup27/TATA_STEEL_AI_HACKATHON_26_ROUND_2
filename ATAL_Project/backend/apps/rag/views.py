@@ -1,0 +1,54 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from apps.rag.models import Document
+from apps.users.permissions import IsAdmin
+
+
+class DocumentIngestView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        from apps.rag.tasks import ingest_document
+        doc, created = Document.objects.get_or_create(
+            title=request.data.get("title"),
+            defaults={
+                "doc_type": request.data.get("doc_type", "manual"),
+                "asset_scope": request.data.get("asset_scope", []),
+                "chroma_collection": request.data.get("chroma_collection", "EquipmentManual"),
+                "source_url": request.data.get("source_url", ""),
+            },
+        )
+        ingest_document.apply_async(args=[str(doc.id)])
+        return Response(
+            {"document_id": str(doc.id), "created": created, "status": "queued"},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class RAGQueryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.rag.retrieval import (
+            retrieve_sop, retrieve_iso_compliance,
+            retrieve_asset_intelligence, retrieve_safety_codes,
+        )
+        query = request.data.get("query", "")
+        retrieval_type = request.data.get("type", "asset_intelligence")
+        asset_id = request.data.get("asset_id")
+        standard_code = request.data.get("standard_code")
+        procedure_phase = request.data.get("procedure_phase")
+        asset_type = request.data.get("asset_type")
+
+        if retrieval_type == "sop":
+            results = retrieve_sop(asset_type or "", query, procedure_phase)
+        elif retrieval_type == "iso_compliance":
+            results = retrieve_iso_compliance(standard_code, asset_type, query)
+        elif retrieval_type == "safety_codes":
+            results = retrieve_safety_codes(asset_type, query)
+        else:
+            results = retrieve_asset_intelligence(asset_id or "", query)
+
+        return Response({"results": results, "count": len(results)})

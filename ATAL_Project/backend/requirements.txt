@@ -1,0 +1,67 @@
+# Core Django Stack
+Django>=6.0.6,<6.1  # 6.0.7 not released yet; <6.1 required by django-celery-beat
+djangorestframework>=3.17.1
+django-cors-headers>=4.7.0
+django-filter>=25.1
+channels>=4.2.2
+channels-redis>=4.2.1
+daphne>=4.1.2
+uvicorn[standard]>=0.35.0
+
+# Auth
+djangorestframework-simplejwt>=5.5.0
+
+# Database
+psycopg[binary]>=3.2.9
+django-timescaledb>=0.2.7
+
+# Async / Task Queue
+celery>=5.6.3
+django-celery-beat>=2.8.1
+django-celery-results>=2.5.1
+redis>=5.2.1
+
+# Vector Store (embedded — no separate service)
+chromadb>=0.6.0
+
+# LLM & Agents
+# vLLM is NOT installed here — it runs as a separate container service.
+# Django calls vLLM via its OpenAI-compatible REST API using httpx.
+langchain>=0.3.0
+langchain-community>=0.3.0
+langgraph>=0.2.0
+
+# Embeddings & Reranking (BGE-M3 + BGE Reranker v2-M3 via FlagEmbedding)
+FlagEmbedding>=1.2.0
+sentence-transformers==5.5.1
+rank-bm25==0.2.2
+
+# Document Processing
+pymupdf>=1.26.1
+pypdf==5.5.0
+unstructured[pdf]==0.17.2
+
+# ML
+scikit-learn==1.7.0
+xgboost==3.0.2
+lightgbm==4.6.0
+shap==0.47.2
+numpy==2.3.0
+pandas==2.3.0
+scipy==1.15.3
+
+# Data Version Control
+dvc==3.61.0
+
+# Utilities
+python-decouple==3.8
+Pillow==11.2.1
+httpx==0.28.1
+
+# Dev/Test
+pytest==8.4.0
+pytest-django==4.11.1
+pytest-asyncio==1.0.0
+factory-boy==3.3.3
+ruff==0.11.13
+coverage==7.8.2

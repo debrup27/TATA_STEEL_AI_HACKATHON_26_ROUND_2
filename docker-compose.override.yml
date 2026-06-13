@@ -1,0 +1,38 @@
+# Dev overrides — automatically applied by `docker compose up`
+# Bind-mounts source for hot reload; exposes Redis and Postgres for debugging.
+
+services:
+
+  postgres-db:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  django-backend:
+    volumes:
+      - ./ATAL_Project/backend:/app:cached
+      - chroma-data:/chroma_data
+      - ./models/bge-m3:/models/bge-m3:ro
+      - ./models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
+    command: >
+      uvicorn backend.asgi:application
+      --host 0.0.0.0
+      --port 8000
+      --reload
+
+  celery-worker:
+    volumes:
+      - ./ATAL_Project/backend:/app:cached
+      - chroma-data:/chroma_data
+    command: >
+      celery -A backend worker
+      --loglevel=debug
+      --concurrency=2
+      --queues=default,telemetry,ml_inference,rag,alerts
+
+  celery-beat:
+    volumes:
+      - ./ATAL_Project/backend:/app:cached

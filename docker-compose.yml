@@ -1,0 +1,198 @@
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  chroma-data:
+  redis-data:
+  staticfiles:
+
+services:
+
+  postgres-db:
+    image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-atal_db}
+      POSTGRES_USER: ${POSTGRES_USER:-atal_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atal_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:8.0-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # vLLM requires NVIDIA GPU — use `--profile gpu` to include, or set SKIP_VLLM_WAIT=1 without it
+  vllm:
+    image: vllm/vllm-openai:latest
+    restart: unless-stopped
+    profiles:
+      - gpu
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    volumes:
+      - ./models/qwen3-9b-mtp-q4:/models/qwen3-9b-mtp-q4:ro
+    command: >
+      --model /models/qwen3-9b-mtp-q4/Qwen3.5-9B-UD-Q4_K_XL.gguf
+      --dtype float16
+      --gpu-memory-utilization 0.90
+      --max-model-len 8192
+      --served-model-name qwen3-9b-mtp
+      --host 0.0.0.0
+      --port 8000
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+  django-backend:
+    build:
+      context: ./ATAL_Project/backend
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: backend.settings.dev
+      POSTGRES_HOST: postgres-db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CHROMA_PERSIST_DIR: /chroma_data
+      VLLM_BASE_URL: http://vllm:8000
+      BGE_M3_MODEL_PATH: /models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /models/bge-reranker-v2-m3
+      SKIP_VLLM_WAIT: "${SKIP_VLLM_WAIT:-0}"
+    volumes:
+      - staticfiles:/app/staticfiles
+      - chroma-data:/chroma_data
+      - ./models/bge-m3:/models/bge-m3:ro
+      - ./models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - frontend-net
+      - backend-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  celery-worker:
+    build:
+      context: ./ATAL_Project/backend
+      dockerfile: docker/Dockerfile.celery
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: backend.settings.dev
+      POSTGRES_HOST: postgres-db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CHROMA_PERSIST_DIR: /chroma_data
+      VLLM_BASE_URL: http://vllm:8000
+      BGE_M3_MODEL_PATH: /models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /models/bge-reranker-v2-m3
+    volumes:
+      - chroma-data:/chroma_data
+      - ./models/bge-m3:/models/bge-m3:ro
+      - ./models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
+    command: >
+      celery -A backend worker
+      --loglevel=info
+      --concurrency=4
+      --queues=default,telemetry,ml_inference,rag,alerts
+    networks:
+      - backend-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+      django-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A backend inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  celery-beat:
+    build:
+      context: ./ATAL_Project/backend
+      dockerfile: docker/Dockerfile.celery
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: backend.settings.dev
+      POSTGRES_HOST: postgres-db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+    command: >
+      celery -A backend beat
+      --loglevel=info
+      --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    networks:
+      - backend-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+      django-backend:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - staticfiles:/app/staticfiles:ro
+    networks:
+      - frontend-net
+    depends_on:
+      django-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

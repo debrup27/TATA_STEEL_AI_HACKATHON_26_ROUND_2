@@ -1,0 +1,41 @@
+graphify-out/
+CLAUDE.md
+
+# Environment files (never commit secrets)
+.env
+.env.dev
+.env.prod
+.env.local
+
+# Model weights (large binary files — download via scripts/download_models.sh)
+models/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+*.egg
+
+# Django
+staticfiles/
+media/
+*.sqlite3
+
+# Node
+node_modules/
+.next/
+out/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# Misc
+.DS_Store
+*.log
