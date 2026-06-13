@@ -107,6 +107,7 @@ export default function SamvidhaanPage() {
 
   const [hasLoaded, setHasLoaded] = useState(false);
   const [initializedFromContainer, setInitializedFromContainer] = useState(false);
+  const [isCanvasReady, setIsCanvasReady] = useState(false);
 
   // Set initial coordinates responsively on mount once we can measure the parent canvas
   useEffect(() => {
@@ -119,6 +120,7 @@ export default function SamvidhaanPage() {
             setNodes(parsed);
             setHasLoaded(true);
             setInitializedFromContainer(true);
+            setIsCanvasReady(true);
           }, 0);
           return;
         }
@@ -149,6 +151,7 @@ export default function SamvidhaanPage() {
             manas: { x: Math.round(width * 0.5 - 160), y: manasY },
           });
           setInitializedFromContainer(true);
+          setIsCanvasReady(true);
           resizeObserver.disconnect();
         }
       }
@@ -346,7 +349,13 @@ export default function SamvidhaanPage() {
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:32px_32px] opacity-[0.45] pointer-events-none" />
 
             {/* SVG Connectors (NodeWorkflow style) */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none select-none" style={{ zIndex: 1 }}>
+            <div
+              style={{
+                opacity: isCanvasReady ? 1 : 0,
+                transition: "opacity 0.15s ease-in",
+              }}
+            >
+              <svg className="absolute inset-0 w-full h-full pointer-events-none select-none" style={{ zIndex: 1 }}>
               {/* No glow filter */}
 
               {/* Factory 1 → Samvidhaan */}
@@ -428,7 +437,7 @@ export default function SamvidhaanPage() {
               }}
             >
               <div
-                className="w-[320px] h-[420px] bg-white/95 backdrop-blur-sm border border-zinc-200 rounded-2xl p-5 shadow-lg shadow-zinc-200/35 hover:scale-[1.02] hover:border-teal-500 hover:shadow-xl hover:shadow-teal-500/10 transition-all duration-300 flex flex-col group relative overflow-hidden"
+                className="w-[320px] h-[420px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-5 shadow-lg shadow-zinc-200/35 hover:scale-[1.02] hover:border-teal-500 hover:shadow-xl hover:shadow-teal-500/10 transition-all duration-300 flex flex-col group relative overflow-hidden"
                 style={{ fontFamily: "var(--font-questrial)" }}
               >
                 {/* Corner marks */}
@@ -501,7 +510,7 @@ export default function SamvidhaanPage() {
               }}
             >
               <div
-                className="w-[320px] h-[420px] bg-white/95 backdrop-blur-sm border border-zinc-200 rounded-2xl p-5 shadow-lg shadow-zinc-200/35 hover:scale-[1.02] hover:border-amber-500 hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 flex flex-col group relative overflow-hidden"
+                className="w-[320px] h-[420px] bg-white/95 backdrop-blur-sm border-2 border-zinc-950 rounded-2xl p-5 shadow-lg shadow-zinc-200/35 hover:scale-[1.02] hover:border-amber-500 hover:shadow-xl hover:shadow-amber-500/10 transition-all duration-300 flex flex-col group relative overflow-hidden"
                 style={{ fontFamily: "var(--font-questrial)" }}
               >
                 {/* Corner marks */}
@@ -712,6 +721,7 @@ export default function SamvidhaanPage() {
                 <span>Chat with Manas</span>
               </Link>
             </div>
+            </div>{/* end canvas fade-in wrapper */}
 
             {/* Factory 1 Modal Overlay */}
             {activeFactoryModal === "f1" && (

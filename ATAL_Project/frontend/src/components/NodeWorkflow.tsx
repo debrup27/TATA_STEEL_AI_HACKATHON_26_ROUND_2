@@ -499,6 +499,9 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  const [isCanvasReady, setIsCanvasReady] = useState(false);
+  const [enableTransition, setEnableTransition] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Center nodes vertically in container on mount or activeFactory change
@@ -514,6 +517,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
           const nodesCenterY = (minY + (maxY + 140)) / 2;
           const initialY = Math.round(height / 2 - nodesCenterY);
           setPanOffset({ x: 40, y: initialY });
+          setIsCanvasReady(true);
           observer.disconnect();
         }
       }
@@ -521,6 +525,13 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, [activeFactory]);
+
+  // Enable transform transitions after the initial correct position paints
+  React.useEffect(() => {
+    if (!isCanvasReady) return;
+    const timer = setTimeout(() => setEnableTransition(true), 60);
+    return () => clearTimeout(timer);
+  }, [isCanvasReady]);
 
   // Bezier curve path constructor
   const getBezierPath = (x1: number, y1: number, x2: number, y2: number) => {
@@ -898,7 +909,11 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         <div 
           className="absolute inset-0 z-10 origin-center select-none"
           style={{
-            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
+            opacity: isCanvasReady ? 1 : 0,
+            transition: isCanvasReady && enableTransition
+              ? "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+              : "opacity 0.15s ease-in",
           }}
         >
           {/* SVG Connecting Edges Path Layer */}

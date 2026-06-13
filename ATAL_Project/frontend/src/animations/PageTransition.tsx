@@ -206,7 +206,7 @@ export default function PageTransition({ children }: { children: React.ReactNode
               right: 0,
               bottom: 0,
               zIndex: 9999,
-              pointerEvents: "none",
+              pointerEvents: "auto",
               overflow: "hidden",
             }}
             initial={{ opacity: 1 }}
