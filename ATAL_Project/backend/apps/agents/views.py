@@ -4,7 +4,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from apps.agents.models import ChatSession, ChatMessage, ChatMessageFeedback
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 
 class ChatSessionListView(APIView):
@@ -94,7 +97,20 @@ class ChatSessionDetailView(APIView):
             session = ChatSession.objects.get(id=session_id, user=request.user)
         except ChatSession.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
-        session.delete()
+        try:
+            from apps.agents.stream_registry import request_cancel
+
+            request_cancel(str(session_id))
+        except Exception:
+            pass
+        try:
+            session.delete()
+        except Exception as exc:
+            logger.exception("chat session delete failed session=%s", session_id)
+            return Response(
+                {"error": f"Could not delete session: {exc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

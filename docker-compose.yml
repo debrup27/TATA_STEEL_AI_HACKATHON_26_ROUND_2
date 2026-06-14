@@ -387,7 +387,7 @@ services:
       BGE_RERANKER_MODEL_PATH: BAAI/bge-reranker-v2-m3
     command: >
       sh -c "
-        python manage.py migrate --noinput &&
+        python manage.py ensure_migrations &&
         pytest apps/agents/tests/test_preference_profile.py -v
       "
     networks:

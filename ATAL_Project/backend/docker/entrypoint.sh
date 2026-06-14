@@ -37,7 +37,7 @@ except Exception:
 "; do
         sleep 2
     done
-    $RUN_AS python manage.py migrate --noinput
+    $RUN_AS python manage.py ensure_migrations
     echo "[entrypoint] Lite boot complete."
     exec "$@"
 fi
@@ -61,7 +61,7 @@ except Exception:
 "; do
         sleep 2
     done
-    $RUN_AS python manage.py migrate --noinput
+    $RUN_AS python manage.py ensure_migrations
     echo "[entrypoint] Starting Celery process..."
     touch "${READY_MARKER}"
     exec "$@"
@@ -159,7 +159,7 @@ fi
 
 # ── Apply migrations ───────────────────────────────────────────────────────────
 echo "[entrypoint] Applying migrations..."
-$RUN_AS python manage.py migrate --noinput
+$RUN_AS python manage.py ensure_migrations
 
 # ── TimescaleDB: fix PK constraints + create hypertables ──────────────────────
 echo "[entrypoint] Setting up TimescaleDB hypertables..."
@@ -180,6 +180,10 @@ print('[entrypoint] ChromaDB ready.')
 # ── Seed asset fixtures (required before maintenance log seeding) ─────────────
 echo "[entrypoint] Seeding asset fixtures..."
 $RUN_AS python manage.py seed_fixtures || echo "[entrypoint] WARNING: seed_fixtures failed — check logs."
+
+echo "[entrypoint] Seeding spare parts catalog..."
+$RUN_AS python manage.py seed_spares --sync --force \
+  || echo "[entrypoint] WARNING: seed_spares failed — check logs."
 
 # ── Initial synthetic telemetry (populates TimescaleDB before UI loads) ─────
 echo "[entrypoint] Seeding initial synthetic telemetry..."
@@ -236,6 +240,23 @@ for a in Asset.objects.all():
 print('[entrypoint] ML inference queued for', Asset.objects.count(), 'assets')
 " 2>/dev/null || echo "[entrypoint] WARNING: could not queue ML inference"
 
+# ── Queue intelligence reports (2 per factory + per-asset plans) ─────────────
+echo "[entrypoint] Starting intelligence report seed (background thread, sync Ollama)..."
+$RUN_AS python manage.py shell -c "
+import threading
+from apps.maintenance.tasks import seed_intelligence_reports_sync
+
+def _run():
+    try:
+        seed_intelligence_reports_sync(trigger='startup')
+        print('[entrypoint] intelligence report seed complete')
+    except Exception as exc:
+        print('[entrypoint] WARNING: intelligence seed failed:', exc)
+
+threading.Thread(target=_run, daemon=True, name='intel-seed').start()
+print('[entrypoint] intelligence report seed started')
+" 2>/dev/null || echo "[entrypoint] WARNING: could not start intelligence reports"
+
 # ── Backend smoke tests (non-fatal — app starts regardless) ──────────────────
 # Runs AFTER migrations + seeds so DB state is correct.
 # Tests call localhost:8000 endpoints so we start the app in the background,
@@ -267,6 +288,13 @@ if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ] && echo "$*" | grep -q "uvicorn\|gunicorn
     echo "[entrypoint] Re-warming Ollama models before serving traffic..."
     $RUN_AS python manage.py warm_ollama --skip-rag \
         || echo "[entrypoint] WARNING: re-warm skipped (models loaded at startup / ollama busy)"
+fi
+
+# ── Final migration pass (picks up files added after image build / volume mount) ─
+if echo "$*" | grep -q "uvicorn\|gunicorn\|asgi\|celery"; then
+    echo "[entrypoint] Final migration check before serving..."
+    $RUN_AS python manage.py ensure_migrations \
+        || { echo "[entrypoint] ERROR: migrations failed — fix models/migrations and restart." >&2; exit 1; }
 fi
 
 # ── Start application (as appuser) ────────────────────────────────────────────
