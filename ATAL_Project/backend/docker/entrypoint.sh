@@ -57,7 +57,7 @@ print('[entrypoint] ChromaDB ready.')
 
 # ── Static files ──────────────────────────────────────────────────────────────
 echo "[entrypoint] Collecting static files..."
-python manage.py collectstatic --noinput --clear
+python manage.py collectstatic --noinput
 
 # ── Start application ─────────────────────────────────────────────────────────
 echo "[entrypoint] Starting application..."

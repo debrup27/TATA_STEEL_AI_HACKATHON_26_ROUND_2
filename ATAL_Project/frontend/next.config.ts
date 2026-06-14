@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// BACKEND_INTERNAL_URL: used for server-side Next.js rewrites (runs inside Docker, needs container hostname)
+// NEXT_PUBLIC_API_URL: used by browser-side code (apiFetch) — must be host-accessible
+const BACKEND_URL =
+  process.env.BACKEND_INTERNAL_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",

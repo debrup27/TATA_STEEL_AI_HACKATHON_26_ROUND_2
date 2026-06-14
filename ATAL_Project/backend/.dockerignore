@@ -1,0 +1,14 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+.env*
+*.sqlite3
+staticfiles
+media
+htmlcov
+.coverage
+*.md
