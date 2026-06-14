@@ -7,6 +7,30 @@ chown -R appuser:appuser /model-artifacts /app/staticfiles /chroma_data 2>/dev/n
 # ── All subsequent steps run as appuser ───────────────────────────────────────
 RUN_AS="gosu appuser"
 
+# ── Celery worker/beat: lightweight boot (django-backend runs full seed pipeline) ─
+if [ "${CELERY_LIGHT_ENTRYPOINT:-0}" = "1" ]; then
+    echo "[entrypoint] Celery light mode — migrate only, then start worker/beat."
+    until $RUN_AS python -c "
+import psycopg, os, sys
+try:
+    psycopg.connect(
+        host=os.environ.get('POSTGRES_HOST','postgres-db'),
+        port=os.environ.get('POSTGRES_PORT','5432'),
+        dbname=os.environ.get('POSTGRES_DB','atal_db'),
+        user=os.environ.get('POSTGRES_USER','atal_user'),
+        password=os.environ.get('POSTGRES_PASSWORD',''),
+    ).close()
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+"; do
+        sleep 2
+    done
+    $RUN_AS python manage.py migrate --noinput
+    echo "[entrypoint] Starting Celery process..."
+    exec "$@"
+fi
+
 # ── Wait for PostgreSQL ────────────────────────────────────────────────────────
 echo "[entrypoint] Waiting for postgres..."
 until $RUN_AS python -c "
@@ -71,6 +95,11 @@ print('[entrypoint] ChromaDB ready.')
 echo "[entrypoint] Seeding asset fixtures..."
 $RUN_AS python manage.py seed_fixtures || echo "[entrypoint] WARNING: seed_fixtures failed — check logs."
 
+# ── Initial synthetic telemetry (populates TimescaleDB before UI loads) ─────
+echo "[entrypoint] Seeding initial synthetic telemetry..."
+$RUN_AS python manage.py seed_initial_telemetry --samples=30 \
+  || echo "[entrypoint] WARNING: seed_initial_telemetry failed — check logs."
+
 # ── Ingest RAG corpus (idempotent — uses get_or_create, safe to re-run) ───────
 echo "[entrypoint] Ingesting RAG corpus (OEM manuals, ISO standards, SOPs, safety codes)..."
 $RUN_AS python manage.py ingest_corpus --sync --force || echo "[entrypoint] WARNING: corpus ingestion failed — check logs."
@@ -86,9 +115,27 @@ $RUN_AS python manage.py collectstatic --noinput
 echo "[entrypoint] Seeding Celery Beat schedules..."
 $RUN_AS python manage.py setup_beat_schedules
 
+# ── Queue first live telemetry batch (Celery worker picks up when ready) ──────
+echo "[entrypoint] Queueing initial synthetic telemetry batch..."
+$RUN_AS python manage.py shell -c "
+from apps.synthetic.tasks import orchestrate_all
+orchestrate_all.delay(n_samples=30)
+print('[entrypoint] orchestrate_all queued')
+" 2>/dev/null || echo "[entrypoint] WARNING: could not queue orchestrate_all"
+
 # ── Train ML models (skip if production artifacts already exist on disk) ───────
 echo "[entrypoint] Training ML models (skip if artifacts present)..."
 $RUN_AS python manage.py train_models --skip-if-exists --scenarios 300
+
+# ── Kick off initial ML inference for all assets (populates RUL/health on nodes) ─
+echo "[entrypoint] Queueing ML inference for all assets..."
+$RUN_AS python manage.py shell -c "
+from apps.assets.models import Asset
+from apps.ml.tasks import run_all_asset_models
+for a in Asset.objects.all():
+    run_all_asset_models.delay(str(a.id))
+print('[entrypoint] ML inference queued for', Asset.objects.count(), 'assets')
+" 2>/dev/null || echo "[entrypoint] WARNING: could not queue ML inference"
 
 # ── Backend smoke tests (non-fatal — app starts regardless) ──────────────────
 # Runs AFTER migrations + seeds so DB state is correct.

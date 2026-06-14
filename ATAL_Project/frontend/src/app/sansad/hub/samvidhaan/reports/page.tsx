@@ -5,23 +5,18 @@ import Link from "next/link";
 import { ArrowLeft, Search, FileText, Calendar, CheckCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import ClickSpark from "@/animations/ClickSpark";
-
-interface ReportItem {
-  id: string;
-  code: string;
-  date: string;
-  asset: string;
-  module: string;
-  author: string;
-  verdict: string;
-  reportMarkdown: string;
-}
+import { fetchReports, type ReportItem } from "@/services/reports";
 
 export default function ReportsPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedModule, setSelectedModule] = useState<string>("all");
-  const [activeItemId, setActiveItemId] = useState<string>("rep-1");
+  const [activeItemId, setActiveItemId] = useState<string>("");
+  const [items, setItems] = useState<ReportItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  void loading;
+  void error;
 
   useEffect(() => {
     const handleResize = () => {
@@ -32,76 +27,23 @@ export default function ReportsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const items: ReportItem[] = [
-    {
-      id: "rep-1",
-      code: "REP-2026-904",
-      date: "2026-06-13",
-      asset: "F1-EQ09 Centrifugal Exhauster",
-      module: "CokeOven-Agent",
-      author: "M. Chatterjee (Sr. Engineer)",
-      verdict: "CRITICAL ALERT - ACTION REQUIRED",
-      reportMarkdown: `# Centrifugal Exhauster Bearing Failure Anomaly Report
-
-## 1. Executive Summary
-Continuous diagnostics monitoring flagged high-amplitude vibration profiles on primary bearing housings of Coke Oven Exhauster F1-EQ09. Anomaly detection models confirm degradation has breached critical limit of 5.5 mm/s, projecting complete asset failure within 14 days. 
-
-## 2. Abnormality Analysis
-*   **Metric Peak Reading:** 6.42 mm/s (Cage frequency match at 2.4 kHz).
-*   **Temperature Indicator:** Stator baseline showing minor offset but remains safe at 64°C.
-*   **RUL Projection:** 14 Days Remaining.
-
-## 3. Maintenance Action Plan
-*   **Phase 1 (Immediate):** Increase lubrication pressure at housing ports, check torque calibration alignment.
-*   **Phase 2 (Shutdown):** Replace inboard spherical roller bearing (SRB-22316). 
-*   **Phase 3 (Procurement):** Supply chain order raised. Expected lead time: 3 Days.
-
-## 4. Operational Risk Assessment
-Failure to execute the replacement sequence within the projected 14-day window represents a high risk of catastrophic bearing seizure, leading to unscheduled Coke Oven gas distribution delays.
-`,
-    },
-    {
-      id: "rep-2",
-      code: "REP-2026-880",
-      date: "2026-06-11",
-      asset: "F2-EQ09 Waste Gas Fan Impeller",
-      module: "Sinter-Agent",
-      author: "A. Sengupta (Lead Supervisor)",
-      verdict: "WARNING - MONITORING SCHEDULED",
-      reportMarkdown: `# Waste Gas Fan Impeller Wear Summary
-
-## 1. Overview
-A wear index calculation was performed on Sinter Plant 2 Waste Gas Fan Impeller (F2-EQ09). Moderate blade abrasion was observed during standard visual inspect, aligning with process sensor timelines.
-
-## 2. Parameter Readings
-*   **Vibration Amplitude:** 4.21 mm/s (Within standard warning limits).
-*   **Estimated RUL:** 18 Days Remaining.
-*   **Pitting Score:** Moderate (Zone C).
-
-## 3. Corrective Measures
-*   Maintain fan speed limitations to a maximum load threshold of 80%.
-*   Weld reinforcement plates during the next scheduled plant turnaround.
-*   Verify dynamic balancing parameters post-repair.
-`,
-    },
-    {
-      id: "rep-3",
-      code: "REP-2026-722",
-      date: "2026-06-05",
-      asset: "F2-EQ04 Drive Sprocket",
-      module: "Sinter-Agent",
-      author: "R. Sharma (Maintenance Planner)",
-      verdict: "RESOLVED - LOG ENTRY NOMINAL",
-      reportMarkdown: `# Feeder Belt Drive Sprocket Lubrication Report
-
-## 1. Summary of Actions
-Coupling inspection and structural alignment performed on Sinter Plant belt feeder. Drive sprocket alignment offset reset to absolute baseline. Re-greased drive coupling utilizing industrial lithium-complex lubricant.
-
-## 2. Verdict
-Feeder sprocket alignment and vibration metrics back within nominal parameters. RUL index successfully recalibrated and reset to 120 Days.
-`,
-    }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    fetchReports()
+      .then((rows) => {
+        if (!cancelled) {
+          setItems(rows);
+          if (rows[0]) setActiveItemId(rows[0].id);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load reports");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const activeItem = items.find((i) => i.id === activeItemId) || items[0];
 

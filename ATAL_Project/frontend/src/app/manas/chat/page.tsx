@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useState, useRef } from "react";
-import Link from "next/link";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
@@ -9,11 +8,6 @@ import { PromptInputWithActions } from "../../../components/PromptInputWithActio
 import { getPagesFromPdf } from "@/lib/pdf-renderer";
 import { fileToBase64, formatBytes } from "@/lib/utils";
 import { DURATION_SLOW, DURATION_SECTION_FADE, DURATION_VERY_SLOW } from "@/lib/constants";
-import {
-  ChevronLeft,
-  ChevronRight,
-  LogOut
-} from "lucide-react";
 
 import {
   Steps,
@@ -24,14 +18,15 @@ import {
 import { TextShimmerLoader } from "@/components/ai-components/loader";
 import { ScrollButton } from "@/components/ai-components/scroll-button";
 import {
-  Source,
-  SourceContent,
-  SourceTrigger,
-} from "@/components/ai-components/source";
-import { getSessions, persistSessions } from "@/services/sessions";
-import { getPreloadedDocs, getRandomStaticReply } from "@/services/chat";
-import type { MessageFile, ChatSession, RagDoc } from "@/services/types";
-import { useMockChatSimulation } from "@/hooks";
+  fetchSessions,
+  fetchSessionDetail,
+  createSession,
+  sendChatMessage,
+  persistSessions,
+} from "@/services/sessions";
+import { getPreloadedDocs, ragCollectionsFromDocs } from "@/services/chat";
+import type { MessageFile, ChatSession, RagDoc, Citation } from "@/services/types";
+import { useChatStream } from "@/hooks";
 
 // Import broken down modular components
 import SettingsModal from "./components/SettingsModal";
@@ -42,15 +37,7 @@ import ContextPanel from "./components/ContextPanel";
 import ExpandedFileModal from "./components/ExpandedFileModal";
 
 export default function ManasChatPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = getSessions();
-        if (saved && saved.length > 0) return saved;
-      } catch { }
-    }
-    return [];
-  });
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -87,31 +74,101 @@ export default function ManasChatPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const promptedSessionsRef = useRef<Record<string, boolean>>({});
-  const onDoneRef = useRef<(() => void) | null>(null);
+  const streamSessionRef = useRef<string | null>(null);
+  const chatSimResetRef = useRef<() => void>(() => undefined);
 
-  const chatSim = useMockChatSimulation({
-    stepInterval: 1500,
-    extraDoneDelay: 500,
-    onDone: () => onDoneRef.current?.(),
-  });
-
-  useEffect(() => {
-    onDoneRef.current = () => {
-      const targetId = thinkingSessionIdRef.current || activeSessionId;
+  const chatSim = useChatStream({
+    sessionId: activeSessionId,
+    onToken: (token) => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
       if (!targetId) return;
-      const assistantReply = getRandomStaticReply();
-      setSessions((prevSessions) => {
-        return prevSessions.map((session) => {
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const msgs = [...session.messages];
+          const last = msgs[msgs.length - 1];
+          if (last?.role === "assistant") {
+            msgs[msgs.length - 1] = { ...last, content: last.content + token };
+          } else {
+            msgs.push({ role: "assistant", content: token });
+          }
+          return { ...session, messages: msgs };
+        }),
+      );
+    },
+    onDone: (payload) => {
+      const p = payload as { citations?: Citation[]; error?: string };
+      const citations = p?.citations;
+      const error = p?.error;
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (targetId) {
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.id !== targetId) return session;
+            const msgs = [...session.messages];
+            const last = msgs[msgs.length - 1];
+            if (last?.role === "assistant") {
+              const updated: typeof last = error && !last.content
+                ? { ...last, content: "⚠️ " + error }
+                : last;
+              msgs[msgs.length - 1] = citations?.length
+                ? { ...updated, citations }
+                : updated;
+            }
+            return { ...session, messages: msgs };
+          }),
+        );
+      }
+      streamSessionRef.current = null;
+      thinkingSessionIdRef.current = null;
+      chatSimResetRef.current();
+    },
+    onCompacting: () => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      setSessions((prev) =>
+        prev.map((session) => {
           if (session.id !== targetId) return session;
           return {
             ...session,
-            messages: [...session.messages, { role: "assistant" as const, content: assistantReply }],
+            messages: [
+              ...session.messages,
+              { role: "system" as const, content: "Running context compaction…", isCompacting: true },
+            ],
           };
-        });
-      });
-      thinkingSessionIdRef.current = null;
-    };
+        }),
+      );
+    },
+    onCompacted: (data) => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const msgs = session.messages.map((m) =>
+            m.role === "system" && m.isCompacting
+              ? { role: "system" as const, content: `Context compacted — ${data?.compacted_count ?? "older"} messages summarised` }
+              : m,
+          );
+          return { ...session, messages: msgs };
+        }),
+      );
+    },
   });
+
+  useEffect(() => {
+    chatSimResetRef.current = chatSim.reset;
+  }, [chatSim.reset]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSessions()
+      .then((rows) => {
+        if (!cancelled) setSessions(rows);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   // Derived state
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) || null : null;
@@ -165,7 +222,9 @@ export default function ManasChatPage() {
           setActiveSessionId(null);
           setShowRagSelector(true);
           setShowRightPanel(true);
-          setSelectedPreloadedDocs(getPreloadedDocs().map(d => d.name));
+          void getPreloadedDocs().then((docs) =>
+            setSelectedPreloadedDocs(docs.map((d) => d.name)),
+          );
         }, 0);
         return () => clearTimeout(timer);
       }
@@ -314,46 +373,60 @@ export default function ManasChatPage() {
     setTimeout(() => setTriggerToast(null), 100);
   }, [activeSessionId]);
 
-  const handleSendMessage = useCallback((messageText: string, attachedFiles?: MessageFile[]) => {
+  const handleSendMessage = useCallback(async (messageText: string, attachedFiles?: MessageFile[]) => {
     let targetId = activeSessionId;
+    const session = targetId ? sessions.find((s) => s.id === targetId) : null;
+    const ragNames = session?.ragDocs?.map((d) => d.name) ?? [];
+
     if (!targetId) {
-      targetId = `session-${Date.now()}`;
-      const newSession: ChatSession = {
-        id: targetId,
-        title: messageText.slice(0, 40) || "New Chat",
-        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        messages: [],
-        ragDocs: [],
-      };
-      setSessions((prev) => [...prev, newSession]);
-      setActiveSessionId(targetId);
+      const created = await createSession(undefined, messageText.slice(0, 40) || "New Chat");
+      targetId = created.id;
+      setSessions((prev) => [...prev, created]);
+      setActiveSessionId(created.id);
     }
+
     thinkingSessionIdRef.current = targetId;
+    streamSessionRef.current = targetId;
 
-    setSessions((prevSessions) => {
-      return prevSessions.map((session) => {
-        if (session.id !== targetId) return session;
-
-        const updatedMessages = [...session.messages, { role: "user" as const, content: messageText, files: attachedFiles }];
-
-        // Auto rename title if it was default "New Session"
-        const isNew = session.title === "New Session" || session.messages.length === 0;
+    setSessions((prevSessions) =>
+      prevSessions.map((s) => {
+        if (s.id !== targetId) return s;
+        const updatedMessages = [
+          ...s.messages,
+          { role: "user" as const, content: messageText, files: attachedFiles },
+          { role: "assistant" as const, content: "" },
+        ];
+        const isNew = s.title === "New Session" || s.messages.length === 0;
         const newTitle = isNew
           ? messageText.length > 25
-            ? messageText.slice(0, 25) + "..."
+            ? `${messageText.slice(0, 25)}...`
             : messageText
-          : session.title;
-
-        return {
-          ...session,
-          title: newTitle,
-          messages: updatedMessages,
-        };
-      });
-    });
+          : s.title;
+        return { ...s, title: newTitle, messages: updatedMessages };
+      }),
+    );
 
     chatSim.start();
-  }, [activeSessionId, chatSim.start]);
+    try {
+      await sendChatMessage(targetId, messageText, ragCollectionsFromDocs(ragNames));
+    } catch {
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== targetId) return s;
+          const msgs = [...s.messages];
+          const last = msgs[msgs.length - 1];
+          if (last?.role === "assistant" && !last.content) {
+            msgs[msgs.length - 1] = {
+              role: "assistant",
+              content: "Sorry — could not reach the backend. Check login and try again.",
+            };
+          }
+          return { ...s, messages: msgs };
+        }),
+      );
+      chatSim.reset();
+    }
+  }, [activeSessionId, sessions, chatSim]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -364,7 +437,27 @@ export default function ManasChatPage() {
     setActiveSessionId(null);
   }, []);
 
+  const handleSelectSession = useCallback(async (id: string) => {
+    setActiveSessionId(id);
+    // Load messages from backend if not yet fetched for this session
+    setSessions((prev) => {
+      const existing = prev.find((s) => s.id === id);
+      if (existing && existing.messages.length > 0) return prev;  // already loaded
+      // Kick off async load; update state when it resolves
+      fetchSessionDetail(id)
+        .then((detail) => {
+          setSessions((p) => p.map((s) => (s.id === id ? { ...s, messages: detail.messages } : s)));
+        })
+        .catch(() => undefined);
+      return prev;
+    });
+  }, []);
+
   const handleDeleteSession = useCallback((idToDelete: string) => {
+    // Fire-and-forget backend delete — ignore errors (session already gone from UI)
+    import("@/services/sessions").then(({ deleteSessionRemote }) => {
+      deleteSessionRemote(idToDelete).catch(() => undefined);
+    });
     setSessions((prev) => {
       const updated = prev.filter((s) => s.id !== idToDelete);
       if (activeSessionId === idToDelete) {
@@ -415,7 +508,7 @@ export default function ManasChatPage() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         onNewSession={handleNewSession}
-        onSelectSession={setActiveSessionId}
+        onSelectSession={handleSelectSession}
         onDeleteSession={handleDeleteSession}
         onOpenSettings={() => setShowSettings(true)}
       />
@@ -519,35 +612,17 @@ export default function ManasChatPage() {
                     >
                       <Steps defaultOpen>
                         <StepsTrigger>
-                          <TextShimmerLoader
-                            text={deepThinking ? "Deep Thinking..." : "Processing your request"}
-                            size="md"
-                          />
+                          <TextShimmerLoader text="Analyzing maintenance context" size="md" />
                         </StepsTrigger>
                         <StepsContent>
                           <div className="space-y-1">
-                            {deepThinking ? (
-                              <>
-                                <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>Reasoning through asset data</StepsItem>
-                                <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>Evaluating equipment history logs</StepsItem>
-                                <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>Compiling wear projections</StepsItem>
-                              </>
-                            ) : (
-                              <>
-                                <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>Parsing telemetry feeds</StepsItem>
-                                <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
-                                  <Source href="https://example.com">
-                                    <SourceTrigger label="datalake.atal" showFavicon />
-                                    <SourceContent
-                                      title="ATAL Diagnostic Lake"
-                                      description="Primary index for asset sensor feeds."
-                                    />
-                                  </Source>{" "}
-                                  referenced
-                                </StepsItem>
-                                <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>Formulating diagnosis</StepsItem>
-                              </>
-                            )}
+                            <StepsItem status="complete">Request received</StepsItem>
+                            <StepsItem status="active">
+                              {activeSession?.ragDocs && activeSession.ragDocs.length > 0
+                                ? `Referencing: ${activeSession.ragDocs.map((d) => d.name).join(", ")}`
+                                : "Analyzing your query"}
+                            </StepsItem>
+                            <StepsItem status="pending">Generating response</StepsItem>
                           </div>
                         </StepsContent>
                       </Steps>

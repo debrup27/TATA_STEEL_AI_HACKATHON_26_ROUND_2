@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { triggerPageTransition } from "../animations/PageTransition";
 
 export interface UserInfo {
   username: string;
@@ -73,7 +74,11 @@ export function useUser() {
       setUser(null);
       // Dispatch event to sync other mounted components instantly
       window.dispatchEvent(new Event("user-state-change"));
-      window.location.href = "/login";
+      // Defer the transition trigger to allow React state updates to settle
+      // and avoid race conditions that could leave the loading overlay stuck.
+      setTimeout(() => {
+        triggerPageTransition("/");
+      }, 0);
     }
   };
 

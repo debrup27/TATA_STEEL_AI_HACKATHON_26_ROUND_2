@@ -23,18 +23,18 @@ import {
   getRiskPriorityLogos,
   getRagLogsLogos,
 } from "@/services/tickers";
+import { useFactoryTickers } from "@/hooks/useFactoryTickers";
 import type { LogEntry } from "@/services/types";
 
 // Import modular components
 import { SystemLogItem } from "./components/SystemLogItem";
+import { SystemLogControls } from "./components/SystemLogControls";
 import MobileMonitoringView from "./components/MobileMonitoringView";
 import VerticalMarquee from "./components/VerticalMarquee";
 import FactoryCard from "./components/FactoryCard";
 import SubPanelCard from "./components/SubPanelCard";
 import LogDetailModal from "./components/LogDetailModal";
 
-const factory1Notifications = getFactory1Notifications();
-const factory2Notifications = getFactory2Notifications();
 const sansadHubLogos = getSansadHubLogos();
 const rulMonitorLogos = getRulMonitorLogos();
 const historicalLogsLogos = getHistoricalLogsLogos();
@@ -44,22 +44,26 @@ const ragLogsLogos = getRagLogsLogos();
 export default function SansadMonitoringPage() {
   const [isMobile, setIsMobile] = useState(false);
 
+  // Live factory notification tickers from real ML/alert API
+  const { f1: factory1Notifications, f2: factory2Notifications } = useFactoryTickers(
+    "F1", "F2",
+    getFactory1Notifications(),
+    getFactory2Notifications(),
+  );
+
   // Simulated telemetry states
   const [exhausterVibration, setExhausterVibration] = useState(6.42);
   const [exhausterHealth, setExhausterHealth] = useState(24);
   const [sinterFeO, setSinterFeO] = useState(8.3);
   const [strandSpeed, setStrandSpeed] = useState(3.1);
 
-  // Live Scrolling Logs State
-  const { logs: systemLogs } = useMockTelemetryLogs(HUB_TICK_INTERVAL, 25, true, [
-    { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-    { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
-    { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
-    { id: 4, time: "22:19:19", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-    { id: 5, time: "22:19:22", module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
-    { id: 6, time: "22:19:26", module: "Sinter-Agent", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
-    { id: 7, time: "22:19:30", module: "CokeOven-Agent", text: "NOMINAL: F1-EQ11 Electrostatic Precipitator electrodes stable. RUL at 95 days." },
-  ]);
+  // Live system log stream (alerts, maintenance, AI reports)
+  const [isLogStreamLive, setIsLogStreamLive] = useState(true);
+  const { logs: systemLogs, clear: clearSystemLogs, status: logStreamStatus } = useMockTelemetryLogs(
+    HUB_TICK_INTERVAL,
+    25,
+    isLogStreamLive,
+  );
 
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
   
@@ -91,12 +95,11 @@ export default function SansadMonitoringPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Handle Auto-scroll for the system logs container
+  // Handle Auto-scroll for the system logs container (only while live)
   useEffect(() => {
-    if (systemLogContainerRef.current) {
-      systemLogContainerRef.current.scrollTop = systemLogContainerRef.current.scrollHeight;
-    }
-  }, [systemLogs]);
+    if (!isLogStreamLive || !systemLogContainerRef.current) return;
+    systemLogContainerRef.current.scrollTop = systemLogContainerRef.current.scrollHeight;
+  }, [systemLogs, isLogStreamLive]);
 
   return (
     <ClickSpark
@@ -227,14 +230,22 @@ export default function SansadMonitoringPage() {
                     <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
                     <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
 
-                    <div className="flex-shrink-0 mb-3 flex justify-between items-center select-none">
+                    <div className="flex-shrink-0 mb-3 flex justify-between items-center select-none gap-2">
                       <h2 className="text-xl font-black text-[#1b253c] uppercase" style={{ fontFamily: "var(--font-questrial)" }}>
                         SYSTEM LOG STREAM
                       </h2>
-                      <Link href="/sansad/hub/logs" className="flex items-center gap-1 text-[10px] font-bold text-[#1b253c]/40 hover:text-[#f97316] uppercase tracking-wider transition-colors duration-300 font-mono group/expand cursor-pointer">
-                        <span>Click here to expand</span>
-                        <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover/expand:rotate-45" />
-                      </Link>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <SystemLogControls
+                          compact
+                          isLive={isLogStreamLive}
+                          onToggleLive={() => setIsLogStreamLive((v) => !v)}
+                          onClear={clearSystemLogs}
+                        />
+                        <Link href="/sansad/hub/logs" className="flex items-center gap-1 text-[10px] font-bold text-[#1b253c]/40 hover:text-[#f97316] uppercase tracking-wider transition-colors duration-300 font-mono group/expand cursor-pointer">
+                          <span>Click here to expand</span>
+                          <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover/expand:rotate-45" />
+                        </Link>
+                      </div>
                     </div>
 
                     <div className="flex-1 min-h-0 relative">
@@ -243,9 +254,24 @@ export default function SansadMonitoringPage() {
                         className="sansad-scroll-hide h-full overflow-y-auto space-y-3 scroll-smooth"
                       >
                         <AnimatePresence mode="popLayout">
-                          {systemLogs.map((log) => (
-                            <SystemLogItem key={log.id} log={log} onSelect={handleSelectLog} />
-                          ))}
+                          {systemLogs.length === 0 ? (
+                            <p
+                              className="text-[11px] text-[#1b253c]/45 uppercase tracking-wider font-mono py-4"
+                              style={{ fontFamily: "var(--font-questrial)" }}
+                            >
+                              {logStreamStatus === "auth_required"
+                                ? "Sign in required — open /login to view live system logs"
+                                : logStreamStatus === "error"
+                                  ? "Unable to reach log API — check backend is running"
+                                  : isLogStreamLive
+                                    ? "Awaiting system alerts and maintenance events…"
+                                    : "Stream paused — resume to load new entries"}
+                            </p>
+                          ) : (
+                            systemLogs.map((log) => (
+                              <SystemLogItem key={log.id} log={log} onSelect={handleSelectLog} />
+                            ))
+                          )}
                         </AnimatePresence>
                       </div>
                     </div>

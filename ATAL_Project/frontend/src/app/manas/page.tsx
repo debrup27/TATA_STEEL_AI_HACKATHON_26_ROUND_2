@@ -55,7 +55,7 @@ export default function ManasLandingPage() {
   const { user } = useUser();
   
   // Interactive Chat Demo states
-  const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+  const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant" | "system"; content: string }[]>([
     getWelcomeMessage(),
   ]);
   const [inputText, setInputText] = useState("");

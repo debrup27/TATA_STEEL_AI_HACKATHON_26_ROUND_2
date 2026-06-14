@@ -49,6 +49,18 @@ function generateWavePath(progress: number): string {
   return path;
 }
 
+/** Normalize paths so `/`, `/login`, and `/login/` compare equal for transition logic. */
+function normalizePath(path: string): string {
+  if (!path) return "/";
+  const base = path.split("?")[0].split("#")[0] || "/";
+  if (base === "/") return "/";
+  return base.endsWith("/") ? base : `${base}/`;
+}
+
+function pathsEqual(a: string, b: string): boolean {
+  return normalizePath(a) === normalizePath(b);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 export function triggerPageTransition(href: string) {
   if (typeof window !== "undefined") {
@@ -71,6 +83,7 @@ export default function PageTransition({ children }: { children: React.ReactNode
   const rafRef = useRef<number | null>(null);
   const washStartRef = useRef<number | null>(null);
   const prevPathRef = useRef(pathname);
+  const pathnameRef = useRef(pathname);
 
   // Keep phaseRef in sync for use inside non-reactive callbacks
   useEffect(() => { 
@@ -81,7 +94,18 @@ export default function PageTransition({ children }: { children: React.ReactNode
     }
   }, [phase]);
 
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
+
   const WASH_DURATION = 1300;
+
+  const beginWash = () => {
+    setTimeout(() => {
+      setPhase("washing");
+      washStartRef.current = null;
+    }, 80);
+  };
 
   // ── 1. Trigger: custom event (from triggerPageTransition or global interceptor)
   useEffect(() => {
@@ -138,9 +162,15 @@ export default function PageTransition({ children }: { children: React.ReactNode
   useEffect(() => {
     if (phase !== "covering") return;
     const timer = setTimeout(() => {
-      if (pendingHref.current) {
-        router.push(pendingHref.current);
-        pendingHref.current = null;
+      const href = pendingHref.current;
+      pendingHref.current = null;
+      if (!href) return;
+
+      if (pathsEqual(href, pathnameRef.current)) {
+        // Same route (e.g. logout on home) — pathname won't change, so wash manually.
+        beginWash();
+      } else {
+        router.push(href);
       }
     }, 700); // matches blob animation duration
     return () => clearTimeout(timer);

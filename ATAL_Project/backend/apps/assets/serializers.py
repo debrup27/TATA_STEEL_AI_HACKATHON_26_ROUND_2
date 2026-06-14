@@ -44,8 +44,13 @@ class AssetHealthSerializer(serializers.Serializer):
     rul_hours = serializers.FloatField(allow_null=True)
     status = serializers.CharField()
     active_alerts_count = serializers.IntegerField()
-    twin_state_summary = serializers.DictField()
-    last_prediction_time = serializers.DateTimeField(allow_null=True)
+    anomaly_score = serializers.FloatField(required=False, allow_null=True)
+    fault_classification = serializers.IntegerField(required=False, allow_null=True)
+    ml_source = serializers.CharField(required=False, allow_null=True)
+    campaign_hours = serializers.FloatField(required=False)
+    last_maintenance = serializers.DictField(required=False, allow_null=True)
+    twin_state_summary = serializers.DictField(required=False)
+    last_prediction_time = serializers.DateTimeField(allow_null=True, required=False)
 
 
 class FactorySerializer(serializers.ModelSerializer):

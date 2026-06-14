@@ -12,3 +12,10 @@ media
 htmlcov
 .coverage
 *.md
+models
+data/corpus
+data/raw
+data/processed
+chroma-data
+graphify-out
+*.log

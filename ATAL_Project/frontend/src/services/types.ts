@@ -69,10 +69,18 @@ export interface MessageFile {
   pages: string[];
 }
 
+export interface Citation {
+  doc: string;
+  section?: string;
+  score?: number;
+}
+
 export interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
   files?: MessageFile[];
+  citations?: Citation[];
+  isCompacting?: boolean;
 }
 
 export interface RagDoc {
@@ -94,11 +102,6 @@ export interface ChatSession {
 export interface TickerItem {
   text: string;
   isSeparator: boolean;
-}
-
-export interface SystemLogTemplate {
-  module: string;
-  text: string;
 }
 
 export interface ProductionLineData {

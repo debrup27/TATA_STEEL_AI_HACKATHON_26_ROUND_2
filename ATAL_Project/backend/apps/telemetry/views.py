@@ -56,15 +56,22 @@ class TelemetryTimeSeriesView(APIView):
         asset = get_object_or_404(Asset, pk=asset_id)
         sensor_name = request.query_params.get("sensor")
         from_dt = request.query_params.get("from", (timezone.now() - timedelta(hours=24)).isoformat())
-        to_dt = request.query_params.get("to", timezone.now().isoformat())
+        # Allow 2 min future buffer — synthetic generator timestamps readings slightly ahead
+        to_dt = request.query_params.get("to", (timezone.now() + timedelta(minutes=2)).isoformat())
         limit = int(request.query_params.get("limit", 1000))
 
         qs = SensorReading.objects.filter(
             asset=asset, time__gte=from_dt, time__lte=to_dt
-        ).order_by("time")[:limit]
-
+        )
         if sensor_name:
             qs = qs.filter(sensor_def__sensor_name=sensor_name)
+
+        order = request.query_params.get("order", "desc")
+        if order == "asc":
+            rows = list(qs.order_by("time")[:limit])
+        else:
+            # Default: newest readings first (dashboards / factory canvas)
+            rows = list(qs.order_by("-time")[:limit])
 
         data = [
             {
@@ -74,6 +81,51 @@ class TelemetryTimeSeriesView(APIView):
                 "unit": r.sensor_def.unit,
                 "quality_flag": r.quality_flag,
             }
-            for r in qs
+            for r in rows
         ]
         return Response({"asset_id": str(asset_id), "readings": data, "count": len(data)})
+
+
+class TelemetrySnapshotView(APIView):
+    """
+    GET /api/v1/telemetry/snapshot/?factory=<id>
+    Returns the latest reading per sensor for all assets in a factory.
+    Used by the 10s frontend poll — much cheaper than per-asset fetches.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.assets.models import Factory
+        factory_id = request.query_params.get("factory")
+        if not factory_id:
+            return Response({"error": "factory param required"}, status=400)
+
+        factory = get_object_or_404(Factory, pk=factory_id)
+        since = timezone.now() - timedelta(hours=2)
+        until = timezone.now() + timedelta(minutes=2)
+
+        assets = Asset.objects.filter(factory=factory)
+        result: dict[str, list] = {}
+
+        for asset in assets:
+            sensor_defs = SensorDefinition.objects.filter(asset=asset)
+            readings = []
+            for sdef in sensor_defs:
+                reading = (
+                    SensorReading.objects
+                    .filter(asset=asset, sensor_def=sdef, time__gte=since, time__lte=until)
+                    .order_by("-time")
+                    .first()
+                )
+                if reading:
+                    readings.append({
+                        "sensor_name": sdef.sensor_name,
+                        "value": reading.value,
+                        "unit": sdef.unit or "",
+                        "time": reading.time.isoformat(),
+                        "quality_flag": reading.quality_flag,
+                    })
+            if readings:
+                result[str(asset.id)] = readings
+
+        return Response({"snapshot": result, "timestamp": timezone.now().isoformat()})

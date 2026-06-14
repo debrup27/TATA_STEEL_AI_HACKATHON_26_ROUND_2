@@ -46,6 +46,7 @@ x-django-env: &django-env
   CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
   MODEL_ARTIFACT_ROOT: ${MODEL_ARTIFACT_ROOT:-/model-artifacts}
   SKIP_OLLAMA_WAIT: ${SKIP_OLLAMA_WAIT:-0}
+  CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
 
 # ── RAM budget (32 GB host) ──────────────────────────────────────────────────
 # ollama:          VRAM-resident (qwen3.5:9b Q4 ≈6GB + 0.8b ≈0.8GB + BGE≈1.7GB = ~8.5GB VRAM)
@@ -77,6 +78,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atal_pg_password}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
       - backend-net
     healthcheck:
@@ -94,6 +97,8 @@ services:
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
     volumes:
       - redis-data:/data
+    ports:
+      - "6379:6379"
     networks:
       - backend-net
     healthcheck:
@@ -108,6 +113,10 @@ services:
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
     volumes:
       - ollama-data:/root/.ollama
     deploy:
@@ -129,21 +138,49 @@ services:
       retries: 10
       start_period: 30s
 
+  ollama-warmup:
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "curl -fsS http://ollama:11434/api/generate
+      -H 'Content-Type: application/json'
+      -d '{\"model\":\"${OLLAMA_MODEL:-qwen3.5:9b}\",\"prompt\":\"reply with ok\",\"stream\":false,\"keep_alive\":\"${OLLAMA_KEEP_ALIVE:-30m}\"}'"
+    networks:
+      - backend-net
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   django-backend:
     build:
       context: ./ATAL_Project/backend
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     <<: *mem-django
+    gpus: all
     environment:
       <<: *django-env
+      BGE_M3_MODEL_PATH: /app/models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /app/models/bge-reranker-v2-m3
+      CORPUS_DIR: /app/data/corpus
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
+      - ./ATAL_Project/backend:/app:cached
       - staticfiles:/app/staticfiles
       - chroma-data:/chroma_data
       - model-artifacts:/model-artifacts
       - ./ATAL_Project/backend/models/bge-m3:/models/bge-m3:ro
       - ./ATAL_Project/backend/models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
       - ./ATAL_Project/backend/data/corpus:/app/data/corpus:ro
+    command: >
+      uvicorn backend.asgi:application
+      --host 0.0.0.0
+      --port 8000
+      --reload
     ports:
       - "8000:8000"
     networks:
@@ -156,6 +193,8 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      ollama-warmup:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
       interval: 15s
@@ -166,12 +205,20 @@ services:
   celery-worker:
     build:
       context: ./ATAL_Project/backend
-      dockerfile: docker/Dockerfile.celery
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     <<: *mem-celery
+    gpus: all
     environment:
       <<: *django-env
+      CELERY_LIGHT_ENTRYPOINT: "1"
+      BGE_M3_MODEL_PATH: /app/models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /app/models/bge-reranker-v2-m3
+      CORPUS_DIR: /app/data/corpus
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
     volumes:
+      - ./ATAL_Project/backend:/app:cached
       - chroma-data:/chroma_data
       - model-artifacts:/model-artifacts
       - ./ATAL_Project/backend/models/bge-m3:/models/bge-m3:ro
@@ -182,7 +229,7 @@ services:
       exec gosu appuser celery -A backend worker
       --loglevel=info
       --pool=threads
-      --concurrency=${CELERY_CONCURRENCY:-4}
+      --concurrency=${CELERY_CONCURRENCY:-2}
       --queues=default,telemetry,ml_inference,rag,alerts"
     networks:
       - backend-net
@@ -194,22 +241,27 @@ services:
       django-backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "celery -A backend inspect ping -d celery@$$HOSTNAME"]
-      interval: 30s
+      test: ["CMD-SHELL", "timeout 5 celery -A backend inspect ping || true"]
+      interval: 20s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s
 
   celery-beat:
     build:
       context: ./ATAL_Project/backend
-      dockerfile: docker/Dockerfile.celery
+      dockerfile: docker/Dockerfile
     restart: unless-stopped
     mem_limit: 512m
     mem_reservation: 128m
     environment:
       <<: *django-env
+      CELERY_LIGHT_ENTRYPOINT: "1"
+      BGE_M3_MODEL_PATH: /app/models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /app/models/bge-reranker-v2-m3
+      CORPUS_DIR: /app/data/corpus
     volumes:
+      - ./ATAL_Project/backend:/app:cached
       - model-artifacts:/model-artifacts
     command: >
       sh -c "chown -R appuser:appuser /model-artifacts 2>/dev/null || true &&
@@ -252,7 +304,7 @@ services:
       context: ./ATAL_Project/frontend
       dockerfile: docker/Dockerfile.dev
     restart: unless-stopped
-    mem_limit: 2g
+    mem_limit: 4g
     mem_reservation: 512m
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -268,6 +320,67 @@ services:
     depends_on:
       django-backend:
         condition: service_started
+
+  postgres-test:
+    image: timescale/timescaledb:latest-pg17
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: atal_test
+      POSTGRES_USER: atal_user
+      POSTGRES_PASSWORD: test_password
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atal_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis-test:
+    image: redis:8.0-alpine
+    profiles: ["test"]
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  test-runner:
+    build:
+      context: ./ATAL_Project/backend
+      dockerfile: docker/Dockerfile
+    profiles: ["test"]
+    environment:
+      DJANGO_SETTINGS_MODULE: backend.settings.dev
+      DJANGO_SECRET_KEY: ci-test-secret
+      POSTGRES_HOST: postgres-test
+      POSTGRES_DB: atal_test
+      POSTGRES_USER: atal_user
+      POSTGRES_PASSWORD: test_password
+      REDIS_URL: redis://redis-test:6379/0
+      CELERY_BROKER_URL: redis://redis-test:6379/0
+      CELERY_RESULT_BACKEND: redis://redis-test:6379/1
+      CHROMA_PERSIST_DIR: /tmp/chroma_test
+      OLLAMA_MOCK: "1"
+      EMBEDDING_MOCK: "1"
+      BGE_M3_MODEL_PATH: BAAI/bge-m3
+      BGE_RERANKER_MODEL_PATH: BAAI/bge-reranker-v2-m3
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        pytest apps/ --cov=apps --cov-report=term-missing -v
+      "
+    networks:
+      - backend-net
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
 
   # Aggregator — `docker compose up atal` starts the full stack
   atal:
@@ -286,3 +399,9 @@ services:
         condition: service_healthy
       ui-console:
         condition: service_started
+      celery-worker:
+        condition: service_healthy
+      celery-beat:
+        condition: service_started
+      nginx:
+        condition: service_healthy

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Send, RefreshCw } from "lucide-react";
 import { triggerPageTransition } from "../animations/PageTransition";
@@ -17,9 +17,9 @@ import {
   SourceContent,
   SourceTrigger
 } from "./ai-components/source";
-import { useMockTelemetryCells, useMockChatSimulation, useUser } from "@/hooks";
+import { useTelemetryCells, useMockChatSimulation, useUser } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
-import { getManasPredictions } from "@/services/prediction";
+import { fetchManasPredictions, type RulPredictionData } from "@/services/prediction";
 import { SPRING_DEFAULT, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
 import SansadGrid from "@/components/SansadGrid";
 
@@ -58,9 +58,14 @@ export default function AtalDisplayModal() {
   const [activeTab, setActiveTab] = useState<"atal_sansad" | "atal_manas">("atal_sansad");
   const { user } = useUser();
 
-  const cells = useMockTelemetryCells();
+  const cells = useTelemetryCells();
+  const [predictions, setPredictions] = useState<RulPredictionData[]>([]);
 
-  const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+  useEffect(() => {
+    fetchManasPredictions().then(setPredictions).catch(() => setPredictions([]));
+  }, []);
+
+  const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant" | "system"; content: string }[]>([
     getWelcomeMessage(),
   ]);
   const [manasInput, setManasInput] = useState("");
@@ -140,7 +145,7 @@ export default function AtalDisplayModal() {
     ),
   };
 
-  const manasPredictions: RightPanelItem[] = getManasPredictions().map((p, i) => ({
+  const manasPredictions: RightPanelItem[] = predictions.map((p, i) => ({
     ...p,
     icon: predictionIcons[i] ?? null,
   }));

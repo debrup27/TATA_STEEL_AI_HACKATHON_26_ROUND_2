@@ -1,0 +1,115 @@
+const UUID_RE =
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** e.g. hysteresis_deviation_um → Hysteresis deviation */
+export function humanizeSensorName(raw: string): string {
+  return raw
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/\bUm\b/g, "μm")
+    .replace(/\bMm\b/g, "mm")
+    .replace(/\bBar\b/g, "bar")
+    .replace(/\bA\b/g, "A");
+}
+
+export function stripUuids(text: string): string {
+  return text.replace(UUID_RE, "").replace(/\s{2,}/g, " ").trim();
+}
+
+export function humanizeHealthScoreText(text: string): string {
+  return text
+    .replace(/health_score\s*=\s*(\d+(?:\.\d+)?)/gi, (_, n) => `health ${Math.round(Number(n))}%`)
+    .replace(/\(severely degraded\)/gi, "(critically low)")
+    .replace(/shows critical condition with/gi, "is in critical condition —");
+}
+
+function roundReading(value: string): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  return n >= 100 ? n.toFixed(0) : n.toFixed(1);
+}
+
+export function formatAlertLogText(alert: {
+  message?: string;
+  alarm_type?: string;
+  severity?: string;
+}): string {
+  const msg = alert.message?.trim();
+  if (msg) {
+    const thresholdMatch = msg.match(
+      /^(Trip|Alert) threshold breached:\s*([a-z0-9_]+)\s*=\s*([\d.]+)\s*(.*)$/i,
+    );
+    if (thresholdMatch) {
+      const [, kind, sensor, value, unit] = thresholdMatch;
+      const sensorLabel = humanizeSensorName(sensor);
+      const limitLabel =
+        kind.toLowerCase() === "trip" ? "Trip limit exceeded" : "Warning threshold exceeded";
+      const unitLabel = unit.trim();
+      return `${sensorLabel} — ${limitLabel} (${roundReading(value)}${unitLabel ? ` ${unitLabel}` : ""})`;
+    }
+
+    const pressureMatch = msg.match(
+      /^([A-Z]+) header pressure below (\d+) bar:\s*([a-z0-9_]+)\s*=\s*([\d.]+)\s*(.*)$/i,
+    );
+    if (pressureMatch) {
+      const [, code, limit, sensor, value, unit] = pressureMatch;
+      const sensorLabel = humanizeSensorName(sensor);
+      return `${code} ${sensorLabel} low — ${roundReading(value)} ${unit.trim() || "bar"} (limit ${limit} bar)`;
+    }
+
+    return humanizeHealthScoreText(stripUuids(msg));
+  }
+
+  const sensorLabel = alert.alarm_type
+    ? humanizeSensorName(alert.alarm_type.replace(/_(trip|alert|warning)$/i, ""))
+    : "Sensor";
+  const sev = (alert.severity ?? "alert").toLowerCase();
+  if (sev === "trip") return `${sensorLabel} — Trip limit exceeded`;
+  if (sev === "alert" || sev === "warning") return `${sensorLabel} — Warning threshold exceeded`;
+  return `${sensorLabel} — Condition requires attention`;
+}
+
+type ReportRecommendation = { step?: string; rationale?: string };
+
+export function formatReportLogText(report: {
+  asset_name?: string;
+  asset_code?: string;
+  diagnosis?: string;
+  risk_level?: string;
+  recommendations?: ReportRecommendation[];
+  immediate_actions?: string[];
+}): string {
+  const assetLabel =
+    report.asset_name ??
+    (report.asset_code ? humanizeSensorName(report.asset_code) : "Equipment");
+
+  const recStep = report.recommendations?.find((r) => r?.step)?.step;
+  if (recStep) return recStep;
+
+  const action = report.immediate_actions?.find((a) => typeof a === "string" && a.trim());
+  if (action) return action;
+
+  const cleaned = report.diagnosis
+    ? humanizeHealthScoreText(stripUuids(report.diagnosis))
+    : "";
+
+  if (cleaned && !cleaned.match(UUID_RE) && cleaned.length <= 140) {
+    return cleaned.replace(/^Asset\s+/i, `${assetLabel} `);
+  }
+
+  const risk = (report.risk_level ?? "medium").toLowerCase();
+  if (risk === "critical") {
+    return `${assetLabel} needs immediate attention — critical health detected`;
+  }
+  if (risk === "high") {
+    return `${assetLabel} needs urgent maintenance review`;
+  }
+  return `${assetLabel} — predictive maintenance review available`;
+}
+
+export function formatAlertSeverity(severity?: string): string {
+  const s = (severity ?? "INFO").toUpperCase();
+  if (s === "TRIP") return "CRITICAL";
+  if (s === "ALERT") return "WARNING";
+  return s;
+}

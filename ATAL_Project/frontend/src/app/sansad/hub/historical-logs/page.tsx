@@ -6,6 +6,7 @@ import { ArrowLeft, Search, Terminal, FileText, Calendar, FileDown, FileCode, Ma
 import ReactMarkdown from "react-markdown";
 import ClickSpark from "@/animations/ClickSpark";
 import type { MaintenanceLog } from "@/services/types";
+import { fetchMaintenanceLogs } from "@/services/maintenance";
 
 const problemStatementMd = `# AI Hackathon | Round 2 - Agentic AI Challenge | Problem Statement
 
@@ -156,7 +157,10 @@ export default function HistoricalLogsPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedModule, setSelectedModule] = useState<string>("all");
-  const [activeLogId, setActiveLogId] = useState<string | null>("log-1");
+  const [activeLogId, setActiveLogId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<MaintenanceLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  void loading;
   const [viewMode, setViewMode] = useState<"pdf" | "online">("pdf");
   const [expandedView, setExpandedView] = useState<"pdf" | "online" | null>(null);
 
@@ -169,64 +173,29 @@ export default function HistoricalLogsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const logs: MaintenanceLog[] = [
-    {
-      id: "log-1",
-      code: "MR-2024-441",
-      date: "2024-11-05",
-      asset: "F1-EQ09 Centrifugal Exhauster",
-      module: "CokeOven-Agent",
-      description: "Complete replacement of the inboard spherical roller bearing after high-frequency vibration alarms. Exchanged and aligned. Lubrication system flushed.",
-      verdict: "RESOLVED - RUL reset to 365 Days",
-      operator: "M. Chatterjee",
-      pdfUrl: "/docs/ai_hackathon_problem_statement.pdf",
-      onlineContent: problemStatementMd,
-    },
-    {
-      id: "log-2",
-      code: "MR-2024-388",
-      date: "2024-09-18",
-      asset: "F2-EQ04 Drive Sprocket",
-      module: "Sinter-Agent",
-      description: "Tooth root wear check. Manual calibration offset applied on the Sinter belt feeder speed controller. Re-greased drive coupling.",
-      verdict: "MONITORING - RUL at 120 Days",
-      operator: "A. Sengupta",
-    },
-    {
-      id: "log-3",
-      code: "MR-2024-301",
-      date: "2024-07-22",
-      asset: "F2-EQ09 Waste Gas Fan Impeller",
-      module: "Sinter-Agent",
-      description: "Blade wear survey. Impeller surface showing moderate pitting. Performed structural reinforcement and dynamic balancing.",
-      verdict: "RESOLVED - RUL reset to 180 Days",
-      operator: "R. Sharma",
-    },
-    {
-      id: "log-4",
-      code: "MR-2024-270",
-      date: "2024-06-11",
-      asset: "F1-EQ11 Electrostatic Precipitator",
-      module: "CokeOven-Agent",
-      description: "Electrode alignment inspection and high-voltage grid cleaning. Removed carbon build-up on exhaust plates. Refitted insulator bushings.",
-      verdict: "RESOLVED - RUL reset to 240 Days",
-      operator: "M. Chatterjee",
-    },
-    {
-      id: "log-5",
-      code: "MR-2024-192",
-      date: "2024-04-03",
-      asset: "F1-EQ09 Exhauster Motor",
-      module: "CokeOven-Agent",
-      description: "FFT baseline spectral run on stator windings. Found minor phase balance variation. Thermal imaging matches nominal reference index.",
-      verdict: "NOMINAL",
-      operator: "S. K. Patel",
-    },
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    fetchMaintenanceLogs()
+      .then((rows) => {
+        if (!cancelled) {
+          const enriched = rows.map((log, i) =>
+            i === 0
+              ? { ...log, pdfUrl: "/docs/ai_hackathon_problem_statement.pdf", onlineContent: problemStatementMd }
+              : log,
+          );
+          setLogs(enriched);
+          if (enriched[0]) setActiveLogId(enriched[0].id);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const activeLog = logs.find(l => l.id === activeLogId) || logs[0];
 
-  const isFirstLog = activeLog?.id === "log-1";
+  const isFirstLog = activeLog?.id === logs[0]?.id;
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = log.code.toLowerCase().includes(searchQuery.toLowerCase()) ||

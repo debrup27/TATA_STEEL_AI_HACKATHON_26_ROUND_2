@@ -1,3 +1,5 @@
+import { apiJson } from "@/lib/api";
+import { mapRiskAsset, type BackendRankedAsset } from "@/lib/mappers";
 import type { RiskAsset } from "./types";
 
 export interface RulPredictionData {
@@ -8,53 +10,20 @@ export interface RulPredictionData {
   iconBgColor: string;
 }
 
-export function getRiskAssets(): RiskAsset[] {
-  return [
-    {
-      id: "risk-1",
-      name: "F1-EQ09 Exhauster Bearing",
-      score: 97,
-      urgency: "CRITICAL",
-      impact: "Total Coke Gas flow bottleneck. High cascade risk: downstream blast furnace gas injection failure within 14 days.",
-      sparesAvailable: true,
-      downtimeHours: 6,
-      recommendation: "Purchase order approved. Schedule replacement on the upcoming Tuesday afternoon outage window.",
-    },
-    {
-      id: "risk-2",
-      name: "F2-EQ04 Drive Sprocket",
-      score: 81,
-      urgency: "HIGH",
-      impact: "Sintering strand speed degradation. Potential 15% throughput loss in iron ore burden feeding.",
-      sparesAvailable: false,
-      downtimeHours: 12,
-      recommendation: "Spares on backorder (estimated delivery 5 days). Implement speed cap limits on strand A.",
-    },
-    {
-      id: "risk-3",
-      name: "F2-EQ09 Waste Gas Fan Impeller",
-      score: 54,
-      urgency: "MEDIUM",
-      impact: "Minor emission regulation drift. Low process impact. Secondary ventilation loop redundancy matches spec.",
-      sparesAvailable: true,
-      downtimeHours: 4,
-      recommendation: "Add to inspection task list for regular check. Keep monitoring vibration spectral alarms.",
-    },
-    {
-      id: "risk-4",
-      name: "F1-EQ11 Electrostatic Precipitator",
-      score: 22,
-      urgency: "LOW",
-      impact: "Negligible process risk. Collector grid capacity operating at 92%. Nominal redundant plates clean.",
-      sparesAvailable: true,
-      downtimeHours: 2,
-      recommendation: "Schedule clean-out during standard monthly preventive maintenance cycle.",
-    },
-  ];
+export async function fetchRiskAssets(): Promise<RiskAsset[]> {
+  const res = await apiJson<{ ranked_assets: BackendRankedAsset[] }>(
+    "/api/v1/plant/bottleneck-score/",
+    { method: "POST", body: "{}" },
+  );
+  return res.ranked_assets.map((r, i) => mapRiskAsset(r, i));
 }
 
-export function getRiskAssetById(id: string): RiskAsset | undefined {
-  const assets = getRiskAssets();
+/** @deprecated Use fetchRiskAssets */
+export function getRiskAssets(): RiskAsset[] {
+  return [];
+}
+
+export function getRiskAssetById(id: string, assets: RiskAsset[]): RiskAsset | undefined {
   return assets.find((a) => a.id === id);
 }
 
@@ -72,35 +41,28 @@ export function getScoreBgColor(score: number): string {
   return "bg-green-500/20";
 }
 
+export async function fetchManasPredictions(): Promise<RulPredictionData[]> {
+  const assets = await fetchRiskAssets();
+  return assets.slice(0, 6).map((a) => ({
+    title: a.name,
+    badgeText: `Score: ${a.score}`,
+    badgeType:
+      a.urgency === "CRITICAL"
+        ? "critical"
+        : a.urgency === "HIGH"
+          ? "warning"
+          : "healthy",
+    subtext: `${a.urgency} · ${a.recommendation.slice(0, 60)}…`,
+    iconBgColor:
+      a.urgency === "CRITICAL"
+        ? "#ef4444"
+        : a.urgency === "HIGH"
+          ? "#f97316"
+          : "#22c55e",
+  }));
+}
+
+/** @deprecated Use fetchManasPredictions */
 export function getManasPredictions(): RulPredictionData[] {
-  return [
-    {
-      title: "BF Taphole Drill",
-      badgeText: "RUL: 14d",
-      badgeType: "critical",
-      subtext: "Degradation Rate: Fast • Risk: High",
-      iconBgColor: "#3b82f6",
-    },
-    {
-      title: "HSM Roller Coiler",
-      badgeText: "RUL: 45d",
-      badgeType: "healthy",
-      subtext: "Degradation Rate: Normal • Risk: Low",
-      iconBgColor: "#22c55e",
-    },
-    {
-      title: "BOF Lance Motor",
-      badgeText: "RUL: 8d",
-      badgeType: "critical",
-      subtext: "Degradation Rate: Accelerated • Risk: High",
-      iconBgColor: "#ef4444",
-    },
-    {
-      title: "Sinter Exhaust Blower",
-      badgeText: "RUL: 120d",
-      badgeType: "healthy",
-      subtext: "Degradation Rate: Minimal • Risk: Normal",
-      iconBgColor: "#eab308",
-    },
-  ];
+  return [];
 }

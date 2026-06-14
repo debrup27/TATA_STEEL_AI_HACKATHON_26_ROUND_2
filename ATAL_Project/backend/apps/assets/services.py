@@ -1,4 +1,3 @@
-from django.utils import timezone
 from apps.assets.models import Factory, Asset, SparesPart
 from apps.twins.models import AssetTwinState
 from apps.ml.models import MLPrediction
@@ -12,14 +11,49 @@ class AssetHealthService:
     def compute(asset: Asset) -> dict:
         twin = AssetTwinState.objects.filter(asset=asset).first()
         health_score = twin.health_score if twin else 100.0
+        twin_state = twin.state if twin else {}
+        campaign_hours = float(twin_state.get("_campaign_hours", 0.0))
+
         active_alerts_count = AlarmEvent.objects.filter(
             asset=asset, acknowledged=False
         ).count()
 
         last_pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
-        rul_hours = None
-        if last_pred and "rul_hours" in last_pred.prediction_output:
-            rul_hours = last_pred.prediction_output["rul_hours"]
+        pred_out = last_pred.prediction_output if last_pred else {}
+        rul_hours = pred_out.get("rul_hours")
+        anomaly_score = pred_out.get("anomaly_score")
+        fault_classification = pred_out.get("fault_classification")
+        ml_source = pred_out.get("source")
+
+        # If consolidated prediction lacks rul_hours, search specifically for rul_predictor output
+        if rul_hours is None:
+            rul_pred = MLPrediction.objects.filter(
+                asset=asset, model__model_type="rul_predictor"
+            ).order_by("-prediction_time").first()
+            if rul_pred and "rul_hours" in rul_pred.prediction_output:
+                rul_hours = rul_pred.prediction_output["rul_hours"]
+            elif rul_pred and "rul_days" in rul_pred.prediction_output:
+                rul_hours = float(rul_pred.prediction_output["rul_days"]) * 24.0
+
+        # Heuristic fallback: derive RUL from campaign hours + asset-type degradation ceiling
+        if rul_hours is None:
+            campaign_max_hours = {
+                "SRF": 8000, "HHPD": 6000, "FS": 12000, "HAGCC": 5000,
+                "APT": 4000, "TCMS": 10000, "CGP": 15000, "HPAK": 3000,
+            }
+            max_h = campaign_max_hours.get(asset.asset_type, 8000)
+            rul_hours = round(max(0.0, max_h - campaign_hours), 1)
+
+        last_event = MaintenanceEvent.objects.filter(asset=asset).order_by("-completed_date").first()
+        last_maintenance = None
+        if last_event and last_event.completed_date:
+            completed = last_event.completed_date
+            last_maintenance = {
+                "date": completed.isoformat() if hasattr(completed, "isoformat") else str(completed),
+                "event_type": last_event.event_type,
+                "description": (last_event.description or "")[:120],
+                "outcome": last_event.outcome,
+            }
 
         status = "healthy"
         if health_score < 40:
@@ -36,7 +70,12 @@ class AssetHealthService:
             "rul_hours": rul_hours,
             "status": status,
             "active_alerts_count": active_alerts_count,
-            "twin_state_summary": twin.state if twin else {},
+            "anomaly_score": anomaly_score,
+            "fault_classification": fault_classification,
+            "ml_source": ml_source,
+            "campaign_hours": campaign_hours,
+            "last_maintenance": last_maintenance,
+            "twin_state_summary": twin_state,
             "last_prediction_time": last_pred.prediction_time if last_pred else None,
         }
 

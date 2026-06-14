@@ -78,7 +78,7 @@ class ChatMessageView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, session_id):
-        from apps.agents.tasks import process_chat_message
+        from apps.agents.tasks import start_chat_thread
         try:
             session = ChatSession.objects.get(id=session_id, user=request.user)
         except ChatSession.DoesNotExist:
@@ -88,7 +88,6 @@ class ChatMessageView(APIView):
         if not user_message:
             return Response({"error": "content required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save user message
         msg = ChatMessage.objects.create(
             session=session,
             role="user",
@@ -98,7 +97,7 @@ class ChatMessageView(APIView):
         session.save(update_fields=["last_active"])
 
         rag_collections = request.data.get("rag_collections", [])
-        task = process_chat_message.apply_async(
-            args=[str(session.id), str(msg.id), rag_collections]
-        )
-        return Response({"task_id": task.id, "message_id": str(msg.id)}, status=status.HTTP_202_ACCEPTED)
+        # Daemon thread inside Uvicorn process — bypasses Celery queue that is
+        # saturated by synthetic-data tasks every second.
+        t = start_chat_thread(str(session.id), str(msg.id), rag_collections)
+        return Response({"task_id": t.name, "message_id": str(msg.id)}, status=status.HTTP_202_ACCEPTED)

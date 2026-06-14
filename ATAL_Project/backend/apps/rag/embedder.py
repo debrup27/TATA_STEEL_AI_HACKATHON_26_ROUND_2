@@ -17,7 +17,11 @@ def _get_model():
     if _model is None:
         from FlagEmbedding import BGEM3FlagModel
         model_path = os.environ.get("BGE_M3_MODEL_PATH", "BAAI/bge-m3")
-        _model = BGEM3FlagModel(model_path, use_fp16=True)
+        # Default cpu — keeps GPU free for Ollama (qwen3.5:9b).
+        # Set EMBEDDING_DEVICE=cuda only if GPU VRAM > ~12GB (model + Ollama).
+        device = os.environ.get("EMBEDDING_DEVICE", "cpu")
+        use_fp16 = device != "cpu"
+        _model = BGEM3FlagModel(model_path, use_fp16=use_fp16, device=device)
     return _model
 
 

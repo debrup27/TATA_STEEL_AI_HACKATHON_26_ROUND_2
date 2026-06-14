@@ -8,4 +8,4 @@ RUN npm config set fetch-retry-maxtimeout 600000 && \
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-CMD ["npm", "run", "dev"]
+CMD ["sh", "-c", "test -x node_modules/.bin/jest || npm install && npm run test:run && npm run lint && npm run build && npm run dev"]

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { X, Trash2 } from "lucide-react";
 import { getPreloadedDocs } from "@/services/chat";
 import type { RagDoc } from "@/services/types";
@@ -16,8 +16,6 @@ interface RagDocumentSelectorModalProps {
   onConfirm: (selected: RagDoc[]) => void;
 }
 
-const PRELOADED_DOCS = getPreloadedDocs();
-
 export default function RagDocumentSelectorModal({
   isOpen,
   onClose,
@@ -28,11 +26,25 @@ export default function RagDocumentSelectorModal({
   onRemoveCustom,
   onConfirm,
 }: RagDocumentSelectorModalProps) {
+  const [preloadedDocs, setPreloadedDocs] = useState<RagDoc[]>([]);
+  const [fetched, setFetched] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getPreloadedDocs()
+      .then((docs) => { if (!cancelled) setPreloadedDocs(docs); })
+      .finally(() => { if (!cancelled) setFetched(true); });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  const loading = isOpen && !fetched;
+
   if (!isOpen) return null;
 
   const handleConfirm = () => {
     const selected: RagDoc[] = [];
-    PRELOADED_DOCS.forEach((doc) => {
+    preloadedDocs.forEach((doc) => {
       if (selectedPreloaded.includes(doc.name)) {
         selected.push(doc);
       }
@@ -47,11 +59,9 @@ export default function RagDocumentSelectorModal({
         className="bg-[#FAF9F5] border border-zinc-200/85 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden relative animate-in fade-in zoom-in-95 duration-200 text-[#1b253c]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Corner Accents */}
         <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
         <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-250/80 shrink-0">
           <div>
             <h3 className="text-lg font-black uppercase tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
@@ -69,13 +79,15 @@ export default function RagDocumentSelectorModal({
           </button>
         </div>
 
-        {/* Content Area */}
         <div className="overflow-y-auto p-6 space-y-6 flex-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
-          {/* Preloaded Section */}
           <div>
             <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Preloaded System Docs</h4>
+            {loading && <p className="text-xs text-zinc-500">Loading corpus…</p>}
+            {!loading && preloadedDocs.length === 0 && (
+              <p className="text-xs text-zinc-500">No ingested documents found. Run corpus ingestion on the backend.</p>
+            )}
             <div className="space-y-2.5">
-              {PRELOADED_DOCS.map((doc) => {
+              {preloadedDocs.map((doc) => {
                 const isChecked = selectedPreloaded.includes(doc.name);
                 return (
                   <div
@@ -100,8 +112,6 @@ export default function RagDocumentSelectorModal({
                         <span className="text-[10px] text-zinc-400 font-mono">{doc.size}</span>
                       </div>
                     </div>
-                    
-                    {/* Check indicator */}
                     <div className={`size-5 rounded-md border flex items-center justify-center transition-all ${
                       isChecked ? "bg-[#4A582E] border-[#4A582E]" : "border-zinc-350 bg-white"
                     }`}>
@@ -113,11 +123,8 @@ export default function RagDocumentSelectorModal({
             </div>
           </div>
 
-          {/* Custom Upload Section */}
           <div className="border-t border-zinc-200 pt-6">
             <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Custom Context Documents</h4>
-            
-            {/* Custom files list */}
             {customDocs.length > 0 && (
               <div className="space-y-2.5 mb-4">
                 {customDocs.map((doc) => (
@@ -147,7 +154,6 @@ export default function RagDocumentSelectorModal({
               </div>
             )}
 
-            {/* Upload Box */}
             <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-zinc-300 rounded-2xl bg-white hover:bg-zinc-50 cursor-pointer transition-all duration-200 group">
               <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
                 <svg className="w-8 h-8 text-zinc-400 group-hover:text-[#f97316] transition-colors mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -171,7 +177,6 @@ export default function RagDocumentSelectorModal({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-200 shrink-0 select-none bg-white">
           <button
             onClick={onClose}

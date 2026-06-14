@@ -19,7 +19,8 @@ def _load():
     if _model is None:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
-        _device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Default cpu — keeps GPU VRAM free for Ollama.
+        _device = os.environ.get("EMBEDDING_DEVICE", "cpu")
         from transformers import PreTrainedTokenizerFast
         _tokenizer = PreTrainedTokenizerFast(
             tokenizer_file=os.path.join(_MODEL_PATH, "tokenizer.json"),
@@ -33,7 +34,8 @@ def _load():
             model_max_length=8192,
         )
         _model = AutoModelForSequenceClassification.from_pretrained(
-            _MODEL_PATH, torch_dtype=torch.float16 if _device == "cuda" else torch.float32
+            _MODEL_PATH, torch_dtype=torch.float16 if _device == "cuda" else torch.float32,
+            low_cpu_mem_usage=True,
         )
         _model.to(_device)
         _model.eval()

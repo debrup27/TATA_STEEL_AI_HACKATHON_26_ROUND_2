@@ -4,12 +4,15 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ShieldAlert, TrendingUp, Clock, Package } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-import { getRiskAssets, getScoreColor } from "@/services/prediction";
+import { fetchRiskAssets, getScoreColor } from "@/services/prediction";
 import type { RiskAsset } from "@/services/types";
 
 export default function AbnormalityPredictionPage() {
   const [isMobile, setIsMobile] = useState(false);
-  const [activeRiskId, setActiveRiskId] = useState<string | null>("risk-1");
+  const [activeRiskId, setActiveRiskId] = useState<string | null>(null);
+  const [risks, setRisks] = useState<RiskAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const handleResize = () => {
@@ -20,7 +23,24 @@ export default function AbnormalityPredictionPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const risks: RiskAsset[] = getRiskAssets();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchRiskAssets();
+        if (!cancelled) {
+          setRisks(data);
+          if (data[0]) setActiveRiskId(data[0].id);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load risk data");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const activeRisk = risks.find(r => r.id === activeRiskId) || risks[0];
 
@@ -51,6 +71,10 @@ export default function AbnormalityPredictionPage() {
               Back to Console
             </Link>
           </div>
+        </div>
+      ) : !activeRisk ? (
+        <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+          {loading ? "Loading risk data…" : (error ?? "No risk assets found")}
         </div>
       ) : (
         <div className="w-screen h-screen overflow-hidden bg-[#FAF9F5] relative flex select-none">

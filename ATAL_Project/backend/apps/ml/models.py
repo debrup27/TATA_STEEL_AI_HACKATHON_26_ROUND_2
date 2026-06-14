@@ -38,14 +38,14 @@ class MLModel(models.Model):
 
 class MLPrediction(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    model = models.ForeignKey(MLModel, on_delete=models.CASCADE, related_name="predictions")
+    model = models.ForeignKey(MLModel, null=True, blank=True, on_delete=models.SET_NULL, related_name="predictions")
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="predictions")
     prediction_time = models.DateTimeField(auto_now_add=True)
     input_features = models.JSONField(default=dict)
     prediction_output = models.JSONField(default=dict)
     confidence = models.FloatField(null=True, blank=True)
     shap_values = models.JSONField(null=True, blank=True)
-    celery_task_id = models.CharField(max_length=255, blank=True)
+    celery_task_id = models.CharField(max_length=255, null=True, blank=True)
 
     class Meta:
         db_table = "ml_prediction"

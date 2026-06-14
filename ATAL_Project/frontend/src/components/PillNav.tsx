@@ -287,7 +287,9 @@ export default function PillNav({
     "--pill-gap": "3px",
   } as React.CSSProperties;
 
-  if (pathname === "/manas/chat" || pathname.startsWith("/sansad/hub")) return null;
+  const shouldHideNav =
+    pathname.startsWith("/manas/chat") || pathname.startsWith("/sansad/hub");
+  if (shouldHideNav) return null;
 
   return (
     <>

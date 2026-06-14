@@ -9,7 +9,7 @@ import { GLSLHills } from "../../animations/GLSLHills";
 import ClickSpark from "../../animations/ClickSpark";
 import { triggerPageTransition } from "../../animations/PageTransition";
 import { SPRING_DEFAULT, SPRING_STIFF, DURATION_MEDIUM } from "@/lib/constants";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, setTokens } from "@/lib/api";
 
 const DEMO_ACCOUNTS = [
   { role: "Technician", username: "tech_demo", password: "TechDemo@123", color: "text-emerald-600", bg: "bg-emerald-50 hover:bg-emerald-100 border-emerald-200" },
@@ -64,11 +64,7 @@ export default function LoginPage() {
         return;
       }
       const { access, refresh } = await res.json();
-      localStorage.setItem("atal_access", access);
-      localStorage.setItem("atal_refresh", refresh);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("user-state-change"));
-      }
+      setTokens(access, refresh);
       triggerPageTransition("/");
     } catch {
       setAuthError("Connection error — is the backend running?");

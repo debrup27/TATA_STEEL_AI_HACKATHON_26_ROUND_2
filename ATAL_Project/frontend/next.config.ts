@@ -9,6 +9,7 @@ const BACKEND_URL =
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  trailingSlash: true,
   images: {
     formats: ["image/avif", "image/webp"],
   },

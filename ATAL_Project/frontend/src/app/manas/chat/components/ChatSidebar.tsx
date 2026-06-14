@@ -14,6 +14,7 @@ import {
 import { SPRING_NAV } from "@/lib/constants";
 import type { ChatSession } from "@/services/types";
 import { SessionListItem } from "./SessionListItem";
+import { useUser } from "@/hooks/useUser";
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -40,7 +41,8 @@ export default function ChatSidebar({
   onDeleteSession,
   onOpenSettings,
 }: ChatSidebarProps) {
-  
+  const { logout } = useUser();
+
   // Filter sessions based on search query, newest on top
   const filteredSessions = sessions.filter((session) =>
     session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -174,14 +176,7 @@ export default function ChatSidebar({
                 <span>Settings</span>
               </button>
               <button
-                onClick={() => {
-                  if (typeof window !== "undefined") {
-                    localStorage.removeItem("atal_access");
-                    localStorage.removeItem("atal_refresh");
-                    window.dispatchEvent(new Event("user-state-change"));
-                  }
-                  window.location.href = "/login";
-                }}
+                onClick={logout}
                 className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
               >
                 <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />
@@ -204,14 +199,7 @@ export default function ChatSidebar({
               <button onClick={onOpenSettings} title="Settings" className="text-[#1b253c]/80 hover:text-orange-500 transition-colors duration-200 cursor-pointer">
                 <Settings className="w-4.5 h-4.5" />
               </button>
-              <button onClick={() => {
-                if (typeof window !== "undefined") {
-                  localStorage.removeItem("atal_access");
-                  localStorage.removeItem("atal_refresh");
-                  window.dispatchEvent(new Event("user-state-change"));
-                }
-                window.location.href = "/login";
-              }} title="Logout" className="text-red-400 hover:text-red-600 transition-colors duration-200 cursor-pointer">
+              <button onClick={logout} title="Logout" className="text-red-400 hover:text-red-600 transition-colors duration-200 cursor-pointer">
                 <LogOut className="w-4.5 h-4.5" />
               </button>
             </div>
@@ -325,14 +313,7 @@ export default function ChatSidebar({
                 <span>Settings</span>
               </button>
               <button
-                onClick={() => {
-                  if (typeof window !== "undefined") {
-                    localStorage.removeItem("atal_access");
-                    localStorage.removeItem("atal_refresh");
-                    window.dispatchEvent(new Event("user-state-change"));
-                  }
-                  window.location.href = "/login";
-                }}
+                onClick={logout}
                 className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
               >
                 <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />

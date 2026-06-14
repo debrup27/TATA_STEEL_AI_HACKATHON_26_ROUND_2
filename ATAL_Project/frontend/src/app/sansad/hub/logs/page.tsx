@@ -1,12 +1,20 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, Play, Pause, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
+import { ArrowLeft, Search, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-import { getModulesList } from "@/services/chat";
 import { useMockTelemetryLogs } from "@/hooks";
+import {
+  buildLogModuleFilters,
+  buildValidAssetModuleSet,
+  logModuleFilterLabel,
+  type AssetAliasRow,
+} from "@/lib/assetAliases";
+import { apiList } from "@/lib/api";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
+import { getLogSeverity } from "@/lib/logSeverity";
+import { SystemLogControls } from "../components/SystemLogControls";
 import type { LogEntry } from "@/services/types";
 
 const LogEntryCard = React.memo(function LogEntryCard({ 
@@ -16,8 +24,9 @@ const LogEntryCard = React.memo(function LogEntryCard({
   log: LogEntry; 
   onSelect: (log: LogEntry) => void;
 }) {
-  const isCritical = log.text.includes("CRITICAL");
-  const isWarning = log.text.includes("WARNING");
+  const severity = getLogSeverity(log.text);
+  const isCritical = severity === "critical";
+  const isWarning = severity === "warning";
   
   let cardStyle = "bg-white border-zinc-200/80 hover:border-[#4A582E] hover:bg-zinc-50/40 text-zinc-700";
   let badgeColor = "text-zinc-600 bg-zinc-100/80 border-zinc-200/60";
@@ -65,21 +74,25 @@ export default function LogsConsolePage() {
   const [selectedModule, setSelectedModule] = useState("ALL MODULES");
   const [isLive, setIsLive] = useState(true);
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
+  const [catalogAssets, setCatalogAssets] = useState<AssetAliasRow[]>([]);
 
-  const { logs, clear } = useMockTelemetryLogs(2500, 50, isLive, [
-    { id: 1, time: "22:19:02", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-    { id: 2, time: "22:19:12", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
-    { id: 3, time: "22:19:16", module: "Sansad-Hub", text: "Structured Work Order WO-2026-F1-09 compiled and routed to Manas." },
-    { id: 4, time: "22:19:19", module: "Sansad-Hub", text: "Synchronized active RUL telemetry matrices to Manas Vector Database." },
-    { id: 5, time: "22:19:22", module: "CokeOven-Agent", text: "Carbonizing temperature optimal (1085°C). Hearth sensors stable." },
-    { id: 6, time: "22:19:26", module: "Sinter-Agent", text: "Calibration offset applied to Belt FeO Analyzer (BCFA)." },
-    { id: 7, time: "22:19:30", module: "CokeOven-Agent", text: "NOMINAL: F1-EQ11 Electrostatic Precipitator electrodes stable. RUL at 95 days." },
-    { id: 8, time: "22:19:33", module: "Sinter-Agent", text: "BTP matched to strand speed of 3.2m/min." },
-    { id: 9, time: "22:19:40", module: "CokeOven-Agent", text: "Centrifugal exhauster F1-EQ09 health index: 24%. RUL stable at 14 days." },
-    { id: 10, time: "22:19:54", module: "ThermalCascade-Predictor", text: "Upstream heat variations mapped to F3 Blast Furnace input delay." },
-  ]);
+  const { logs, clear, status: logStreamStatus } = useMockTelemetryLogs(2500, 50, isLive);
 
   const logContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiList<AssetAliasRow>("/api/v1/assets/")
+      .then((rows) => {
+        if (!cancelled) setCatalogAssets(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogAssets([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -102,25 +115,34 @@ export default function LogsConsolePage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Autoscroll watcher
+  // Autoscroll watcher (only while live)
   useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [logs]);
+    if (!isLive || !logContainerRef.current) return;
+    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+  }, [logs, isLive]);
 
-  const modulesList = getModulesList();
+  const validModules = useMemo(
+    () => buildValidAssetModuleSet(catalogAssets),
+    [catalogAssets],
+  );
+
+  const modulesList = useMemo(
+    () => buildLogModuleFilters(logs.map((log) => log.module), validModules),
+    [logs, validModules],
+  );
+
+  const activeModule = modulesList.includes(selectedModule) ? selectedModule : "ALL MODULES";
 
   // Filtering logic
   const filteredLogs = logs.filter((log) => {
-    const matchesModule = selectedModule === "ALL MODULES" || log.module === selectedModule;
+    const matchesModule = activeModule === "ALL MODULES" || log.module === activeModule;
     const matchesSearch = log.text.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
                           log.module.toLowerCase().includes(debouncedSearchQuery.toLowerCase());
     return matchesModule && matchesSearch;
   });
 
-  const criticalLogsCount = logs.filter(log => log.text.includes("CRITICAL")).length;
-  const warningLogsCount = logs.filter(log => log.text.includes("WARNING")).length;
+  const criticalLogsCount = logs.filter((log) => getLogSeverity(log.text) === "critical").length;
+  const warningLogsCount = logs.filter((log) => getLogSeverity(log.text) === "warning").length;
 
   return (
     <ClickSpark
@@ -256,26 +278,11 @@ export default function LogsConsolePage() {
                   </div>
 
                   <div className="flex justify-end gap-3 mt-8 border-t pt-4 border-zinc-150">
-                    <button 
-                      onClick={() => setIsLive(!isLive)}
-                      className={`h-10 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 font-bold border text-xs uppercase cursor-pointer select-none ${
-                        isLive 
-                          ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200" 
-                          : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
-                      }`}
-                      style={{ fontFamily: "var(--font-pixeloid)" }}
-                    >
-                      {isLive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                      {isLive ? "Pause" : "Resume"}
-                    </button>
-                    <button 
-                      onClick={clear}
-                      className="h-10 px-4 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 border border-zinc-200 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 font-bold text-xs uppercase cursor-pointer select-none"
-                      style={{ fontFamily: "var(--font-pixeloid)" }}
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Clear
-                    </button>
+                    <SystemLogControls
+                      isLive={isLive}
+                      onToggleLive={() => setIsLive((v) => !v)}
+                      onClear={clear}
+                    />
                   </div>
                 </div>
 
@@ -284,10 +291,18 @@ export default function LogsConsolePage() {
                   <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 select-none">+</div>
                   <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 select-none">+</div>
 
-                  <span className="font-mono text-xs font-extrabold uppercase tracking-widest text-zinc-400 mb-2">MODULE FILTERS</span>
+                  <span className="font-mono text-xs font-extrabold uppercase tracking-widest text-zinc-400 mb-2">ASSET FILTERS</span>
                   <div className="flex-1 overflow-y-auto space-y-2 mt-3 scrollbar-none pr-1">
-                    {modulesList.map((mod) => {
-                      const isActive = selectedModule === mod;
+                    {modulesList.length <= 1 ? (
+                      <p
+                        className="text-xs text-zinc-450 italic px-2 py-3"
+                        style={{ fontFamily: "var(--font-questrial)" }}
+                      >
+                        Asset filters populate from live alerts and maintenance events.
+                      </p>
+                    ) : (
+                      modulesList.map((mod) => {
+                      const isActive = activeModule === mod;
                       return (
                         <button
                           key={mod}
@@ -299,10 +314,11 @@ export default function LogsConsolePage() {
                           }`}
                           style={{ fontFamily: "var(--font-questrial)" }}
                         >
-                          {mod === "ALL MODULES" ? "Show All Modules" : mod}
+                          {logModuleFilterLabel(mod)}
                         </button>
                       );
-                    })}
+                    })
+                    )}
                   </div>
                 </div>
 
@@ -348,10 +364,26 @@ export default function LogsConsolePage() {
                       <div className="h-full w-full flex flex-col items-center justify-center text-center p-8 select-none">
                         <CheckCircle className="w-10 h-10 text-emerald-500 mb-2" />
                         <span className="block text-sm font-bold uppercase tracking-wider text-zinc-650" style={{ fontFamily: "var(--font-questrial)" }}>
-                          No Diagnostic Matches
+                          {logStreamStatus === "auth_required"
+                            ? "Sign In Required"
+                            : logStreamStatus === "error"
+                              ? "Log API Unavailable"
+                              : logs.length === 0 && !isLive
+                                ? "Stream Paused"
+                                : logs.length === 0
+                                  ? "Awaiting System Alerts"
+                                  : "No Diagnostic Matches"}
                         </span>
                         <span className="text-xs text-zinc-400 mt-1">
-                          No active logs match the selected search query or module filters.
+                          {logStreamStatus === "auth_required"
+                            ? "Log in at /login (demo: tech_demo / TechDemo@123) then return here."
+                            : logStreamStatus === "error"
+                              ? "Could not load alerts, maintenance events, or reports from the backend."
+                              : logs.length === 0 && !isLive
+                                ? "Resume the stream to load alerts and maintenance events."
+                                : logs.length === 0
+                                  ? "Live alerts, maintenance events, and AI reports will appear here."
+                                  : "No active logs match the selected search query or module filters."}
                         </span>
                       </div>
                     ) : (

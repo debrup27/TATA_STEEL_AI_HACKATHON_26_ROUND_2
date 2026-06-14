@@ -4,13 +4,18 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, AlertTriangle, CheckCircle, ShieldAlert } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-import { getFactories } from "@/services/monitor";
+import { fetchFactories } from "@/services/monitor";
 import type { AssetHealth, FactoryData } from "@/services/types";
 
 export default function RulMonitorPage() {
   const [isMobile, setIsMobile] = useState(false);
-  const [selectedFactoryId, setSelectedFactoryId] = useState<string>("factory-1");
+  const [selectedFactoryId, setSelectedFactoryId] = useState<string>("");
   const [activePartForModal, setActivePartForModal] = useState<AssetHealth | null>(null);
+  const [factories, setFactories] = useState<FactoryData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  void loading;
+  void error;
 
   useEffect(() => {
     const handleResize = () => {
@@ -21,7 +26,24 @@ export default function RulMonitorPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const factories: FactoryData[] = getFactories();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchFactories();
+        if (!cancelled) {
+          setFactories(data);
+          if (data[0]) setSelectedFactoryId(data[0].id);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load factories");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const activeFactory = factories.find(f => f.id === selectedFactoryId) || factories[0];
 
@@ -193,7 +215,7 @@ export default function RulMonitorPage() {
 
               {/* Right Column: Complete Factory Parts breakdown index */}
               <div className="w-[65%] h-full flex flex-col gap-4 overflow-y-auto pr-2 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                {activeFactory.parts.map((part) => {
+                {(activeFactory?.parts ?? []).map((part) => {
                   const isCritical = part.status === "critical";
                   const isWarning = part.status === "warning";
                   

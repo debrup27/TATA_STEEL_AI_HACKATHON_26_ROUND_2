@@ -117,6 +117,10 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
             "hosts": [REDIS_URL],
+            # Default socket_timeout is ~60s — too short for LLM inference.
+            # Set 600s so the WS consumer doesn't drop while waiting for Ollama.
+            "socket_timeout": 600,
+            "socket_connect_timeout": 5,
         },
     },
 }
@@ -134,11 +138,13 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 #   default, telemetry, ml_inference, rag, alerts
 CELERY_TASK_ROUTES = {
     "apps.synthetic.*": {"queue": "telemetry"},
+    "apps.telemetry.*": {"queue": "telemetry"},
     "apps.ml.*": {"queue": "ml_inference"},
     "apps.twins.*": {"queue": "default"},
     "apps.alerts.*": {"queue": "alerts"},
     "apps.consolidation.*": {"queue": "default"},
     "apps.rag.*": {"queue": "rag"},
+    "apps.agents.*": {"queue": "rag"},
     "apps.reports.*": {"queue": "default"},
 }
 

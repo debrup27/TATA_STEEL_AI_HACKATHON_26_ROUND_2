@@ -3,9 +3,11 @@ from apps.maintenance.models import MaintenanceEvent, DelayLog, WorkOrder, Fault
 
 
 class MaintenanceEventSerializer(serializers.ModelSerializer):
+    asset_name = serializers.CharField(source="asset.name", read_only=True)
+
     class Meta:
         model = MaintenanceEvent
-        fields = "__all__"
+        fields = [f.name for f in MaintenanceEvent._meta.fields] + ["asset_name"]
 
 
 class DelayLogSerializer(serializers.ModelSerializer):

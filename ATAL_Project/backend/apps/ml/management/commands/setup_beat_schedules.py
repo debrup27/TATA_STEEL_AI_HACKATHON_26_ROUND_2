@@ -53,18 +53,32 @@ class Command(BaseCommand):
             },
         )
 
-        # ── Live telemetry simulation every 5 minutes ──────────────────────────
+        # ── Telemetry WS broadcast every 30 seconds ───────────────────────────
+        telemetry_ws_interval, _ = IntervalSchedule.objects.get_or_create(
+            every=30, period=IntervalSchedule.SECONDS
+        )
+        PeriodicTask.objects.update_or_create(
+            name="telemetry-ws-broadcast",
+            defaults={
+                "interval": telemetry_ws_interval,
+                "task": "apps.telemetry.broadcast_cells",
+                "enabled": True,
+                "description": "Broadcast latest sensor cells to /ws/telemetry subscribers",
+            },
+        )
+
+        # ── Live telemetry simulation every 30 seconds ─────────────────────────
         telemetry_interval, _ = IntervalSchedule.objects.get_or_create(
-            every=5, period=IntervalSchedule.MINUTES
+            every=30, period=IntervalSchedule.SECONDS
         )
         PeriodicTask.objects.update_or_create(
             name="synthetic-telemetry-live",
             defaults={
                 "interval": telemetry_interval,
                 "task": "apps.synthetic.orchestrate_all",
-                "kwargs": '{"n_samples": 30}',
+                "kwargs": '{"n_samples": 6}',
                 "enabled": True,
-                "description": "Live telemetry simulation — writes to TimescaleDB every 5min",
+                "description": "Live telemetry simulation — writes to TimescaleDB every 30s",
             },
         )
 
@@ -105,8 +119,38 @@ class Command(BaseCommand):
             },
         )
 
+        # ── ML inference every 5 minutes (uses fresh 60-min telemetry window) ──
+        inference_interval, _ = IntervalSchedule.objects.get_or_create(
+            every=5, period=IntervalSchedule.MINUTES
+        )
+        PeriodicTask.objects.update_or_create(
+            name="ml-inference-all-assets",
+            defaults={
+                "interval": inference_interval,
+                "task": "apps.ml.run_inference_all_assets",
+                "enabled": True,
+                "description": "Run consolidated ML inference (RUL+anomaly+classifier) for all assets every 5 min",
+            },
+        )
+
+        # ── Consolidation + LangGraph analysis every 15 minutes for critical assets ─
+        consolidation_interval, _ = IntervalSchedule.objects.get_or_create(
+            every=15, period=IntervalSchedule.MINUTES
+        )
+        PeriodicTask.objects.update_or_create(
+            name="consolidation-critical-assets",
+            defaults={
+                "interval": consolidation_interval,
+                "task": "apps.consolidation.run_critical_consolidation",
+                "enabled": True,
+                "description": "Run LangGraph consolidation for high/critical health assets every 15 min",
+            },
+        )
+
         self.stdout.write(self.style.SUCCESS(
             "[setup_beat_schedules] Periodic tasks seeded: "
             "weekly-ml-retrain, weekly-synthetic-dataset-refresh, "
-            "synthetic-telemetry-live, model-drift-check, weekly-feedback-training-export"
+            "telemetry-ws-broadcast, synthetic-telemetry-live, model-drift-check, "
+            "weekly-feedback-training-export, ml-inference-all-assets, "
+            "consolidation-critical-assets"
         ))

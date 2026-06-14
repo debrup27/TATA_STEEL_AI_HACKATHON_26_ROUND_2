@@ -77,24 +77,23 @@ def assemble_consolidated_payload(asset_id: str) -> dict:
         a["id"] = str(a["id"])
         a["created_at"] = a["created_at"].isoformat() if a["created_at"] else None
 
-    # Latest ML predictions per model type
-    preds = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time")[:20]
-    model_outputs = {}
-    for p in preds:
-        mt = p.model.model_type if p.model else "unknown"
-        if mt not in model_outputs:
-            model_outputs[mt] = p.prediction_output
+    # Latest ML predictions — prefer consolidated (saved by run_all_asset_models)
+    latest_pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
+    pred_output = latest_pred.prediction_output if latest_pred else {}
 
-    # Aggregate ML output fields
+    # Determine health context from campaign degradation state
+    campaign_hours = float(twin_state.get("_campaign_hours", 0.0))
+    fault_injected = twin_state.get("_fault_injected", False)
+
     consolidated_ml = {
-        "anomaly_score": model_outputs.get("anomaly_detector", {}).get("anomaly_score", 0.1),
-        "rul_hours": model_outputs.get("rul_predictor", {}).get("rul_hours"),
-        "rul_confidence": model_outputs.get("rul_predictor", {}).get("confidence"),
+        "anomaly_score": pred_output.get("anomaly_score", 0.1),
+        "rul_hours": pred_output.get("rul_hours"),
+        "rul_confidence": latest_pred.confidence if latest_pred else None,
         "health_score": twin.health_score if twin else 80.0,
-        "fault_classification": model_outputs.get("classifier", {}).get("fault_classification", 0),
-        "defect_probabilities": model_outputs.get("classifier", {}).get("defect_probabilities"),
-        "energy_efficiency_index": model_outputs.get("energy_efficiency", {}).get("prediction"),
-        "alarm_cluster": model_outputs.get("alarm_intelligence", {}).get("prediction"),
+        "fault_classification": pred_output.get("fault_classification", 0),
+        "campaign_hours": campaign_hours,
+        "fault_active": bool(fault_injected) or len(active_alerts) > 0,
+        "source": pred_output.get("source", "ml_model"),
     }
 
     # Spares

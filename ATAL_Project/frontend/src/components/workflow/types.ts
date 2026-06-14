@@ -25,4 +25,17 @@ export interface FlowNode {
   alertChannels?: { type: string; target: string; msg: string }[];
   ticketId?: string;
   rulDays?: number;
+  // ML prediction fields
+  healthScore?: number;
+  rulHours?: number;
+  anomalyScore?: number;
+  faultClass?: number;
+  campaignHours?: number;
+  activeAlerts?: number;
+  lastMaintenance?: {
+    date: string;
+    event_type: string;
+    description: string;
+    outcome?: string;
+  } | null;
 }

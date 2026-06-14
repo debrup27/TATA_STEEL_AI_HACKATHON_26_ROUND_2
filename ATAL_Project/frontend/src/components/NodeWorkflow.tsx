@@ -1,430 +1,43 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { SPRING_DEFAULT } from "@/lib/constants";
 import type { FlowNode } from "./workflow/types";
+import {
+  fetchFactoryWorkflowNodes,
+  fetchFactorySnapshot,
+  applySnapshotToNodes,
+  mergeNodePositions,
+  mergeNodeTelemetry,
+  applyWsCellsToNodes,
+  type FactoryWorkflowKey,
+} from "@/services/factoryWorkflow";
+import { connectWebSocket } from "@/lib/ws";
+import { apiJson } from "@/lib/api";
 
 // Import modular subcomponents
 import WorkflowNodeCard from "./workflow/WorkflowNodeCard";
 import WorkflowConnector from "./workflow/WorkflowConnector";
 import WorkflowZoomControls from "./workflow/WorkflowZoomControls";
+import WorkflowFloatingAlerts from "./workflow/WorkflowFloatingAlerts";
+import { useFactoryCanvasAlerts } from "@/hooks/useFactoryCanvasAlerts";
+import {
+  CARD_HEIGHT_COLLAPSED,
+  CARD_WIDTH_COLLAPSED,
+  computeCenterPan,
+  computeNodesBounds,
+  NODE_LAYOUT_STEP,
+  CANVAS_ORIGIN,
+  CANVAS_EXTENT,
+} from "./workflow/layout";
 
-// ----------------------------------------------------
-// Horizon Foundry (15 Nodes)
-// ----------------------------------------------------
-const initialHorizonNodes: FlowNode[] = [
-  {
-    id: "horizon_1",
-    title: "Raw Feed Ingest",
-    subtitle: "Ingestion System",
-    x: 40,
-    y: 180,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["horizon_2"],
-    rulDays: 140,
-    sensors: [
-      { name: "FeedRate", value: "320 T/h", status: "OK" },
-      { name: "BeltVibr", value: "2.4 mm/s", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_2",
-    title: "Coke Ovens Control",
-    subtitle: "Oven Temp Classifier",
-    x: 320,
-    y: 180,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["horizon_3", "horizon_4"],
-    rulDays: 92,
-    threshold: { field: "Oven_Temp", operator: ">", value: "1150°C" }
-  },
-  {
-    id: "horizon_3",
-    title: "Cooling Jet Pump",
-    subtitle: "Sinter Fan Cooler",
-    x: 600,
-    y: 50,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["horizon_5"],
-    rulDays: 45,
-    valveName: "VALVE_4A",
-    valveFlow: 250
-  },
-  {
-    id: "horizon_4",
-    title: "Recycled Gas Loop",
-    subtitle: "Waste Heat Telemetry",
-    x: 600,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["horizon_6"],
-    rulDays: 120,
-    sensors: [
-      { name: "Gas_Temp", value: "380°C", status: "OK" },
-      { name: "Loop_Pres", value: "1.2b", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_5",
-    title: "Furnace Ingress",
-    subtitle: "Blast Furnace Temp",
-    x: 880,
-    y: 50,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["horizon_7"],
-    rulDays: 30,
-    sensors: [
-      { name: "BF_Temp", value: "1450°C", status: "OK" },
-      { name: "BF_Press", value: "3.2b", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_6",
-    title: "Recycling Stack",
-    subtitle: "BF Gas Extraction",
-    x: 880,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["horizon_8"],
-    rulDays: 160,
-    sensors: [
-      { name: "FlowRate", value: "14200 m3/h", status: "OK" },
-      { name: "Gas_CO2", value: "22%", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_7",
-    title: "Active Taphole Jet",
-    subtitle: "BF Taphole Drill",
-    x: 1160,
-    y: 50,
-    type: "action",
-    statusColor: "#ef4444",
-    status: "completed",
-    nextNodes: ["horizon_9"],
-    rulDays: 14,
-    valveName: "DRILL_COOL_3",
-    valveFlow: 350
-  },
-  {
-    id: "horizon_8",
-    title: "Slag Hopper Drive",
-    subtitle: "Slag Granulator",
-    x: 1160,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["horizon_10"],
-    rulDays: 75,
-    sensors: [
-      { name: "Gran_Vibr", value: "3.1 mm/s", status: "OK" },
-      { name: "WaterTemp", value: "48°C", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_9",
-    title: "Lance Flow Check",
-    subtitle: "BOF Lance Controller",
-    x: 1440,
-    y: 50,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["horizon_11"],
-    rulDays: 8,
-    threshold: { field: "Lance_Height", operator: "<", value: "1.8m" }
-  },
-  {
-    id: "horizon_10",
-    title: "Ladle Induction",
-    subtitle: "Ladle Furnace Temp",
-    x: 1440,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["horizon_12"],
-    rulDays: 50,
-    sensors: [
-      { name: "Melt_Temp", value: "1620°C", status: "OK" },
-      { name: "InducCurrent", value: "12.4 kA", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_11",
-    title: "Mold Oscillator",
-    subtitle: "Continuous Caster",
-    x: 1720,
-    y: 50,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["horizon_13"],
-    rulDays: 28,
-    valveName: "SPRAY_COOL_B",
-    valveFlow: 520
-  },
-  {
-    id: "horizon_12",
-    title: "Stopper Rod Servo",
-    subtitle: "Tundish Flow Monitor",
-    x: 1720,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["horizon_13"],
-    rulDays: 60,
-    sensors: [
-      { name: "Rod_Press", value: "185 bar", status: "OK" },
-      { name: "Flow_Speed", value: "1.4 m/s", status: "OK" }
-    ]
-  },
-  {
-    id: "horizon_13",
-    title: "Coiler Temp Rule",
-    subtitle: "Hot Strip Mill",
-    x: 2000,
-    y: 180,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["horizon_14"],
-    rulDays: 45,
-    threshold: { field: "Slab_Temp", operator: "<", value: "880°C" }
-  },
-  {
-    id: "horizon_14",
-    title: "Coiler Mandrel",
-    subtitle: "HSM Roller Coiler",
-    x: 2280,
-    y: 180,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["horizon_15"],
-    rulDays: 45,
-    valveName: "MANDREL_LUB",
-    valveFlow: 120
-  },
-  {
-    id: "horizon_15",
-    title: "Coil Storage Yard",
-    subtitle: "Final Yard Log",
-    x: 2560,
-    y: 180,
-    type: "end",
-    statusColor: "#10b981",
-    status: "completed",
-    nextNodes: [],
-    rulDays: 365
-  }
-];
-
-// ----------------------------------------------------
-// Zephyr Core Plant (12 Nodes)
-// ----------------------------------------------------
-const initialZephyrNodes: FlowNode[] = [
-  {
-    id: "zephyr_1",
-    title: "Raw Batch Ingest",
-    subtitle: "Blast Furnace 2 Feed",
-    x: 40,
-    y: 180,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["zephyr_2"],
-    rulDays: 150,
-    sensors: [
-      { name: "SkipFlowRate", value: "280 T/h", status: "OK" },
-      { name: "ScaleWeight", value: "12.4 T", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_2",
-    title: "Flue Extraction Rule",
-    subtitle: "Gas Exhaust Blower",
-    x: 320,
-    y: 180,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["zephyr_3", "zephyr_4"],
-    rulDays: 78,
-    threshold: { field: "Flue_Temp", operator: ">", value: "260°C" }
-  },
-  {
-    id: "zephyr_3",
-    title: "Air Preheater Blower",
-    subtitle: "Air Preheater Fan",
-    x: 600,
-    y: 50,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["zephyr_5"],
-    rulDays: 32,
-    valveName: "FAN_VENT_4",
-    valveFlow: 900
-  },
-  {
-    id: "zephyr_4",
-    title: "Pulverized Feed Loop",
-    subtitle: "Coal Injection Pipe",
-    x: 600,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["zephyr_6"],
-    rulDays: 110,
-    sensors: [
-      { name: "CoalFlowSpeed", value: "28 m/s", status: "OK" },
-      { name: "PipePressure", value: "4.1 bar", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_5",
-    title: "Hearth Heat Sensors",
-    subtitle: "Hearth Thermal Array",
-    x: 880,
-    y: 50,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "completed",
-    nextNodes: ["zephyr_7"],
-    rulDays: 42,
-    sensors: [
-      { name: "HearthTemp", value: "1120°C", status: "OK" },
-      { name: "StaveHeatRate", value: "14.2 kW/m2", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_6",
-    title: "Tuyere Water Cooling",
-    subtitle: "Tuyere Cooling Array",
-    x: 880,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["zephyr_8"],
-    rulDays: 95,
-    sensors: [
-      { name: "CoolingFlow", value: "1420 L/min", status: "OK" },
-      { name: "OutletTemp", value: "44°C", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_7",
-    title: "Cast House Drill",
-    subtitle: "Cast House Taphole",
-    x: 1160,
-    y: 50,
-    type: "action",
-    statusColor: "#ef4444",
-    status: "completed",
-    nextNodes: ["zephyr_9"],
-    rulDays: 10,
-    valveName: "DRILL_LUBRICANT",
-    valveFlow: 80
-  },
-  {
-    id: "zephyr_8",
-    title: "Mud Gun Hydraulic",
-    subtitle: "Mud Gun Press Monitor",
-    x: 1160,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["zephyr_10"],
-    rulDays: 115,
-    sensors: [
-      { name: "PistonPress", value: "210 bar", status: "OK" },
-      { name: "OilTemp", value: "54°C", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_9",
-    title: "Desulphurizing Check",
-    subtitle: "Desulphurizing Unit",
-    x: 1440,
-    y: 50,
-    type: "classifier",
-    statusColor: "#a855f7",
-    status: "completed",
-    nextNodes: ["zephyr_11"],
-    rulDays: 60,
-    threshold: { field: "Sulphur_Percent", operator: ">", value: "0.015%" }
-  },
-  {
-    id: "zephyr_10",
-    title: "Ladle Rail Carrier",
-    subtitle: "Ladle Carrier System",
-    x: 1440,
-    y: 310,
-    type: "telemetry",
-    statusColor: "#3b82f6",
-    status: "idle",
-    nextNodes: ["zephyr_11"],
-    rulDays: 85,
-    sensors: [
-      { name: "CarrierLoad", value: "140 Tons", status: "OK" },
-      { name: "MotorVibration", value: "3.4 mm/s", status: "OK" }
-    ]
-  },
-  {
-    id: "zephyr_11",
-    title: "Pig Casting Spray",
-    subtitle: "Pig Casting Machine",
-    x: 1720,
-    y: 180,
-    type: "action",
-    statusColor: "#22c55e",
-    status: "completed",
-    nextNodes: ["zephyr_12"],
-    rulDays: 48,
-    valveName: "PC_MOLD_SPRAY",
-    valveFlow: 380
-  },
-  {
-    id: "zephyr_12",
-    title: "Production Output Log",
-    subtitle: "Batch Production Out",
-    x: 2000,
-    y: 180,
-    type: "end",
-    statusColor: "#10b981",
-    status: "completed",
-    nextNodes: [],
-    rulDays: 365
-  }
-];
 
 interface NodeWorkflowProps {
   initialFactory?: "horizon" | "zephyr";
   hidePills?: boolean;
   onBack?: () => void;
 }
-
-const getCardWidth = (id: string, expandedNodeId: string | null) => (expandedNodeId === id ? 340 : 240);
-const getCardHeight = (id: string, expandedNodeId: string | null) => (expandedNodeId === id ? 300 : 140);
 
 export default function NodeWorkflow({ initialFactory = "horizon", hidePills = false }: NodeWorkflowProps) {
   const [activeFactory, setActiveFactory] = useState<"horizon" | "zephyr">(initialFactory);
@@ -440,11 +53,16 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
 
   // Main factory data state wrapper
   const [factoryNodes, setFactoryNodes] = useState<Record<"horizon" | "zephyr", FlowNode[]>>({
-    horizon: initialHorizonNodes,
-    zephyr: initialZephyrNodes
+    horizon: [],
+    zephyr: [],
   });
 
   const nodes = factoryNodes[activeFactory];
+  const canvasAlerts = useFactoryCanvasAlerts(nodes);
+  const alertsAnchor = React.useMemo(() => {
+    const b = computeNodesBounds(nodes);
+    return { x: b.centerX, y: b.maxY };
+  }, [nodes]);
 
   // setNodes helper to dynamically update the active factory
   const setNodes = useCallback((newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
@@ -458,6 +76,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   }, [activeFactory]);
 
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
+  const [simulatingAnomalyIds, setSimulatingAnomalyIds] = useState<Set<string>>(new Set());
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editSubtitle, setEditSubtitle] = useState("");
@@ -465,40 +84,190 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   
   // Canvas Pan & Zoom States
   const [zoomScale, setZoomScale] = useState<number>(1);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 40, y: 0 });
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Draggable Node States
+  // Draggable Node States (draggingNodeId drives UI; interactionRef drives listeners)
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const interactionRef = useRef<{
+    mode: "none" | "pan" | "node";
+    nodeId: string | null;
+    panStartX: number;
+    panStartY: number;
+    dragOffsetX: number;
+    dragOffsetY: number;
+  }>({
+    mode: "none",
+    nodeId: null,
+    panStartX: 0,
+    panStartY: 0,
+    dragOffsetX: 0,
+    dragOffsetY: 0,
+  });
 
   const [isCanvasReady, setIsCanvasReady] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
+  const [workflowLoading, setWorkflowLoading] = useState(true);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [refreshCountdown, setRefreshCountdown] = useState(10);
+  // Store the resolved factory UUID for snapshot polling
+  const factoryIdRef = useRef<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const userMovedCanvasRef = useRef(false);
+  const hasInitializedCenterRef = useRef(false);
+  const panOffsetRef = useRef(panOffset);
+  const zoomScaleRef = useRef(zoomScale);
+  const nodesRef = useRef(nodes);
 
-  // Center nodes vertically in container on mount or activeFactory change
-  React.useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { height } = entry.contentRect;
-        if (height > 0) {
-          const nodeYCoords = nodes.map((n) => n.y);
-          const minY = nodeYCoords.length > 0 ? Math.min(...nodeYCoords) : 50;
-          const maxY = nodeYCoords.length > 0 ? Math.max(...nodeYCoords) : 310;
-          const nodesCenterY = (minY + (maxY + 140)) / 2;
-          const initialY = Math.round(height / 2 - nodesCenterY);
-          setPanOffset({ x: 40, y: initialY });
-          setIsCanvasReady(true);
-          observer.disconnect();
+  useEffect(() => {
+    panOffsetRef.current = panOffset;
+    zoomScaleRef.current = zoomScale;
+    nodesRef.current = nodes;
+  }, [panOffset, zoomScale, nodes]);
+
+  // Load equipment nodes + sensor data from backend
+  useEffect(() => {
+    let cancelled = false;
+    factoryIdRef.current = null;
+
+    fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey)
+      .then((loaded) => {
+        if (cancelled) return;
+        // Store factory UUID from first node for snapshot polling
+        if (loaded.length > 0) {
+          // Resolve factory ID via the factory list (reuse the already-cached call)
+          import("@/lib/api").then(({ apiList }) =>
+            apiList<{ id: string; code: string }>("/api/v1/factories/").then((factories) => {
+              const code = activeFactory === "horizon" ? "F1" : "F2";
+              const f = factories.find((fac) => fac.code === code);
+              if (f) factoryIdRef.current = f.id;
+            })
+          ).catch(() => undefined);
         }
-      }
+        setFactoryNodes((prev) => ({
+          ...prev,
+          [activeFactory]: mergeNodePositions(prev[activeFactory], loaded),
+        }));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setWorkflowError(
+          err instanceof Error ? err.message : "Failed to load factory equipment",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setWorkflowLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFactory]);
+
+  // Countdown ticker
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setRefreshCountdown((c) => (c <= 1 ? 10 : c - 1));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [activeFactory]);
+
+  // Refresh sensor readings + health every 10s via snapshot + full node merge
+  useEffect(() => {
+    const refreshTelemetry = () => {
+      setRefreshCountdown(10);
+      const fid = factoryIdRef.current;
+      fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey)
+        .then((loaded) => {
+          setFactoryNodes((prev) => ({
+            ...prev,
+            [activeFactory]: mergeNodePositions(
+              mergeNodeTelemetry(prev[activeFactory], loaded),
+              loaded,
+            ),
+          }));
+        })
+        .catch(() => undefined);
+
+      if (!fid) return;
+      fetchFactorySnapshot(fid)
+        .then((snapshot) => {
+          setFactoryNodes((prev) => ({
+            ...prev,
+            [activeFactory]: applySnapshotToNodes(prev[activeFactory], snapshot),
+          }));
+        })
+        .catch(() => undefined);
+    };
+
+    const interval = setInterval(refreshTelemetry, 10000);
+    return () => clearInterval(interval);
+  }, [activeFactory]);
+
+  // Keep fault-injection UI in sync with backend campaign state
+  useEffect(() => {
+    const syncFaultState = () => {
+      apiJson<{ assets: { asset_id: string; fault_injected: boolean }[] }>("/api/v1/simulate/plant/")
+        .then((data) => {
+          const factoryNodeIds = new Set(nodesRef.current.map((n) => n.id));
+          const activeFaults = new Set(
+            data.assets
+              .filter((a) => a.fault_injected && factoryNodeIds.has(a.asset_id))
+              .map((a) => a.asset_id),
+          );
+          setSimulatingAnomalyIds(activeFaults);
+        })
+        .catch(() => undefined);
+    };
+    syncFaultState();
+    const interval = setInterval(syncFaultState, 8000);
+    return () => clearInterval(interval);
+  }, [activeFactory]);
+
+  useEffect(() => {
+    const ws = connectWebSocket("/ws/telemetry", (data) => {
+      if (data.type !== "telemetry_update" || !Array.isArray(data.cells)) return;
+      setFactoryNodes((prev) => ({
+        ...prev,
+        [activeFactory]: applyWsCellsToNodes(
+          prev[activeFactory],
+          data.cells as Parameters<typeof applyWsCellsToNodes>[1],
+        ),
+      }));
+    });
+    return () => ws.close();
+  }, [activeFactory]);
+
+  const centerCanvas = useCallback((force = false) => {
+    if (!containerRef.current || nodesRef.current.length === 0) return;
+    if (userMovedCanvasRef.current && !force) return;
+    const { width, height } = containerRef.current.getBoundingClientRect();
+    const bounds = computeNodesBounds(nodesRef.current);
+    setPanOffset(computeCenterPan(bounds, width, height, zoomScaleRef.current));
+    setIsCanvasReady(true);
+  }, []);
+
+  // Center once when nodes first load — never reset pan on telemetry refresh
+  useEffect(() => {
+    userMovedCanvasRef.current = false;
+    hasInitializedCenterRef.current = false;
+  }, [activeFactory]);
+
+  useEffect(() => {
+    if (!containerRef.current || nodes.length === 0 || workflowLoading) return;
+    if (hasInitializedCenterRef.current) return;
+
+    centerCanvas(true);
+    hasInitializedCenterRef.current = true;
+
+    const observer = new ResizeObserver(() => {
+      if (!userMovedCanvasRef.current) centerCanvas(true);
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [activeFactory]);
+  }, [activeFactory, nodes.length, workflowLoading, centerCanvas]);
 
   // Enable transform transitions after the initial correct position paints
   React.useEffect(() => {
@@ -515,88 +284,116 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
       setZoomScale((prev) => Math.max(prev - 0.1, 0.5));
     } else {
       setZoomScale(1);
-      if (containerRef.current) {
-        const height = containerRef.current.clientHeight;
-        const nodeYCoords = nodes.map((n) => n.y);
-        const minY = nodeYCoords.length > 0 ? Math.min(...nodeYCoords) : 50;
-        const maxY = nodeYCoords.length > 0 ? Math.max(...nodeYCoords) : 310;
-        const nodesCenterY = (minY + (maxY + 140)) / 2;
-        const initialY = Math.round(height / 2 - nodesCenterY);
-        setPanOffset({ x: 40, y: initialY });
-      } else {
-        setPanOffset({ x: 40, y: 0 });
-      }
+      userMovedCanvasRef.current = false;
+      centerCanvas(true);
     }
-  }, [nodes]);
+  }, [centerCanvas]);
 
-  // Canvas Drag/Pan Handlers
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.closest(".node-element") || target.closest(".action-button") || target.closest(".panel-button")) return;
-    
-    setIsPanning(true);
-    setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-  };
+  // Always-on window listeners — refs updated synchronously on mousedown (no effect race)
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const s = interactionRef.current;
+      if (s.mode === "pan") {
+        userMovedCanvasRef.current = true;
+        setPanOffset({
+          x: e.clientX - s.panStartX,
+          y: e.clientY - s.panStartY,
+        });
+        return;
+      }
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPanOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      });
-    } else if (draggingNodeId) {
-      // Calculate drag distance
+      if (s.mode !== "node" || !s.nodeId) return;
+
       const dx = e.clientX - dragStartPos.current.x;
       const dy = e.clientY - dragStartPos.current.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 5) {
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
         hasDragged.current = true;
       }
 
-      const updatedNodes = nodes.map((node) => {
-        if (node.id === draggingNodeId) {
-          let gridX = Math.round((e.clientX - dragOffset.x - panOffset.x) / zoomScale);
-          let gridY = Math.round((e.clientY - dragOffset.y - panOffset.y) / zoomScale);
-          
-          gridX = Math.max(10, Math.min(3000, gridX));
-          gridY = Math.max(10, Math.min(600, gridY));
+      const zoom = zoomScaleRef.current;
+      const pan = panOffsetRef.current;
+      const nodeId = s.nodeId;
+      setNodes((prev) =>
+        prev.map((node) => {
+          if (node.id !== nodeId) return node;
+          let gridX = Math.round((e.clientX - s.dragOffsetX - pan.x) / zoom);
+          let gridY = Math.round((e.clientY - s.dragOffsetY - pan.y) / zoom);
+          gridX = Math.max(-500, Math.min(3000, gridX));
+          gridY = Math.max(-500, Math.min(2000, gridY));
+          return { ...node, x: gridX, y: gridY };
+        }),
+      );
+    };
 
-          return {
-            ...node,
-            x: gridX,
-            y: gridY
-          };
-        }
-        return node;
-      });
-      setNodes(updatedNodes);
+    const onUp = () => {
+      interactionRef.current.mode = "none";
+      interactionRef.current.nodeId = null;
+      setIsPanning(false);
+      setDraggingNodeId(null);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [setNodes]);
+
+  // Canvas pan
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest(".node-element") ||
+      target.closest(".node-drag-handle") ||
+      target.closest(".action-button") ||
+      target.closest(".panel-button")
+    ) {
+      return;
     }
+
+    const pan = panOffsetRef.current;
+    interactionRef.current = {
+      mode: "pan",
+      nodeId: null,
+      panStartX: e.clientX - pan.x,
+      panStartY: e.clientY - pan.y,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+    };
+    setIsPanning(true);
+    userMovedCanvasRef.current = true;
   };
 
-  const handleCanvasMouseUp = () => {
-    setIsPanning(false);
-    setDraggingNodeId(null);
-  };
-
-  // Card drag trigger
   const handleNodeDragStart = useCallback((e: React.MouseEvent, nodeId: string) => {
     const target = e.target as HTMLElement;
-    if (target.closest("button") || target.closest("input") || target.closest(".action-button")) return;
+    if (
+      target.closest("button") ||
+      target.closest("input") ||
+      target.closest(".action-button") ||
+      target.closest(".panel-button")
+    ) {
+      return;
+    }
 
     e.stopPropagation();
-    const node = nodes.find((n) => n.id === nodeId);
+    const node = nodesRef.current.find((n) => n.id === nodeId);
     if (!node) return;
-    
-    setDraggingNodeId(nodeId);
-    setDragOffset({
-      x: e.clientX - (node.x * zoomScale + panOffset.x),
-      y: e.clientY - (node.y * zoomScale + panOffset.y)
-    });
 
-    // Initialize drag detection
+    const pan = panOffsetRef.current;
+    const zoom = zoomScaleRef.current;
+    interactionRef.current = {
+      mode: "node",
+      nodeId,
+      panStartX: 0,
+      panStartY: 0,
+      dragOffsetX: e.clientX - (node.x * zoom + pan.x),
+      dragOffsetY: e.clientY - (node.y * zoom + pan.y),
+    };
+    setDraggingNodeId(nodeId);
     dragStartPos.current = { x: e.clientX, y: e.clientY };
     hasDragged.current = false;
-  }, [nodes, zoomScale, panOffset]);
+  }, []);
 
   // Action: Delete Node
   const handleDeleteNode = useCallback((nodeId: string) => {
@@ -676,7 +473,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         id: newId,
         title: "New Equipment Feeds",
         subtitle: "Telemetry Ingest",
-        x: parentNode.x + 280,
+        x: parentNode.x + NODE_LAYOUT_STEP,
         y: parentNode.y,
         type: "telemetry",
         statusColor: "#3b82f6",
@@ -747,69 +544,62 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   // Interactive Anomaly Simulation & Reset handlers
   // ----------------------------------------------------
   const handleSimulateAnomaly = useCallback((nodeId: string) => {
-    setNodes((prev) =>
-      prev.map((node) => {
-        if (node.id === nodeId) {
-          const updatedSensors = node.sensors?.map((s) => {
-            const lowerName = s.name.toLowerCase();
-            if (lowerName.includes("temp") || lowerName.includes("heat")) {
-              return { ...s, value: "115°C", status: "CRITICAL" as const };
-            }
-            if (lowerName.includes("pres") || lowerName.includes("load")) {
-              return { ...s, value: "5.8 bar", status: "CRITICAL" as const };
-            }
-            if (lowerName.includes("vibr")) {
-              return { ...s, value: "14.2 mm/s", status: "CRITICAL" as const };
-            }
-            if (lowerName.includes("rate") || lowerName.includes("flow")) {
-              return { ...s, value: "480 T/h", status: "HIGH" as const };
-            }
-            return { ...s, status: "CRITICAL" as const };
-          }) || [{ name: "FaultCode", value: "ERR-902", status: "CRITICAL" as const }];
-
-          return {
-            ...node,
-            status: "running",
-            statusColor: "#ef4444", // Critical Red
-            sensors: updatedSensors,
-            subtitle: "CRITICAL ANOMALY TRIGGERED",
-            valveFlow: node.valveFlow !== undefined ? 650 : undefined,
-            rulDays: 1, // Visual RUL drop
-            alertChannels: node.alertChannels || [
-              { type: "SMS", target: "+91 98301*****", msg: "CRITICAL: " + node.title + " anomaly alert." },
-              { type: "Slack", target: "#alerts-active", msg: "CRITICAL: " + node.title + " health failure!" }
-            ]
-          };
-        }
-        return node;
+    setSimulatingAnomalyIds((prev) => new Set([...prev, nodeId]));
+    apiJson(`/api/v1/simulate/${nodeId}/`, {
+      method: "POST",
+      body: JSON.stringify({ action: "inject_fault", fault_type: "bearing_wear" }),
+    })
+      .then(() => {
+        // Reload backend state after celery batch has time to run
+        setTimeout(() => {
+          fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey)
+            .then((loaded) => {
+              setFactoryNodes((prev) => ({
+                ...prev,
+                [activeFactory]: mergeNodePositions(
+                  mergeNodeTelemetry(prev[activeFactory], loaded),
+                  loaded,
+                ),
+              }));
+            })
+            .catch(() => undefined);
+        }, 4000);
       })
-    );
-  }, [setNodes]);
+      .catch(() => {
+        setSimulatingAnomalyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      });
+  }, [activeFactory]);
+
+  const handleStopAnomaly = useCallback((nodeId: string) => {
+    setSimulatingAnomalyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(nodeId);
+      return next;
+    });
+    apiJson(`/api/v1/simulate/${nodeId}/`, {
+      method: "POST",
+      body: JSON.stringify({ action: "reset" }),
+    })
+      .then(() => fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey))
+      .then((loaded) => {
+        setFactoryNodes((prev) => ({
+          ...prev,
+          [activeFactory]: mergeNodePositions(
+            mergeNodeTelemetry(prev[activeFactory], loaded),
+            loaded,
+          ),
+        }));
+      })
+      .catch(() => undefined);
+  }, [activeFactory]);
 
   const handleResetTelemetry = useCallback((nodeId: string) => {
-    setNodes((prev) =>
-      prev.map((node) => {
-        if (node.id === nodeId) {
-          const origHorizon = initialHorizonNodes.find((n) => n.id === nodeId);
-          const origZephyr = initialZephyrNodes.find((n) => n.id === nodeId);
-          const original = origHorizon || origZephyr;
-          if (original) {
-            return {
-              ...node,
-              status: original.status,
-              statusColor: original.statusColor,
-              subtitle: original.subtitle,
-              sensors: original.sensors,
-              valveFlow: original.valveFlow,
-              alertChannels: original.alertChannels,
-              rulDays: original.rulDays
-            };
-          }
-        }
-        return node;
-      })
-    );
-  }, [setNodes]);
+    handleStopAnomaly(nodeId);
+  }, [handleStopAnomaly]);
 
   const handleNodeClick = useCallback((nodeId: string) => {
     if (hasDragged.current) return;
@@ -855,6 +645,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
                 key={fac}
                 type="button"
                 onClick={() => {
+                  setWorkflowLoading(true);
                   setActiveFactory(fac);
                   setExpandedNodeId(null);
                   setEditingNodeId(null);
@@ -882,9 +673,6 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         ref={containerRef}
         className="w-full h-full flex-grow min-h-[500px] bg-[#FAF9F5] rounded-3xl border border-zinc-200/80 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing flex flex-col justify-end"
         onMouseDown={handleCanvasMouseDown}
-        onMouseMove={handleCanvasMouseMove}
-        onMouseUp={handleCanvasMouseUp}
-        onMouseLeave={handleCanvasMouseUp}
       >
         {/* SVG Dots Background Pattern */}
         <div className="absolute inset-0 z-0 pointer-events-none select-none overflow-hidden">
@@ -896,33 +684,42 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
           </svg>
         </div>
 
-        {/* Scalable & Pannable Viewport */}
+        {/* Scalable & Pannable Viewport — overflow-visible so nodes/connectors above y=0 render */}
         <div 
-          className="absolute inset-0 z-10 origin-center select-none"
+          className="absolute inset-0 z-10 origin-center select-none overflow-visible"
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
             opacity: isCanvasReady ? 1 : 0,
-            transition: isCanvasReady && enableTransition
-              ? "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
-              : "opacity 0.15s ease-in",
+            transition: isPanning || draggingNodeId
+              ? "none"
+              : isCanvasReady && enableTransition
+                ? "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+                : "opacity 0.15s ease-in",
           }}
         >
-          {/* SVG Connecting Edges Path Layer */}
-          <svg className="absolute inset-0 w-[8000px] h-[8000px] pointer-events-none z-0">
+          {/* SVG connector layer — viewBox includes negative coords so upward drags don't clip */}
+          <svg
+            className="absolute pointer-events-none z-0 overflow-visible"
+            style={{
+              left: CANVAS_ORIGIN,
+              top: CANVAS_ORIGIN,
+              width: CANVAS_EXTENT,
+              height: CANVAS_EXTENT,
+            }}
+            viewBox={`${CANVAS_ORIGIN} ${CANVAS_ORIGIN} ${CANVAS_EXTENT} ${CANVAS_EXTENT}`}
+          >
             {/* Render curved connector lines dynamically */}
             {nodes.map((sourceNode) => {
               return sourceNode.nextNodes.map((targetId) => {
                 const targetNode = nodes.find((n) => n.id === targetId);
                 if (!targetNode) return null;
 
-                const startWidth = getCardWidth(sourceNode.id, expandedNodeId);
-                const startHeight = getCardHeight(sourceNode.id, expandedNodeId);
-                const endHeight = getCardHeight(targetNode.id, expandedNodeId);
-
-                const startX = sourceNode.x + startWidth;
-                const startY = sourceNode.y + startHeight / 2;
-                const endX = targetNode.x;
-                const endY = targetNode.y + endHeight / 2;
+                // Port circles are w-3 (12px); translate-x-1/2 shifts them 6px outward
+                const PORT_HALF = 6;
+                const startX = sourceNode.x + CARD_WIDTH_COLLAPSED + PORT_HALF;
+                const startY = sourceNode.y + CARD_HEIGHT_COLLAPSED / 2;
+                const endX = targetNode.x - PORT_HALF;
+                const endY = targetNode.y + CARD_HEIGHT_COLLAPSED / 2;
 
                 const isActive = sourceNode.statusColor === "#ef4444" || (sourceNode.status === "completed" && targetNode.status !== "idle");
                 const isCritical = sourceNode.statusColor === "#ef4444";
@@ -945,12 +742,13 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
           </svg>
 
           {/* Render Flow Node Cards */}
-          {nodes.map((node) => {
+          {nodes.map((node, index) => {
             return (
               <WorkflowNodeCard
                 key={node.id}
                 node={node}
                 isExpanded={expandedNodeId === node.id}
+                isFirstInChain={index === 0}
                 isEditing={editingNodeId === node.id}
                 showAddMenu={showAddMenuId === node.id}
                 zoomScale={zoomScale}
@@ -967,20 +765,35 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
                 onDuplicate={handleDuplicateNode}
                 onDelete={handleDeleteNode}
                 onSimulateAnomaly={handleSimulateAnomaly}
+                onStopAnomaly={handleStopAnomaly}
+                isSimulatingAnomaly={simulatingAnomalyIds.has(node.id)}
                 onResetTelemetry={handleResetTelemetry}
                 onToggleAddMenu={handleToggleAddMenu}
                 onAddNodeAfter={handleAddNodeAfter}
                 allNodes={nodes}
                 onToggleConnection={handleToggleConnection}
+                refreshCountdown={refreshCountdown}
               />
             );
           })}
+
+          <WorkflowFloatingAlerts
+            messages={canvasAlerts}
+            anchorX={alertsAnchor.x}
+            anchorY={alertsAnchor.y}
+          />
         </div>
 
         {/* Floating Zoom Controls Panel */}
         <WorkflowZoomControls
           onZoom={handleZoom}
         />
+
+        {(workflowLoading || workflowError) && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-white/90 border border-zinc-200 shadow-sm text-[10px] font-mono uppercase tracking-widest text-zinc-500">
+            {workflowLoading ? "Loading equipment telemetry…" : workflowError}
+          </div>
+        )}
       </div>
 
       <style jsx global>{`

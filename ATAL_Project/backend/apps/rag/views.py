@@ -27,6 +27,29 @@ class DocumentIngestView(APIView):
         )
 
 
+class DocumentListView(APIView):
+    """GET /api/v1/rag/documents/ — list ingested corpus documents for MANAS selector."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        doc_type = request.query_params.get("type")
+        qs = Document.objects.filter(is_ingested=True).order_by("title")
+        if doc_type:
+            qs = qs.filter(doc_type=doc_type)
+        data = [
+            {
+                "id": str(d.id),
+                "title": d.title,
+                "doc_type": d.doc_type,
+                "chroma_collection": d.chroma_collection,
+                "source_url": d.source_url,
+                "indexed_at": d.indexed_at.isoformat() if d.indexed_at else None,
+            }
+            for d in qs[:200]
+        ]
+        return Response({"documents": data, "count": len(data)})
+
+
 class RAGQueryView(APIView):
     permission_classes = [IsAuthenticated]
 

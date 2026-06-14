@@ -80,22 +80,25 @@ class Command(BaseCommand):
         # ── 2. JWT auth ───────────────────────────────────────────────────────
         token = None
         try:
-            from apps.users.models import User
-            user = User.objects.filter(is_active=True).first()
-            if not user:
-                fail("JWT auth", "No active users in DB — run seed_fixtures")
-            else:
-                import httpx
+            import httpx
+            # Prefer demo technician account (matches login page + create_demo_users)
+            creds = [
+                ("tech_demo", "TechDemo@123"),
+                ("supervisor_demo", "SuperDemo@123"),
+                ("admin_demo", "AdminDemo@123"),
+            ]
+            for username, password in creds:
                 r = httpx.post(
                     "http://localhost:8000/api/v1/auth/token/",
-                    json={"username": user.username, "password": "demo1234"},
+                    json={"username": username, "password": password},
                     timeout=5,
                 )
                 if r.status_code == 200 and "access" in r.json():
                     token = r.json()["access"]
-                    ok(f"JWT auth — token obtained for {user.username}")
-                else:
-                    fail("JWT auth", f"status {r.status_code} body={r.text[:80]}")
+                    ok(f"JWT auth — token obtained for {username}")
+                    break
+            if not token:
+                fail("JWT auth", "demo credentials rejected — run create_demo_users")
         except Exception as e:
             fail("JWT auth", str(e))
 
@@ -129,6 +132,22 @@ class Command(BaseCommand):
         asset_id = None
         if assets_data and assets_data.get("results"):
             asset_id = assets_data["results"][0]["id"]
+            if len(assets_data["results"]) < 8:
+                fail("Assets list", f"expected ≥8 seeded assets, got {len(assets_data['results'])}")
+
+        # ── 3b. Factories (Horizon F1 + Zephyr F2) ───────────────────────────
+        factories_data = get("/api/v1/factories/", "Factories list", expect_key="results")
+        if factories_data:
+            codes = {f.get("code") for f in factories_data.get("results", [])}
+            missing = [c for c in ("F1", "F2") if c not in codes]
+            if missing:
+                fail("Factories list", f"missing factory codes: {missing}")
+            else:
+                ok("Factories F1 (Horizon) + F2 (Zephyr) present")
+
+        # ── 3c. Asset health endpoint ─────────────────────────────────────────
+        if asset_id:
+            get(f"/api/v1/assets/{asset_id}/health/", "Asset health score")
 
         # ── 4. Sensor definitions ─────────────────────────────────────────────
         get("/api/v1/sensors/", "Sensor definitions list")
@@ -143,10 +162,62 @@ class Command(BaseCommand):
             fail("Digital twin state", "no asset available")
 
         # ── 7. Telemetry ──────────────────────────────────────────────────────
-        get("/api/v1/telemetry/readings/", "Telemetry readings list")
+        if asset_id:
+            get(
+                f"/api/v1/telemetry/{asset_id}/?limit=10&order=desc",
+                "Telemetry time-series list",
+                expect_key="readings",
+            )
 
-        # ── 8. ML predictions ─────────────────────────────────────────────────
-        get("/api/v1/ml/predictions/", "ML predictions list")
+        # ── 7b. Telemetry time-series returns recent readings (not stale tail) ─
+        if asset_id:
+            try:
+                from django.utils import timezone
+                from datetime import timedelta
+                from apps.telemetry.models import SensorReading
+
+                before = SensorReading.objects.filter(asset_id=asset_id).count()
+                ts_data = get(
+                    f"/api/v1/telemetry/{asset_id}/?limit=20&order=desc",
+                    "Telemetry time-series (latest)",
+                    expect_key="readings",
+                )
+                if ts_data and ts_data.get("readings"):
+                    from django.utils.dateparse import parse_datetime
+                    latest_time = max(
+                        parse_datetime(r["time"])
+                        for r in ts_data["readings"]
+                        if parse_datetime(r["time"])
+                    )
+                    if timezone.is_naive(latest_time):
+                        latest_time = timezone.make_aware(latest_time)
+                    age = timezone.now() - latest_time
+                    if age > timedelta(hours=6):
+                        fail(
+                            "Telemetry freshness",
+                            f"newest reading is {age.total_seconds() / 3600:.1f}h old",
+                        )
+                    else:
+                        ok(f"Telemetry freshness — newest reading {int(age.total_seconds())}s ago")
+
+                # Synthetic ingest path (unit — no Celery required)
+                try:
+                    from apps.synthetic.tasks import generate_batch
+                    result = generate_batch.run(str(asset_id), n_samples=3)
+                    after = SensorReading.objects.filter(asset_id=asset_id).count()
+                    if result.get("rows", 0) > 0 and after > before:
+                        ok(f"Synthetic telemetry ingest — +{after - before} rows")
+                    elif result.get("rows", 0) > 0:
+                        ok("Synthetic telemetry ingest — rows written (conflicts ok)")
+                    else:
+                        fail("Synthetic telemetry ingest", f"no rows written result={result}")
+                except Exception as e:
+                    fail("Synthetic telemetry ingest", str(e))
+            except Exception as e:
+                fail("Telemetry freshness", str(e))
+
+        # ── 8. ML model registry status ───────────────────────────────────────
+        get("/api/v1/ml/models/status/", "ML models status")
 
         # ── 9. Alerts ─────────────────────────────────────────────────────────
         get("/api/v1/alerts/", "Alerts list")
@@ -162,9 +233,9 @@ class Command(BaseCommand):
             if token:
                 import httpx
                 r = httpx.post(
-                    "http://localhost:8000/api/v1/rag/search/",
+                    "http://localhost:8000/api/v1/rag/query/",
                     headers={"Authorization": f"Bearer {token}"},
-                    json={"query": "bearing vibration ISO 10816", "kind": "iso"},
+                    json={"query": "bearing vibration ISO 10816", "type": "iso_compliance", "standard_code": "ISO 10816"},
                     timeout=30,
                 )
                 if r.status_code == 200:
@@ -313,6 +384,112 @@ class Command(BaseCommand):
             ok(f"Feedback prompt patch — {'patch present' if patch else 'no feedback yet (ok)'}")
         except Exception as e:
             fail("Feedback prompt patch", str(e))
+
+        # ── 22. Real ML predictions (no physics_fallback) ─────────────────────
+        try:
+            from apps.ml.models import MLPrediction
+            from apps.assets.models import Asset
+            fallback_count = 0
+            real_count = 0
+            rul_assets = []
+            for pred in MLPrediction.objects.order_by("asset", "-prediction_time").distinct("asset")[:8]:
+                out = pred.prediction_output or {}
+                if out.get("source") == "physics_fallback":
+                    fallback_count += 1
+                elif out.get("source") == "ml_model":
+                    real_count += 1
+                    rul = out.get("rul_hours")
+                    if rul is not None:
+                        rul_assets.append(f"{pred.asset.asset_type}:{round(rul, 0)}h")
+            if real_count > 0 and fallback_count == 0:
+                ok(f"Real ML predictions — {real_count} assets, sample RULs: {rul_assets[:4]}")
+            elif real_count > 0:
+                ok(f"Real ML predictions — {real_count} real, {fallback_count} fallback (run retrain to fix)")
+            else:
+                fail("Real ML predictions", "all predictions are physics_fallback — run ml inference")
+        except Exception as e:
+            fail("Real ML predictions", str(e))
+
+        # ── 23. RUL for 4 equipment assets ───────────────────────────────────
+        try:
+            from apps.ml.models import MLPrediction
+            from apps.assets.models import Asset
+            EQUIPMENT_TYPES = {"SRF", "HHPD", "FS", "HAGCC"}
+            found = set()
+            for asset in Asset.objects.filter(asset_type__in=EQUIPMENT_TYPES):
+                pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
+                if pred:
+                    rul = (pred.prediction_output or {}).get("rul_hours")
+                    if rul is not None:
+                        found.add(asset.asset_type)
+            missing = EQUIPMENT_TYPES - found
+            if not missing:
+                ok(f"RUL predictions — all 4 equipment assets have RUL: {sorted(found)}")
+            else:
+                fail("RUL predictions", f"missing RUL for: {missing}")
+        except Exception as e:
+            fail("RUL predictions", str(e))
+
+        # ── 24. Plant KPIs endpoint ───────────────────────────────────────────
+        if token:
+            try:
+                import httpx
+                r = httpx.get(
+                    "http://localhost:8000/api/v1/plant/kpis/",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    kpis = r.json()
+                    hs = kpis.get("plant_health_score")
+                    ok(f"Plant KPIs — plant_health={hs}, false_alarm_rate={kpis.get('false_alarm_rate')}")
+                else:
+                    fail("Plant KPIs", f"status {r.status_code}")
+            except Exception as e:
+                fail("Plant KPIs", str(e))
+
+        # ── 25. Twin state reflects real ML health ────────────────────────────
+        try:
+            from apps.twins.models import AssetTwinState
+            physics_default = sum(1 for t in AssetTwinState.objects.all() if t.health_score == 100.0)
+            total_twins = AssetTwinState.objects.count()
+            if total_twins > 0 and physics_default < total_twins:
+                ok(f"Twin health scores — {total_twins - physics_default}/{total_twins} updated from real ML")
+            elif total_twins == 0:
+                fail("Twin health scores", "no twin states found")
+            else:
+                fail("Twin health scores", "all twins at default 100 — inference not updating twins")
+        except Exception as e:
+            fail("Twin health scores", str(e))
+
+        # ── 26. Simulation API — status + fault inject + reset ────────────────
+        if asset_id and token:
+            try:
+                import httpx
+                # GET status
+                r = httpx.get(
+                    f"http://localhost:8000/api/v1/simulate/{asset_id}/",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5,
+                )
+                if r.status_code != 200:
+                    fail("Simulation API (GET)", f"status {r.status_code}")
+                else:
+                    campaign_h = r.json().get("campaign_hours", "?")
+                    ok(f"Simulation API (GET) — campaign_hours={campaign_h}")
+
+                # GET plant overview
+                r2 = httpx.get(
+                    "http://localhost:8000/api/v1/simulate/plant/",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=5,
+                )
+                if r2.status_code == 200 and "assets" in r2.json():
+                    ok(f"Plant simulation overview — {len(r2.json()['assets'])} assets")
+                else:
+                    fail("Plant simulation overview", f"status {r2.status_code}")
+            except Exception as e:
+                fail("Simulation API", str(e))
 
         # ── Summary ───────────────────────────────────────────────────────────
         self._report(passed, failures)

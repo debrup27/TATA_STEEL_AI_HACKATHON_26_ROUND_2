@@ -2,19 +2,28 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Edit3, Copy, Trash2, X, AlertTriangle } from "lucide-react";
+import { X, AlertTriangle, GripHorizontal, ChevronDown, Activity, Clock, Wrench, ShieldAlert, CheckCircle2 } from "lucide-react";
 import type { FlowNode } from "./types";
 import WorkflowAddMenu from "./WorkflowAddMenu";
+import {
+  CARD_HEIGHT_COLLAPSED,
+  CARD_HEIGHT_EXPANDED,
+  CARD_WIDTH_COLLAPSED,
+  CARD_WIDTH_EXPANDED,
+} from "./layout";
 
 interface WorkflowNodeCardProps {
   node: FlowNode;
   isExpanded: boolean;
+  isFirstInChain: boolean;
   isEditing: boolean;
   showAddMenu: boolean;
   zoomScale: number;
   activeFactory: "horizon" | "zephyr";
   editTitle: string;
   editSubtitle: string;
+  refreshCountdown?: number;
+  isSimulatingAnomaly?: boolean;
   setEditTitle: (val: string) => void;
   setEditSubtitle: (val: string) => void;
   onNodeClick: (id: string) => void;
@@ -25,6 +34,7 @@ interface WorkflowNodeCardProps {
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onSimulateAnomaly: (id: string) => void;
+  onStopAnomaly?: (id: string) => void;
   onResetTelemetry: (id: string) => void;
   onToggleAddMenu: (id: string) => void;
   onAddNodeAfter: (parentId: string, type: string) => void;
@@ -32,295 +42,312 @@ interface WorkflowNodeCardProps {
   onToggleConnection: (parentId: string, targetId: string) => void;
 }
 
-const getCardWidth = (isExpanded: boolean) => (isExpanded ? 340 : 240);
-const getCardHeight = (isExpanded: boolean) => (isExpanded ? 300 : 140);
+function HealthBar({ score }: { score: number }) {
+  const color = score < 40 ? "#ef4444" : score < 60 ? "#f97316" : score < 80 ? "#eab308" : "#22c55e";
+  return (
+    <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+      <div
+        className="h-full rounded-full transition-all duration-700"
+        style={{ width: `${Math.max(2, score)}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+}
 
-const WorkflowNodeCardComponent = React.memo(function WorkflowNodeCard({
+function RiskBadge({ score }: { score: number }) {
+  if (score < 40) return <span className="text-[9px] font-extrabold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full uppercase">CRITICAL</span>;
+  if (score < 60) return <span className="text-[9px] font-extrabold text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-full uppercase">WARNING</span>;
+  if (score < 80) return <span className="text-[9px] font-extrabold text-yellow-600 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full uppercase">CAUTION</span>;
+  return <span className="text-[9px] font-extrabold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full uppercase">NOMINAL</span>;
+}
+
+export default function WorkflowNodeCard({
   node,
   isExpanded,
-  isEditing,
+  isFirstInChain,
   showAddMenu,
-  activeFactory,
-  editTitle,
-  setEditTitle,
+  refreshCountdown,
+  isSimulatingAnomaly = false,
   onNodeClick,
   onCloseExpand,
   onNodeDragStart,
-  onRenameStart,
-  onRenameSave,
-  onDuplicate,
-  onDelete,
   onSimulateAnomaly,
+  onStopAnomaly,
   onResetTelemetry,
   onToggleAddMenu,
   onAddNodeAfter,
   allNodes,
   onToggleConnection,
 }: WorkflowNodeCardProps) {
+  const cardWidth = isExpanded ? CARD_WIDTH_EXPANDED : CARD_WIDTH_COLLAPSED;
+  const cardHeight = isExpanded ? CARD_HEIGHT_EXPANDED : CARD_HEIGHT_COLLAPSED;
+
+  const healthScore = node.healthScore ?? 100;
+  const isNodeCritical = node.statusColor === "#ef4444" || healthScore < 40 || isSimulatingAnomaly;
   const isCompleted = node.status === "completed";
   const isRunning = node.status === "running";
-  const cardWidth = getCardWidth(isExpanded);
-  const cardHeight = getCardHeight(isExpanded);
-  const isNodeCritical = node.statusColor === "#ef4444";
+  const hasOutput = node.nextNodes.length > 0;
+  const showPorts = !isExpanded;
+
+  const rulHours = node.rulHours;
+  const rulDays = node.rulDays;
+  const anomalyScore = node.anomalyScore;
+  const faultClass = node.faultClass;
+  const activeAlerts = node.activeAlerts ?? 0;
+  const campaignHours = node.campaignHours ?? 0;
+  const lastMaintenance = node.lastMaintenance;
 
   return (
     <motion.div
-      animate={{
-        width: cardWidth,
-        height: cardHeight
-      }}
-      transition={{ duration: 0.12, ease: "easeOut" }}
+      animate={{ width: cardWidth, height: cardHeight }}
+      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       className="absolute group z-10"
       style={{
         left: node.x,
         top: node.y,
-        zIndex: isExpanded ? 50 : showAddMenu ? 40 : isNodeCritical ? 30 : 10
+        zIndex: isExpanded ? 50 : showAddMenu ? 40 : isNodeCritical ? 30 : 10,
       }}
     >
-      {/* Input port dot (Left handle) */}
-      {node.id !== `${activeFactory}_1` && (
-        <div 
-          className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
-          style={{ 
-            left: 0, 
-            top: "50%",
-            backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
-          }}
+      {/* Pipeline ports */}
+      {showPorts && !isFirstInChain && (
+        <div
+          className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 -translate-y-1/2 -translate-x-1/2 pointer-events-none"
+          style={{ left: 0, top: CARD_HEIGHT_COLLAPSED / 2, backgroundColor: "#3b82f6" }}
         />
       )}
-      {/* Output port dot (Right handle) */}
-      {node.nextNodes.length > 0 && (
-        <div 
-          className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-300 pointer-events-none"
-          style={{ 
-            left: "100%", 
-            top: "50%",
-            backgroundColor: isNodeCritical ? "#ef4444" : "#3b82f6"
-          }}
+      {showPorts && hasOutput && (
+        <div
+          className="absolute w-3 h-3 rounded-full border-2 border-white shadow-md z-20 -translate-y-1/2 translate-x-1/2 pointer-events-none"
+          style={{ left: CARD_WIDTH_COLLAPSED, top: CARD_HEIGHT_COLLAPSED / 2, backgroundColor: "#3b82f6" }}
         />
       )}
 
-      {/* Main Card Element */}
       <div
-        onMouseDown={(e) => onNodeDragStart(e, node.id)}
-        onClick={() => onNodeClick(node.id)}
-        className={`node-element w-full h-full bg-white rounded-2xl border-2 transition-all duration-300 flex flex-col overflow-hidden select-none cursor-grab active:cursor-grabbing ${
-          isExpanded 
-            ? "border-zinc-800 shadow-xl" 
+        className={`node-element w-full h-full bg-white rounded-2xl border-2 flex flex-col select-none overflow-hidden cursor-grab active:cursor-grabbing ${
+          isExpanded
+            ? "border-zinc-800 shadow-2xl"
             : isNodeCritical
-            ? "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.25)] hover:shadow-lg"
-            : isRunning
-            ? "border-blue-500 shadow-[0_0_22px_rgba(59,130,246,0.2)] scale-[1.01]"
-            : isCompleted
-            ? "border-zinc-200 shadow-xs hover:shadow-md"
-            : "border-zinc-100 shadow-3xs opacity-75 hover:opacity-95"
+              ? "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.25)] hover:shadow-lg"
+              : isRunning
+                ? "border-blue-500 shadow-[0_0_22px_rgba(59,130,246,0.2)]"
+                : isCompleted
+                  ? "border-zinc-200 shadow-xs hover:shadow-md"
+                  : "border-zinc-100 shadow-3xs hover:opacity-100"
         }`}
+        onMouseDown={(e) => { if (!isExpanded) onNodeDragStart(e, node.id); }}
+        onClick={() => { if (!isExpanded) onNodeClick(node.id); }}
       >
-        {/* Drag Handle Top Bar */}
-        <div className="w-full h-3 bg-zinc-50 border-b border-zinc-100 flex items-center justify-center gap-1 flex-shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
-          <span className="w-1.5 h-1.5 rounded-full bg-zinc-300" />
+        {/* Drag handle */}
+        <div
+          className="node-drag-handle w-full h-8 bg-zinc-50 border-b border-zinc-100 flex items-center justify-between px-3 flex-shrink-0 cursor-grab active:cursor-grabbing"
+          onMouseDown={(e) => { e.stopPropagation(); onNodeDragStart(e, node.id); }}
+        >
+          <GripHorizontal className="w-4 h-4 text-zinc-300" />
+          {!isExpanded && (
+            <span className="text-[9px] font-bold text-zinc-300 uppercase tracking-widest flex items-center gap-1">
+              <ChevronDown className="w-3 h-3" />
+              click to expand
+            </span>
+          )}
         </div>
 
-        {/* Floating Node Toolbar Actions Overlay (Hover, only when not expanded) */}
-        {!isExpanded && (
-          <div className="absolute top-4 right-2.5 flex gap-1 z-35 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-            <button 
-              title="Rename" 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onRenameStart(node); }}
-              className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-            >
-              <Edit3 className="w-3 h-3" />
-            </button>
-            <button 
-              title="Duplicate" 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onDuplicate(node.id); }}
-              className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 transition-colors shadow-sm cursor-pointer"
-            >
-              <Copy className="w-3 h-3" />
-            </button>
-            <button 
-              title="Delete" 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onDelete(node.id); }}
-              className="action-button w-6 h-6 rounded-md bg-white border border-zinc-200 flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm cursor-pointer"
-            >
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-
-        {/* Expanded Close Button */}
         {isExpanded && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onCloseExpand(); }}
-            className="action-button absolute top-4 right-4 z-35 size-7 bg-zinc-100 hover:bg-zinc-200 rounded-full flex items-center justify-center text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer"
+            className="action-button absolute top-9 right-3 z-35 size-8 bg-zinc-100 hover:bg-zinc-200 rounded-full flex items-center justify-center text-zinc-500 cursor-pointer"
           >
             <X className="size-4" />
           </button>
         )}
 
-        {/* Node Content Area */}
-        <div className="flex-grow p-3 bg-zinc-50/10 border-b border-zinc-100 overflow-hidden relative">
+        <div className={`flex-1 min-h-0 relative ${isExpanded ? "flex flex-col overflow-hidden px-4 pb-2 pt-2" : "overflow-hidden p-3"}`}>
           {!isExpanded ? (
-            /* COLLAPSED MINI VIEW CONTENT */
-            <div className="h-full flex flex-col justify-between pt-1">
-              <div className="text-[10px] font-bold text-zinc-500 line-clamp-2 leading-tight pr-10">
-                {node.subtitle}
+            /* ─── Collapsed view ─── */
+            <div className="h-full flex flex-col gap-2">
+              <div>
+                <h5 className="text-[13px] font-extrabold text-zinc-800 leading-tight line-clamp-2">{node.title}</h5>
+                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">{node.subtitle}</p>
               </div>
-              {node.sensors && node.sensors[0] && (
-                <div className="flex justify-between items-center bg-zinc-50 p-1.5 rounded-lg border border-zinc-100 text-[9px] font-mono mt-1">
-                  <span className="text-zinc-400 font-semibold">{node.sensors[0].name}</span>
-                  <span className="font-extrabold text-zinc-700">{node.sensors[0].value}</span>
+              {node.sensors && node.sensors.length > 0 && (
+                <div className="flex flex-col gap-1 mt-auto">
+                  {node.sensors.slice(0, 2).map((sensor, idx) => (
+                    <div key={`${sensor.name}-${idx}`} className="flex justify-between items-center text-[11px] font-mono border-b border-zinc-100 pb-1">
+                      <span className="text-zinc-500 font-medium truncate max-w-[50%]">{sensor.name}</span>
+                      <span className={`font-bold truncate max-w-[48%] text-right tabular-nums ${sensor.status === "OK" ? "text-zinc-800" : "text-red-600"}`}>
+                        {sensor.value}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
-              {node.valveName && (
-                <div className="flex justify-between items-center text-[9px] font-mono mt-1">
-                  <span className="text-zinc-400">{node.valveName}</span>
-                  <span className="font-extrabold text-zinc-700">{node.valveFlow} L/min</span>
-                </div>
-              )}
-              {node.rulDays !== undefined && (
-                <div className="flex justify-between items-center mt-1 text-[8px] font-bold">
-                  <span className="text-zinc-400">RUL INDEX</span>
-                  <span className={node.rulDays < 15 ? "text-red-500 animate-pulse" : "text-zinc-500"}>
-                    {node.rulDays}d Remaining
-                  </span>
+              {rulDays !== undefined && (
+                <div className="flex justify-between items-center text-[10px] font-bold mt-1">
+                  <span className="text-zinc-400">RUL</span>
+                  <span className={rulDays < 15 ? "text-red-500" : "text-zinc-500"}>{rulDays}d</span>
                 </div>
               )}
             </div>
           ) : (
-            /* EXPANDED DETAILED VIEW CONTENT */
-            <motion.div 
+            /* ─── Expanded view ─── */
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.15 }}
-              className="h-full flex flex-col justify-between text-xs pr-1"
-              onClick={(e) => e.stopPropagation()} // Prevent closing when clicking content
+              className="h-full flex flex-col min-h-0 text-xs"
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className="space-y-3 pt-1">
-                {/* Asset Info Header Row */}
-                <div className="flex justify-between items-start border-b border-zinc-100 pb-2">
-                  <div>
-                    <span className="text-[9px] font-extrabold tracking-widest text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">
-                      {node.type}
-                    </span>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-zinc-400">RUL:</span>
-                      <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
-                        node.rulDays! < 15 
-                          ? "bg-red-50 text-red-600 border border-red-100" 
-                          : "bg-zinc-100 text-zinc-700"
-                      }`}>
-                        {node.rulDays} Days Left
-                      </span>
-                    </div>
-                  </div>
-                  {isNodeCritical && (
-                    <div className="flex items-center gap-1 text-[9px] font-bold text-red-600 animate-pulse bg-red-50 border border-red-100 px-2 py-1 rounded-lg">
-                      <AlertTriangle className="size-3.5" />
-                      <span>CRIT ALERT</span>
-                    </div>
-                  )}
+              {/* Header */}
+              <div className="flex justify-between items-start border-b border-zinc-100 pb-3 shrink-0 pr-10">
+                <div className="min-w-0">
+                  <span className="text-[9px] font-extrabold tracking-widest text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{node.type}</span>
+                  <h5 className="text-base font-extrabold text-zinc-900 mt-2 leading-snug">{node.title}</h5>
+                  <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">{node.subtitle}</p>
                 </div>
-
-                {/* Dynamic detailed specs */}
-                <div className="max-h-[120px] overflow-y-auto pr-1">
-                  {node.sensors && (
-                    <div className="flex flex-col gap-1.5 font-mono text-[10px] p-2 bg-zinc-50 rounded-xl border border-zinc-100">
-                      <div className="flex justify-between font-bold text-[8.5px] text-zinc-400 uppercase tracking-wider border-b border-zinc-200/50 pb-1">
-                        <span>Sensor Parameter</span>
-                        <span>Reading</span>
-                        <span>State</span>
-                      </div>
-                      {node.sensors.map((sensor, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-zinc-700">
-                          <span className="font-semibold text-zinc-500">{sensor.name}</span>
-                          <span className="font-bold">{sensor.value}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-extrabold ${
-                            sensor.status === "OK" 
-                              ? "bg-emerald-50 text-emerald-600" 
-                              : "bg-red-50 text-red-600 animate-pulse"
-                          }`}>{sensor.status}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {node.threshold && (
-                    <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100 text-center">
-                      <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1.5">Anomaly Evaluation Criteria</span>
-                      <span className="font-mono text-[11px] font-bold bg-white border border-zinc-200 px-3 py-1 rounded-lg shadow-3xs inline-block">
-                        {node.threshold.field} {node.threshold.operator} {node.threshold.value}
-                      </span>
-                    </div>
-                  )}
-
-                  {node.valveName && (
-                    <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-100">
-                      <div className="flex justify-between items-center mb-1 text-[10px]">
-                        <span className="font-bold text-zinc-650">{node.valveName}</span>
-                        <span className={`font-black uppercase text-[8px] px-1.5 py-0.5 rounded ${isNodeCritical ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"}`}>
-                          {isNodeCritical ? "MAX VENT" : "ACTIVE NOMINAL"}
-                        </span>
-                      </div>
-                      <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden my-2 border border-zinc-300/10">
-                        <div 
-                          className={`h-full transition-all duration-300 ${isNodeCritical ? "bg-red-500" : "bg-emerald-500"}`} 
-                          style={{ width: `${Math.min(100, (node.valveFlow! / 700) * 100)}%` }} 
-                        />
-                      </div>
-                      <div className="flex justify-between text-[9px] text-zinc-400 font-bold font-mono">
-                        <span>Cooling flow: {node.valveFlow} L/min</span>
-                        <span>Capacity: 700 L/min</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {node.alertChannels && (
-                    <div className="space-y-1">
-                      <span className="block text-[8px] font-extrabold text-zinc-400 uppercase tracking-widest mb-1">Active Alert Dispatch Logs</span>
-                      {node.alertChannels.map((ch, idx) => (
-                        <div key={idx} className="flex justify-between items-center bg-zinc-50 border border-zinc-100 p-2 rounded-xl text-[10px] text-zinc-600">
-                          <div>
-                            <span className="font-extrabold text-zinc-800 uppercase text-[9px] mr-1.5">{ch.type}</span>
-                            <span className="font-mono text-zinc-400">{ch.target}</span>
-                          </div>
-                          <span className="text-zinc-500 italic truncate max-w-[120px]">{ch.msg}</span>
-                        </div>
-                      ))}
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <RiskBadge score={healthScore} />
+                  {(isNodeCritical || activeAlerts > 0) && (
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-red-600 mt-0.5">
+                      <AlertTriangle className="size-3" />
+                      <span>{activeAlerts > 0 ? `${activeAlerts} ALERT${activeAlerts !== 1 ? "S" : ""}` : "FAULT ACTIVE"}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Interactive Testing controls (Failure Simulators) */}
+              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 pr-1 space-y-2.5">
+
+                {/* Health + RUL cards */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-zinc-50 rounded-xl p-2.5 border border-zinc-100">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Activity className="w-3 h-3 text-zinc-400" />
+                      <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider">Health</span>
+                    </div>
+                    <div className="text-[22px] font-black tabular-nums leading-none mb-1.5"
+                      style={{ color: healthScore < 40 ? "#ef4444" : healthScore < 60 ? "#f97316" : healthScore < 80 ? "#eab308" : "#22c55e" }}>
+                      {Math.round(healthScore)}%
+                    </div>
+                    <HealthBar score={healthScore} />
+                    {campaignHours > 0 && (
+                      <div className="text-[9px] font-mono text-zinc-400 mt-1">{Math.round(campaignHours)}h run time</div>
+                    )}
+                  </div>
+                  <div className="bg-zinc-50 rounded-xl p-2.5 border border-zinc-100">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Clock className="w-3 h-3 text-zinc-400" />
+                      <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider">RUL</span>
+                    </div>
+                    {rulHours != null ? (
+                      <>
+                        <div className={`text-[22px] font-black tabular-nums leading-none ${rulDays != null && rulDays < 15 ? "text-red-500" : "text-zinc-900"}`}>
+                          {rulDays ?? Math.max(1, Math.round(rulHours / 24))}d
+                        </div>
+                        <div className="text-[9px] font-mono text-zinc-400 mt-1">{Math.round(rulHours)}h remaining</div>
+                      </>
+                    ) : (
+                      <div className="text-[13px] font-bold text-zinc-400 mt-1 leading-tight">Calculating…</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Anomaly / fault classification */}
+                {(anomalyScore != null || faultClass != null) && (
+                  <div className="bg-zinc-50 rounded-xl p-2.5 border border-zinc-100">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <ShieldAlert className="w-3 h-3 text-zinc-400" />
+                      <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider">ML Diagnostics</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {anomalyScore != null && (
+                        <div>
+                          <span className="text-[9px] font-bold text-zinc-400 uppercase block">Anomaly</span>
+                          <span className={`text-[13px] font-black tabular-nums ${anomalyScore > 0.5 ? "text-red-500" : "text-zinc-800"}`}>
+                            {(anomalyScore * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      {faultClass != null && (
+                        <div>
+                          <span className="text-[9px] font-bold text-zinc-400 uppercase block">Fault Class</span>
+                          <span className={`text-[13px] font-black tabular-nums ${faultClass > 0 ? "text-orange-500" : "text-zinc-800"}`}>
+                            {faultClass > 0 ? `Class ${faultClass}` : "None"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Last maintenance */}
+                {lastMaintenance && (
+                  <div className="bg-zinc-50 rounded-xl p-2.5 border border-zinc-100">
+                    <div className="flex items-center gap-1 mb-1.5">
+                      <Wrench className="w-3 h-3 text-zinc-400" />
+                      <span className="text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider">Last Maintenance</span>
+                    </div>
+                    <div className="text-[9px] font-mono text-zinc-500 mb-0.5">
+                      {lastMaintenance.date?.slice(0, 10)} · {lastMaintenance.event_type?.replace(/_/g, " ")}
+                    </div>
+                    <p className="text-[10px] font-semibold text-zinc-700 leading-snug line-clamp-2">{lastMaintenance.description}</p>
+                    {lastMaintenance.outcome && (
+                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider mt-1 block">{lastMaintenance.outcome}</span>
+                    )}
+                  </div>
+                )}
+
+                {/* Sensor readings */}
+                {node.sensors && node.sensors.length > 0 && (
+                  <div>
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 font-bold text-[9px] text-zinc-400 uppercase tracking-wider border-b border-zinc-200 pb-1.5 mb-1">
+                      <span>Sensor</span><span>Reading</span><span>State</span>
+                    </div>
+                    {node.sensors.map((sensor, idx) => (
+                      <div key={`${sensor.name}-${sensor.value}-${idx}`} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-1.5 border-b border-zinc-100 last:border-0 font-mono">
+                        <span className="text-[11px] font-semibold text-zinc-600 break-words">{sensor.name}</span>
+                        <span className="text-[12px] font-bold tabular-nums whitespace-nowrap text-zinc-900">{sensor.value}</span>
+                        <span className={`text-[10px] font-extrabold ${sensor.status === "OK" ? "text-emerald-600" : sensor.status === "HIGH" ? "text-orange-500" : "text-red-600"}`}>
+                          {sensor.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
               <div className="flex gap-2 pt-2 border-t border-zinc-100 mt-2 shrink-0">
-                {isNodeCritical ? (
+                {isSimulatingAnomaly ? (
+                  /* Stop anomaly toggle */
+                  <button
+                    type="button"
+                    onClick={() => onStopAnomaly?.(node.id)}
+                    className="panel-button flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Stop Anomaly
+                  </button>
+                ) : isNodeCritical && !isSimulatingAnomaly ? (
                   <button
                     type="button"
                     onClick={() => onResetTelemetry(node.id)}
-                    className="panel-button flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
+                    className="panel-button flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] cursor-pointer"
                   >
-                    Reset Telemetry
+                    Reset to Nominal
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={() => onSimulateAnomaly(node.id)}
-                    className="panel-button flex-1 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 font-bold text-[10px] transition-all duration-200 cursor-pointer text-center"
+                    className="panel-button flex-1 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 font-bold text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    Simulate Anomaly
+                    <AlertTriangle className="w-3.5 h-3.5" />
+                    Inject Fault
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => alert("Maintenance work order ticket raised in system database.")}
-                  className="panel-button flex-1 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] shadow-sm transition-all duration-200 cursor-pointer text-center"
+                  className="panel-button flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] cursor-pointer"
                 >
                   Work Order
                 </button>
@@ -329,57 +356,19 @@ const WorkflowNodeCardComponent = React.memo(function WorkflowNodeCard({
           )}
         </div>
 
-        {/* Bottom Node Title Footer */}
-        <div className="p-3 bg-white flex justify-between items-center h-[48px] flex-shrink-0">
-          {isEditing ? (
-            <div className="flex items-center gap-1.5 w-full justify-between" onClick={(e) => e.stopPropagation()}>
-              <input 
-                type="text" 
-                value={editTitle} 
-                onChange={(e) => setEditTitle(e.target.value)} 
-                className="border border-zinc-300 rounded px-1.5 py-0.5 text-[10px] w-[140px] focus:outline-none focus:border-zinc-600"
-              />
-              <button 
-                onClick={() => onRenameSave(node.id)}
-                className="px-2 py-0.5 bg-zinc-800 text-white rounded text-[9px] font-bold hover:bg-zinc-700 cursor-pointer"
-              >
-                Save
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="truncate pr-2">
-                <h4 className="text-[11px] font-extrabold text-zinc-800 truncate leading-tight">{node.title}</h4>
-                <p className="text-[8px] font-bold text-zinc-400 mt-0.5 truncate uppercase tracking-widest leading-none">{node.subtitle}</p>
-              </div>
-              {/* Status dot */}
-              <div
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${isRunning ? "animate-pulse" : ""}`}
-                style={{
-                  backgroundColor: node.statusColor || "#e4e4e7"
-                }}
-              />
-            </>
-          )}
-        </div>
+        {/* Collapsed footer */}
+        {!isExpanded && (
+          <div className="px-3 py-2 bg-white border-t border-zinc-100 flex items-center justify-between shrink-0">
+            <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+              isNodeCritical ? "text-red-600 bg-red-50 border-red-100" : isRunning ? "text-blue-600 bg-blue-50 border-blue-100" : "text-zinc-500 bg-zinc-50 border-zinc-200"
+            }`}>
+              {isNodeCritical ? "Alert" : isRunning ? "Live" : "Nominal"}
+            </span>
+            <span className="text-[11px] font-mono font-semibold text-zinc-400 tabular-nums">↻ {refreshCountdown ?? 10}s</span>
+          </div>
+        )}
       </div>
 
-      {/* Insert Node "+" floating button */}
-      {!isExpanded && (
-        <div className="absolute top-1/2 -translate-y-1/2 -right-7 z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-auto">
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleAddMenu(node.id);
-            }}
-            className="action-button w-6 h-6 rounded-full bg-white border border-zinc-200 shadow-md flex items-center justify-center hover:bg-zinc-50 hover:text-zinc-800 text-zinc-500 cursor-pointer"
-          >
-            +
-          </button>
-        </div>
-      )}
-
-      {/* Floating Select Dropdown for node actions */}
       <AnimatePresence>
         {showAddMenu && (
           <WorkflowAddMenu
@@ -394,25 +383,4 @@ const WorkflowNodeCardComponent = React.memo(function WorkflowNodeCard({
       </AnimatePresence>
     </motion.div>
   );
-}, (prevProps, nextProps) => {
-  // Return true if same (skip re-render), false if different (trigger re-render)
-  return (
-    prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.isEditing === nextProps.isEditing &&
-    prevProps.showAddMenu === nextProps.showAddMenu &&
-    prevProps.activeFactory === nextProps.activeFactory &&
-    prevProps.zoomScale === nextProps.zoomScale &&
-    prevProps.node.x === nextProps.node.x &&
-    prevProps.node.y === nextProps.node.y &&
-    prevProps.node.status === nextProps.node.status &&
-    prevProps.node.title === nextProps.node.title &&
-    prevProps.node.subtitle === nextProps.node.subtitle &&
-    prevProps.node.statusColor === nextProps.node.statusColor &&
-    prevProps.node.rulDays === nextProps.node.rulDays &&
-    prevProps.node.valveFlow === nextProps.node.valveFlow &&
-    (!nextProps.isEditing || (prevProps.editTitle === nextProps.editTitle && prevProps.editSubtitle === nextProps.editSubtitle)) &&
-    (!nextProps.showAddMenu || prevProps.allNodes.length === nextProps.allNodes.length)
-  );
-});
-
-export default WorkflowNodeCardComponent;
+}

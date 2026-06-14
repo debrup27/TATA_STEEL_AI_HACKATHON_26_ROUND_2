@@ -3,6 +3,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { DURATION_SECTION_FADE } from "@/lib/constants";
+import { getLogSeverity } from "@/lib/logSeverity";
 import type { LogEntry } from "@/services/types";
 
 interface SystemLogItemProps {
@@ -20,8 +21,9 @@ export const SystemLogItem = React.memo(function SystemLogItem({
     onSelect(log);
   }, [onSelect, log]);
 
-  const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
-  const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
+  const severity = getLogSeverity(log.text);
+  const isCritical = severity === "critical";
+  const isWarning = severity === "warning";
   
   let timeColor = "text-[#1b253c]/40 group-hover:text-[#1b253c]/60";
   let moduleColor = "text-[#1b253c]/65 group-hover:text-[#1b253c]/85";
