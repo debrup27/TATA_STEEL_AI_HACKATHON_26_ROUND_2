@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
+import UserPill from "@/components/UserPill";
 import {
   tickExhausterVibration,
   tickSinterFeO,
@@ -138,11 +139,21 @@ export default function SansadMonitoringPage() {
                     SANSAD
                   </span>
                 </div>
-                <div />
-                <div className="flex gap-4">
+                <Link
+                  href="/"
+                  className="rounded-full p-1.5 bg-white inline-flex items-center justify-center overflow-hidden shadow-sm cursor-pointer w-[40px] h-[40px] transition-transform duration-500 hover:rotate-360"
+                  title="Home"
+                >
+                  <img src="/short_form_logo.webp" alt="ATAL Logo" className="w-full h-full object-cover block" />
+                </Link>
+                <div className="flex items-center gap-4">
                   <Link href="/manas/chat" className="group/link text-[10px] font-mono font-bold uppercase hover:text-[#f97316] text-[#1b253c] tracking-widest flex items-center gap-1 select-none">
                     Manas Chat <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/link:rotate-45" />
                   </Link>
+                  <UserPill
+                    containerClassName="rounded-full p-1.5 bg-white inline-flex items-center justify-center shadow-sm w-[40px] h-[40px] group cursor-pointer relative"
+                    className="w-full h-full"
+                  />
                 </div>
               </div>
 

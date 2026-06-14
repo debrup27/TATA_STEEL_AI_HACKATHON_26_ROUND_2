@@ -221,8 +221,77 @@ export default function Home() {
   );
 }
 
+import { useUser } from "../hooks";
+
 function HoverButton() {
+  const { user } = useUser();
   const [isHovered, setIsHovered] = useState(false);
+  const [isHoveredManas, setIsHoveredManas] = useState(false);
+  const [isHoveredSansad, setIsHoveredSansad] = useState(false);
+
+  if (user) {
+    return (
+      <div className="mt-8 flex gap-4 pointer-events-auto">
+        <motion.button
+          onClick={() => triggerPageTransition("/sansad")}
+          className="flex items-center border border-zinc-300/60 backdrop-blur-md font-bold text-sm md:text-base pl-6 py-3.5 rounded-full shadow-md cursor-pointer overflow-hidden"
+          animate={{
+            backgroundColor: isHoveredSansad ? "#120F17" : "rgba(255,255,255,0.2)",
+            color: isHoveredSansad ? "#ffffff" : "#1e293b",
+            scale: isHoveredSansad ? 1.05 : 1,
+            paddingRight: isHoveredSansad ? 28 : 24,
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          onHoverStart={() => setIsHoveredSansad(true)}
+          onHoverEnd={() => setIsHoveredSansad(false)}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span>SANSAD</span>
+          <motion.span
+            className="inline-block overflow-hidden text-lg md:text-xl font-bold align-middle"
+            initial={{ width: 0, opacity: 0, marginLeft: 0 }}
+            animate={{
+              width: isHoveredSansad ? 20 : 0,
+              opacity: isHoveredSansad ? 1 : 0,
+              marginLeft: isHoveredSansad ? 8 : 0,
+            }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            →
+          </motion.span>
+        </motion.button>
+
+        <motion.button
+          onClick={() => triggerPageTransition("/manas")}
+          className="flex items-center border border-zinc-300/60 backdrop-blur-md font-bold text-sm md:text-base pl-6 py-3.5 rounded-full shadow-md cursor-pointer overflow-hidden"
+          animate={{
+            backgroundColor: isHoveredManas ? "#120F17" : "rgba(255,255,255,0.2)",
+            color: isHoveredManas ? "#ffffff" : "#1e293b",
+            scale: isHoveredManas ? 1.05 : 1,
+            paddingRight: isHoveredManas ? 28 : 24,
+          }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          onHoverStart={() => setIsHoveredManas(true)}
+          onHoverEnd={() => setIsHoveredManas(false)}
+          whileTap={{ scale: 0.95 }}
+        >
+          <span>MANAS</span>
+          <motion.span
+            className="inline-block overflow-hidden text-lg md:text-xl font-bold align-middle"
+            initial={{ width: 0, opacity: 0, marginLeft: 0 }}
+            animate={{
+              width: isHoveredManas ? 20 : 0,
+              opacity: isHoveredManas ? 1 : 0,
+              marginLeft: isHoveredManas ? 8 : 0,
+            }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            →
+          </motion.span>
+        </motion.button>
+      </div>
+    );
+  }
 
   return (
     <motion.button

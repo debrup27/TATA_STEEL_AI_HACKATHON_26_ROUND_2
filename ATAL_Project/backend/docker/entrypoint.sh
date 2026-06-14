@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Wait for PostgreSQL
+# ── Wait for PostgreSQL ────────────────────────────────────────────────────────
 echo "[entrypoint] Waiting for postgres..."
 until python -c "
 import psycopg, os, sys
@@ -21,7 +21,7 @@ except Exception:
 done
 echo "[entrypoint] PostgreSQL ready."
 
-# Wait for vLLM (optional — skip if SKIP_VLLM_WAIT=1 for dev without GPU)
+# ── Wait for vLLM (skip with SKIP_VLLM_WAIT=1 on dev/CPU machines) ────────────
 if [ "${SKIP_VLLM_WAIT:-0}" != "1" ]; then
     echo "[entrypoint] Waiting for vLLM..."
     VLLM_HOST="${VLLM_BASE_URL:-http://vllm:8000}"
@@ -31,23 +31,34 @@ if [ "${SKIP_VLLM_WAIT:-0}" != "1" ]; then
     echo "[entrypoint] vLLM ready."
 fi
 
-# Run Django setup
-echo "[entrypoint] Running migrations..."
+# ── Generate migrations from current models (always in sync, no drift) ────────
+echo "[entrypoint] Generating migrations from models..."
+python manage.py makemigrations --noinput
+
+# ── Apply migrations ───────────────────────────────────────────────────────────
+echo "[entrypoint] Applying migrations..."
 python manage.py migrate --noinput
 
-echo "[entrypoint] Collecting static files..."
-python manage.py collectstatic --noinput --clear
+# ── TimescaleDB: fix PK constraints + create hypertables ──────────────────────
+echo "[entrypoint] Setting up TimescaleDB hypertables..."
+python manage.py setup_timescaledb
 
-echo "[entrypoint] Loading seed fixtures..."
-python manage.py loaddata apps/assets/fixtures/seed_factories.json 2>/dev/null || true
-python manage.py loaddata apps/users/fixtures/seed_users.json 2>/dev/null || true
+# ── Demo users (idempotent — get_or_create, safe to run on every boot) ────────
+echo "[entrypoint] Creating demo users..."
+python manage.py create_demo_users
 
+# ── ChromaDB collections ──────────────────────────────────────────────────────
 echo "[entrypoint] Initialising ChromaDB collections..."
 python manage.py shell -c "
 from apps.rag.chroma_client import init_collections
 init_collections()
-print('[entrypoint] ChromaDB collections ready.')
+print('[entrypoint] ChromaDB ready.')
 " 2>/dev/null || true
 
+# ── Static files ──────────────────────────────────────────────────────────────
+echo "[entrypoint] Collecting static files..."
+python manage.py collectstatic --noinput --clear
+
+# ── Start application ─────────────────────────────────────────────────────────
 echo "[entrypoint] Starting application..."
 exec "$@"

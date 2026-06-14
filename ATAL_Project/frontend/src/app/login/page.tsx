@@ -3,12 +3,19 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
-import { Mail, Lock, User, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Mail, Lock, User, Eye, EyeOff, ArrowRight, Zap } from "lucide-react";
 import AnimatedGradientBackground from "../../animations/AnimatedGradientBackground";
 import { GLSLHills } from "../../animations/GLSLHills";
 import ClickSpark from "../../animations/ClickSpark";
 import { triggerPageTransition } from "../../animations/PageTransition";
 import { SPRING_DEFAULT, SPRING_STIFF, DURATION_MEDIUM } from "@/lib/constants";
+import { apiFetch } from "@/lib/api";
+
+const DEMO_ACCOUNTS = [
+  { role: "Technician", username: "tech_demo", password: "TechDemo@123", color: "text-emerald-600", bg: "bg-emerald-50 hover:bg-emerald-100 border-emerald-200" },
+  { role: "Supervisor", username: "supervisor_demo", password: "SuperDemo@123", color: "text-blue-600", bg: "bg-blue-50 hover:bg-blue-100 border-blue-200" },
+  { role: "Admin", username: "admin_demo", password: "AdminDemo@123", color: "text-orange-600", bg: "bg-orange-50 hover:bg-orange-100 border-orange-200" },
+] as const;
 
 // Memoized Background component to prevent re-renders when form states change
 const BackgroundLayers = React.memo(() => {
@@ -40,10 +47,46 @@ export default function LoginPage() {
     setPassword("");
   };
 
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const doLogin = async (username: string, pwd: string) => {
+    setAuthError(null);
+    setIsLoading(true);
+    try {
+      const res = await apiFetch("/api/v1/auth/token/", {
+        method: "POST",
+        body: JSON.stringify({ username, password: pwd }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAuthError(data?.detail ?? "Invalid credentials");
+        return;
+      }
+      const { access, refresh } = await res.json();
+      localStorage.setItem("atal_access", access);
+      localStorage.setItem("atal_refresh", refresh);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("user-state-change"));
+      }
+      triggerPageTransition("/");
+    } catch {
+      setAuthError("Connection error — is the backend running?");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Redirect instantly to the homepage on submit
-    triggerPageTransition("/");
+    doLogin(usernameOrEmail, password);
+  };
+
+  const handleDemoLogin = (username: string, pwd: string) => {
+    setIsSignUp(false);
+    setUsernameOrEmail(username);
+    setPassword(pwd);
+    doLogin(username, pwd);
   };
 
   return (
@@ -142,7 +185,7 @@ export default function LoginPage() {
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => { setName(e.target.value); setAuthError(null); }}
                     placeholder="Enter your name"
                     className="w-full bg-white/70 border border-zinc-200/80 rounded-2xl py-3 pl-10 pr-4 text-sm font-semibold text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 transition-all duration-200 shadow-2xs"
                   />
@@ -160,7 +203,7 @@ export default function LoginPage() {
               <input
                 type="text"
                 value={usernameOrEmail}
-                onChange={(e) => setUsernameOrEmail(e.target.value)}
+                onChange={(e) => { setUsernameOrEmail(e.target.value); setAuthError(null); }}
                 placeholder="you@example.com or username"
                 className="w-full bg-white/70 border border-zinc-200/80 rounded-2xl py-3 pl-10 pr-4 text-sm font-semibold text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 transition-all duration-200 shadow-2xs"
               />
@@ -187,7 +230,7 @@ export default function LoginPage() {
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); setAuthError(null); }}
                 placeholder="••••••••"
                 className="w-full bg-white/70 border border-zinc-200/80 rounded-2xl py-3 pl-10 pr-10 text-sm font-semibold text-zinc-800 placeholder-zinc-400 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 transition-all duration-200 shadow-2xs"
               />
@@ -202,21 +245,37 @@ export default function LoginPage() {
             </div>
           </motion.div>
 
+          {/* Auth error */}
+          <AnimatePresence>
+            {authError && (
+              <motion.p
+                key="auth-error"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                className="text-[11px] font-bold text-red-500 text-center bg-red-50 border border-red-200 rounded-xl py-2 px-3"
+              >
+                {authError}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
           {/* Action Trigger Button matching Pixeloid style and reveal animation */}
           <motion.button
             layout
             type="submit"
+            disabled={isLoading}
             onHoverStart={() => setIsButtonHovered(true)}
             onHoverEnd={() => setIsButtonHovered(false)}
             animate={{
-              backgroundColor: isButtonHovered ? "#f97316" : "#1b253c", // Turns orange on hover
+              backgroundColor: isLoading ? "#6b7280" : isButtonHovered ? "#f97316" : "#1b253c",
             }}
             transition={{ duration: DURATION_MEDIUM, ease: "easeInOut" }}
             style={{ fontFamily: "var(--font-pixeloid), monospace" }}
-            className="w-full mt-2 text-white py-3.5 rounded-2xl font-bold text-sm tracking-wide shadow-md transition-shadow flex items-center justify-center cursor-pointer select-none group transform active:scale-98"
+            className="w-full mt-2 text-white py-3.5 rounded-2xl font-bold text-sm tracking-wide shadow-md transition-shadow flex items-center justify-center cursor-pointer select-none group transform active:scale-98 disabled:cursor-not-allowed"
           >
             <div className="flex items-center justify-center">
-              <span>{isSignUp ? "CREATE ACCOUNT" : "ACCESS PLATFORM"}</span>
+              <span>{isLoading ? "AUTHENTICATING..." : isSignUp ? "CREATE ACCOUNT" : "ACCESS PLATFORM"}</span>
               <motion.span
                 animate={{
                   width: isButtonHovered ? "auto" : 0,
@@ -242,6 +301,30 @@ export default function LoginPage() {
           >
             {isSignUp ? "Sign In" : "Sign Up"}
           </button>
+        </motion.div>
+
+        {/* Demo Access */}
+        <motion.div layout className="mt-6 w-full">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex-1 h-px bg-zinc-200/80" />
+            <span className="flex items-center gap-1 text-[10px] font-bold text-zinc-400 uppercase tracking-widest whitespace-nowrap select-none">
+              <Zap className="size-3" /> Demo Access
+            </span>
+            <div className="flex-1 h-px bg-zinc-200/80" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {DEMO_ACCOUNTS.map(({ role, username, password, color, bg }) => (
+              <button
+                key={role}
+                type="button"
+                disabled={isLoading}
+                onClick={() => handleDemoLogin(username, password)}
+                className={`${bg} ${color} border rounded-xl py-2 px-1 text-[11px] font-bold tracking-wide transition-all duration-150 cursor-pointer select-none active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {role}
+              </button>
+            ))}
+          </div>
         </motion.div>
       </motion.div>
 

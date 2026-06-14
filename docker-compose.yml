@@ -1,4 +1,6 @@
 
+name: atal
+
 networks:
   frontend-net:
     driver: bridge
@@ -196,3 +198,40 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+
+  ui-console:
+    build:
+      context: ./ATAL_Project/frontend
+      dockerfile: docker/Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    volumes:
+      - ./ATAL_Project/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend-net
+    depends_on:
+      django-backend:
+        condition: service_healthy
+
+  # Aggregator — `docker compose up atal` starts the full stack
+  atal:
+    image: alpine:latest
+    container_name: atal
+    command: ["sh", "-c", "echo 'ATAL stack running.' && tail -f /dev/null"]
+    restart: unless-stopped
+    networks:
+      - frontend-net
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      django-backend:
+        condition: service_healthy
+      ui-console:
+        condition: service_started

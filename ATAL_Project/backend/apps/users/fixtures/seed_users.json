@@ -1,0 +1,75 @@
+[
+  {
+    "model": "users.organization",
+    "pk": "00000000-0000-0000-0000-000000000001",
+    "fields": {
+      "name": "Tata Steel Demo",
+      "slug": "tata-steel-demo",
+      "timezone": "Asia/Kolkata",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": "00000000-0000-0000-0001-000000000001",
+    "fields": {
+      "username": "tech_demo",
+      "email": "tech@atal.demo",
+      "password": "pbkdf2_sha256$870000$a0d8f9d0166dbd3ef90abe$hv0LDgh7rxr3pFfsbRYCr1nRI0i5uzzxvVcMoSfDmQY=",
+      "first_name": "Demo",
+      "last_name": "Technician",
+      "is_active": true,
+      "is_staff": false,
+      "is_superuser": false,
+      "date_joined": "2026-01-01T00:00:00Z",
+      "org": "00000000-0000-0000-0000-000000000001",
+      "role": "technician",
+      "factory_access": ["F1", "F2", "F3", "F4", "F5", "F6"],
+      "notification_prefs": {},
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": "00000000-0000-0000-0001-000000000002",
+    "fields": {
+      "username": "supervisor_demo",
+      "email": "supervisor@atal.demo",
+      "password": "pbkdf2_sha256$870000$c8bea183f3b6bab148bcf4$9UDl+Vl1CYmUylco89JQoegkARCPMhdyBWOWTDMKqtU=",
+      "first_name": "Demo",
+      "last_name": "Supervisor",
+      "is_active": true,
+      "is_staff": false,
+      "is_superuser": false,
+      "date_joined": "2026-01-01T00:00:00Z",
+      "org": "00000000-0000-0000-0000-000000000001",
+      "role": "supervisor",
+      "factory_access": ["F1", "F2", "F3", "F4", "F5", "F6"],
+      "notification_prefs": {},
+      "groups": [],
+      "user_permissions": []
+    }
+  },
+  {
+    "model": "users.user",
+    "pk": "00000000-0000-0000-0001-000000000003",
+    "fields": {
+      "username": "admin_demo",
+      "email": "admin@atal.demo",
+      "password": "pbkdf2_sha256$870000$d8b1d8c96bbe5b99f5c86f$bmdQa1/FNil2PEdQem8t5Zp4EBjhX8L7X2jR9s6c8NI=",
+      "first_name": "Demo",
+      "last_name": "Admin",
+      "is_active": true,
+      "is_staff": true,
+      "is_superuser": false,
+      "date_joined": "2026-01-01T00:00:00Z",
+      "org": "00000000-0000-0000-0000-000000000001",
+      "role": "admin",
+      "factory_access": ["F1", "F2", "F3", "F4", "F5", "F6"],
+      "notification_prefs": {},
+      "groups": [],
+      "user_permissions": []
+    }
+  }
+]

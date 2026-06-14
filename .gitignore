@@ -1,5 +1,7 @@
 graphify-out/
 CLAUDE.md
+.cursor
+.claude
 
 # Environment files (never commit secrets)
 .env
@@ -25,6 +27,9 @@ build/
 staticfiles/
 media/
 *.sqlite3
+
+# Django migrations (generated at runtime via makemigrations)
+**/migrations/0*.py
 
 # Node
 node_modules/

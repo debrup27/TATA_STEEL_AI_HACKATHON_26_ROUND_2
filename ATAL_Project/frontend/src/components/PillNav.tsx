@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { gsap } from "gsap";
+import UserPill from "./UserPill";
 
 export interface PillNavItem {
   label: string;
@@ -51,6 +52,7 @@ export default function PillNav({
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const navItemsRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLDivElement>(null);
+  const userPillContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const layout = () => {
@@ -119,10 +121,11 @@ export default function PillNav({
     return () => window.removeEventListener("resize", onResize);
   }, [items, ease]);
 
-  const animateReveal = useCallback(() => {
+    const animateReveal = useCallback(() => {
     const container = containerRef.current;
     const logoEl = logoRef.current;
     const navItems = navItemsRef.current;
+    const userEl = userPillContainerRef.current;
 
     if (container) {
       gsap.set(container, { opacity: 1, visibility: "visible", pointerEvents: "auto" });
@@ -141,6 +144,15 @@ export default function PillNav({
       gsap.set(navItems, { width: 0, overflow: "hidden" });
       gsap.to(navItems, {
         width: "auto",
+        duration: 0.7,
+        ease,
+      });
+    }
+
+    if (userEl) {
+      gsap.set(userEl, { scale: 0 });
+      gsap.to(userEl, {
+        scale: 1,
         duration: 0.7,
         ease,
       });
@@ -278,6 +290,7 @@ export default function PillNav({
   if (pathname === "/manas/chat" || pathname.startsWith("/sansad/hub")) return null;
 
   return (
+    <>
     <div
       ref={containerRef}
       className="fixed top-[1em] z-[1000] w-full left-0 md:w-auto md:left-1/2 md:-translate-x-1/2"
@@ -410,6 +423,19 @@ export default function PillNav({
             style={{ background: "var(--pill-bg, #fff)" }}
           />
         </button>
+
+        {/* Right User Pill (mimicking Logo Pill) */}
+        <UserPill
+          containerRef={userPillContainerRef}
+          containerClassName="rounded-full p-2 inline-flex items-center justify-center shadow-sm cursor-pointer ml-2 hidden md:flex group relative"
+          containerStyle={{
+            width: "var(--nav-h)",
+            height: "var(--nav-h)",
+            background: "var(--base, #000)",
+          }}
+          className="w-[36px] h-[36px]"
+          align="left"
+        />
       </nav>
 
       <div
@@ -455,5 +481,9 @@ export default function PillNav({
         </ul>
       </div>
     </div>
+    <div className="fixed top-[1em] right-4 z-[1000] flex items-center md:hidden" style={{ height: "52px" }}>
+      <UserPill />
+    </div>
+    </>
   );
 }
