@@ -1,5 +1,19 @@
 from pathlib import Path
 from decouple import config
+import logging
+
+_original_log = logging.Logger._log
+
+def _patched_log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1, **kwargs):
+    if kwargs:
+        if extra is None:
+            extra = {}
+        extra.update(kwargs)
+        kwargs_str = " ".join(f"{k}={v}" for k, v in kwargs.items())
+        msg = f"{msg} ({kwargs_str})"
+    return _original_log(self, level, msg, args, exc_info=exc_info, extra=extra, stack_info=stack_info, stacklevel=stacklevel)
+
+logging.Logger._log = _patched_log
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -116,14 +130,16 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+# Queue names must match --queues flag in docker-compose celery-worker:
+#   default, telemetry, ml_inference, rag, alerts
 CELERY_TASK_ROUTES = {
-    "apps.synthetic.*": {"queue": "high"},
-    "apps.ml.*": {"queue": "high"},
-    "apps.twins.*": {"queue": "high"},
-    "apps.alerts.*": {"queue": "high"},
-    "apps.consolidation.*": {"queue": "high"},
-    "apps.rag.*": {"queue": "low"},
-    "apps.reports.*": {"queue": "low"},
+    "apps.synthetic.*": {"queue": "telemetry"},
+    "apps.ml.*": {"queue": "ml_inference"},
+    "apps.twins.*": {"queue": "default"},
+    "apps.alerts.*": {"queue": "alerts"},
+    "apps.consolidation.*": {"queue": "default"},
+    "apps.rag.*": {"queue": "rag"},
+    "apps.reports.*": {"queue": "default"},
 }
 
 # --- Cache ---
@@ -173,13 +189,18 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- ChromaDB (embedded, no separate service) ---
 CHROMA_PERSIST_DIR = config("CHROMA_PERSIST_DIR", default=str(BASE_DIR / "chroma_data"))
+CORPUS_DIR = config("CORPUS_DIR", default=str(BASE_DIR / "data" / "corpus"))
 
-# --- LLM (self-hosted vLLM — no external API calls) ---
-# vLLM serves Qwen 3.5 9B MTP (4-bit) on an OpenAI-compatible REST endpoint.
-VLLM_BASE_URL = config("VLLM_BASE_URL", default="http://vllm:8000")
-VLLM_MODEL = config("VLLM_MODEL", default="Qwen/Qwen3-9B-MTP-UD-Q4_K_M")
+# --- LLM (self-hosted Ollama — OpenAI-compatible /v1 endpoint) ---
+# Ollama serves qwen3.5:9b (MANAS supervisor) and qwen3.5:0.8b (worker agents).
+OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://ollama:11434")
+OLLAMA_MODEL = config("OLLAMA_MODEL", default="qwen3.5:9b")
+OLLAMA_SMALL_MODEL = config("OLLAMA_SMALL_MODEL", default="qwen3.5:0.8b")
+OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="30m")
 
-# --- DVC artifact root ---
-DVC_ARTIFACT_ROOT = BASE_DIR / "artifacts"
+# --- Artifact roots ---
+# MODEL_ARTIFACT_ROOT must be on a persistent Docker volume so trained models
+# survive container restarts. Override via env var in docker-compose.
+DVC_ARTIFACT_ROOT = Path(config("MODEL_ARTIFACT_ROOT", default=str(BASE_DIR / "artifacts")))
 MODEL_ARTIFACT_ROOT = DVC_ARTIFACT_ROOT / "models"
 DATA_ARTIFACT_ROOT = DVC_ARTIFACT_ROOT / "data"

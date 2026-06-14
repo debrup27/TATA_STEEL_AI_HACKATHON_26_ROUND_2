@@ -422,51 +422,6 @@ export default function ManasChatPage() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* Top Header Bar — centered MANAS title */}
-        <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-6 md:px-10 bg-[#FAF7F2] z-30 select-none flex-shrink-0 relative">
-          <Link
-            href="/"
-            className="rounded-full p-1.5 bg-white hidden md:inline-flex items-center justify-center overflow-hidden shadow-sm cursor-pointer w-[40px] h-[40px] transition-transform duration-500 hover:rotate-360"
-            title="Home"
-          >
-            <img src="/short_form_logo.webp" alt="ATAL Logo" className="w-full h-full object-cover block" />
-          </Link>
-          <div className="absolute left-1/2 -translate-x-1/2">
-            <span 
-              className="text-2xl font-black uppercase tracking-tight text-[#1b253c] inline-block" 
-              style={{ fontFamily: "var(--font-pixeloid)" }}
-            >
-              MANAS
-            </span>
-          </div>
-          <div className="flex items-center gap-4 ml-auto">
-            {hasContext && (
-              <button
-                onClick={() => setShowRightPanel((prev) => !prev)}
-                className="px-3 py-2 rounded-xl bg-zinc-900 hover:bg-orange-600 text-white font-bold transition-all duration-300 shadow-md cursor-pointer flex items-center justify-center active:scale-95 select-none text-[10px] md:text-xs"
-                style={{ fontFamily: "var(--font-pixeloid)" }}
-                title={showRightPanel ? "Collapse Context Panel" : "Expand Context Panel"}
-              >
-                {showRightPanel ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  localStorage.removeItem("atal_access");
-                }
-                window.location.href = "/login";
-              }}
-              className="rounded-full p-1.5 bg-white inline-flex items-center justify-center overflow-hidden shadow-sm w-[40px] h-[40px] group cursor-pointer border-none outline-none"
-              title="Logout"
-            >
-              <div className="transition-transform duration-500 group-hover:rotate-360 w-9 h-9 rounded-full bg-red-500 hover:bg-red-650 flex items-center justify-center shadow-sm">
-                <LogOut className="w-4 h-4 text-white" />
-              </div>
-            </button>
-          </div>
-        </div>
-
         {/* Floating Mobile Sidebar Toggle Button */}
         {!sidebarOpen && (
           <button

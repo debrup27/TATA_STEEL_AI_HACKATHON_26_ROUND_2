@@ -64,18 +64,18 @@
 
 | Component | Technology | Pinned Version | Rationale | REQ IDs |
 |---|---|---|---|---|
-| Primary LLM | **vLLM** serving **Qwen 3.5 9B MTP (4-bit, Q4_K_M GGUF)** | vLLM latest | Self-hosted inference on OpenAI-compatible REST API (`/v1/chat/completions`); 4-bit quantization fits ≤16 GB VRAM; strong reasoning on industrial maintenance tasks; no external API calls | REQ-LLM-001, REQ-SECURITY-005 |
-| LLM client | `httpx` (direct HTTP to vLLM endpoint) | 0.28.1 | No SDK dependency; streams SSE from vLLM; already in requirements | REQ-LLM-001 |
+| Primary LLM | **Ollama** serving **Qwen3.5:9b** | `ollama/ollama:latest` | Self-hosted inference on OpenAI-compatible REST API (`/v1/chat/completions`); supports quantized models; strong reasoning on industrial maintenance tasks; no external API calls. Always pass `"think": false`. | REQ-LLM-001, REQ-SECURITY-005 |
+| LLM client | `httpx` (direct HTTP to Ollama endpoint `http://ollama:11434`) | 0.28.1 | No SDK dependency; streams SSE; already in requirements | REQ-LLM-001 |
 | Agent framework | LangGraph | 1.2.4 | Deterministic stateful multi-agent graph (Diagnostic → RCA → RUL → Recommendation); durable state persistence | REQ-LLM-003 |
 | RAG chain | LangChain + langchain-community | ≥0.3.0 | RAG orchestration chains; ChromaDB integration; tool definitions | REQ-LLM-004 |
 | ChromaDB client | chromadb | ≥0.6.0 | Embedded Python client; PersistentClient for local HNSW index | REQ-LLM-004 |
 | Embedding model | **BAAI/bge-m3** via **FlagEmbedding** | FlagEmbedding ≥1.2.0 | **CONFLICT vs original (all-MiniLM-L6-v2 replaced)** — 1024-dim dense vectors; superior multilingual + domain recall; hybrid dense+sparse output; local inference only | REQ-LLM-005 |
-| Reranker | **BAAI/bge-reranker-base** via **FlagEmbedding** | FlagEmbedding ≥1.2.0 | Cross-encoder reranking of hybrid retrieval results; normalised score 0–1; local inference | REQ-LLM-014 |
+| Reranker | **BAAI/bge-reranker-v2-m3** via **raw `transformers`** (`AutoModelForSequenceClassification` + `PreTrainedTokenizerFast`) | transformers ≥4.40 | Cross-encoder reranking; avoids FlagEmbedding/sentencepiece version churn; `tokenizer.json` loaded directly — no sentencepiece dependency; local inference | REQ-LLM-014 |
 | Sparse retrieval | **rank-bm25** (BM25Okapi) | 0.2.2 | BM25 keyword index for hybrid search alongside BGE-M3 dense vectors | REQ-LLM-015 |
 | Document processing | **unstructured** + **pymupdf** + **pypdf** | 0.17.2 / 1.26.1 / 5.5.0 | Heterogeneous PDF/DOCX/HTML ingestion; OCR fallback; fast text+image extraction; metadata extraction | REQ-DATA-034 |
 
 > **⚠️ CONFLICT vs original — LLM providers changed:**
-> Original stack specified Anthropic `claude-sonnet-4-20250514` (primary) + OpenAI `gpt-4o` (fallback) + Ollama (on-premises). **All replaced by self-hosted vLLM + Qwen 3.5 9B MTP 4-bit.** No external API calls anywhere. `anthropic`, `openai`, `langchain-anthropic`, `langchain-openai` packages removed from requirements.
+> Original stack specified Anthropic `claude-sonnet-4-20250514` (primary) + OpenAI `gpt-4o` (fallback) + Ollama (on-premises). **All replaced by self-hosted Ollama serving `qwen3.5:9b`.** vLLM was evaluated but dropped (GGUF format unsupported). Ollama exposes OpenAI-compatible `/v1/chat/completions`. No external API calls anywhere. `anthropic`, `openai`, `langchain-anthropic`, `langchain-openai` packages removed from requirements.
 >
 > **⚠️ CONFLICT vs original — Embedding model changed:**
 > `all-MiniLM-L6-v2` (384-dim) replaced by `BAAI/bge-m3` (1024-dim). ChromaDB collection configured with cosine distance to match. BGE Reranker v2-M3 and BM25 added for hybrid search pipeline.
@@ -116,10 +116,10 @@
 | `postgres-db` | `postgres:17-alpine` | 5432 | 5432 | PostgreSQL + TimescaleDB |
 | ~~weaviate~~ | ~~removed~~ | — | — | Replaced by embedded ChromaDB — no separate container |
 | `redis` | `redis:8.8.0-alpine` | 6379 | — | Broker + cache |
-| `vllm` | `vllm/vllm-openai:latest` | 8000 | — | Self-hosted Qwen 3.5 9B MTP 4-bit inference (GPU required) |
+| `ollama` | `ollama/ollama:latest` | 11434 | — | Self-hosted Qwen3.5:9b inference (GPU profile: `docker compose --profile gpu up`) |
 | `nginx` | `nginx:1.27-alpine` | 80/443 | 80/443 | Reverse proxy |
 
-> **CONFLICT vs original:** Original has 7 services. This stack replaces `mlflow` with `celery-beat`, replaces `ollama` with `vllm` (serving Qwen 3.5 9B MTP 4-bit), and adds `nginx`. Net: 9 services.
+> **CONFLICT vs original:** Original has 7 services. This stack replaces `mlflow` with `celery-beat`, keeps `ollama` (serving Qwen3.5:9b instead of Llama-3 fallback), and adds `nginx`. Net: 9 services.
 
 ---
 
@@ -161,10 +161,10 @@
 |---|---|---|---|
 | 1 | PostgreSQL 17-alpine only | + TimescaleDB extension | Sensor time-series requires hypertables |
 | 2 | MLflow 3.13.0 (port 5000) | **Removed** → PostgreSQL `ModelVersion` table | Unnecessary heavy service; DB registry sufficient |
-| 3 | 7 docker-compose services | 9 services | Replaced `mlflow` with `celery-beat`; replaced `ollama` with `vllm`; added `nginx` |
-| 4 | Anthropic `claude-sonnet-4-20250514` as primary LLM | **vLLM + Qwen 3.5 9B MTP 4-bit** (self-hosted) | No external API calls; data sovereignty; self-contained demo |
-| 5 | OpenAI `gpt-4o` as fallback LLM | **Removed** — single vLLM inference path | Simplicity; no API keys needed |
-| 6 | `sentence-transformers` `all-MiniLM-L6-v2` (384-dim) | **BAAI/bge-m3** (1024-dim) + BGE Reranker Base + BM25 | Superior retrieval quality; hybrid search; cross-encoder reranking |
+| 3 | 7 docker-compose services | 9 services | Replaced `mlflow` with `celery-beat`; kept `ollama` (Qwen3.5:9b); added `nginx` |
+| 4 | Anthropic `claude-sonnet-4-20250514` as primary LLM | **Ollama `qwen3.5:9b`** (self-hosted) | No external API calls; data sovereignty; self-contained demo. vLLM evaluated + dropped (GGUF unsupported). |
+| 5 | OpenAI `gpt-4o` as fallback LLM | **Removed** — single Ollama inference path | Simplicity; no API keys needed |
+| 6 | `sentence-transformers` `all-MiniLM-L6-v2` (384-dim) | **BAAI/bge-m3** (1024-dim) via FlagEmbedding + BGE Reranker v2-M3 via raw `transformers` + BM25 | Superior retrieval; hybrid search; reranker via raw transformers avoids sentencepiece dep |
 | 7 | No document processing pipeline | `unstructured` + `pymupdf` + `pypdf` | Heterogeneous PDF/DOCX ingestion, OCR, metadata |
 | 8 | No reverse proxy specified | Nginx 1.27-alpine | Required for WebSocket routing + TLS |
 | 9 | No observability stack | Prometheus + Grafana + OpenTelemetry | REQ-MONITORING-001–005 |

@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from apps.ml.models import MLPrediction
+from apps.ml.models import MLModel, MLPrediction
 from apps.ml.serializers import MLPredictionSerializer
 from apps.assets.models import Asset
 from apps.users.permissions import IsAdmin
@@ -25,7 +25,6 @@ class MLPredictionViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
     def retrieve(self, request, *args, **kwargs):
-        # GET /api/v1/ml/predictions/{id}/ — also checks task result
         task_id = kwargs.get("pk")
         from celery.result import AsyncResult
         result = AsyncResult(task_id)
@@ -42,7 +41,8 @@ class MLPredictView(APIView):
         asset = get_object_or_404(Asset, pk=asset_id)
         features = request.data.get("features", {})
         result = run_asset_inference(str(asset.id), model_type, features)
-        return Response(result)
+        shap_vals = compute_shap_values(str(asset.id), model_type, features)
+        return Response({**result, "shap_values": shap_vals})
 
 
 class MLPredictAsyncView(APIView):
@@ -71,6 +71,89 @@ class MLPredictionExplainView(APIView):
         return Response(shap_vals or {"detail": "SHAP not available for this model."})
 
 
+class ModelStatusView(APIView):
+    """
+    GET /api/v1/ml/models/status/
+    Returns current production model registry: asset_type → model_type → {version, metrics, artifact_ok}
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from pathlib import Path
+        production = MLModel.objects.filter(status="production").order_by("name", "-created_at")
+        seen = set()
+        registry = {}
+        for rec in production:
+            key = (rec.name, rec.model_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            # Derive asset_type from name: "{asset_type}_{model_type}"
+            parts = rec.name.split("_", 1)
+            asset_type = parts[0] if parts else rec.name
+            artifact_exists = Path(rec.artifact_path).exists() if rec.artifact_path else False
+            if asset_type not in registry:
+                registry[asset_type] = {}
+            registry[asset_type][rec.model_type] = {
+                "name": rec.name,
+                "version": rec.version,
+                "algorithm": rec.algorithm,
+                "artifact_path": rec.artifact_path,
+                "artifact_ok": artifact_exists,
+                "training_date": rec.training_date.isoformat() if rec.training_date else None,
+                "metrics": {k: v for k, v in rec.training_metrics.items() if k != "feature_names"},
+            }
+        return Response(registry)
+
+
+class RetrainView(APIView):
+    """
+    POST /api/v1/ml/retrain/
+    Body: {"asset_types": ["SRF", "HHPD"], "rich": true, "n_scenarios": 1000}
+    Admin only — triggers async retrain Celery task.
+    """
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        from apps.ml.tasks import generate_dataset_and_retrain
+        asset_types = request.data.get("asset_types", None)
+        rich = bool(request.data.get("rich", True))
+        n_scenarios = int(request.data.get("n_scenarios", 1000))
+
+        task = generate_dataset_and_retrain.apply_async(
+            kwargs={
+                "asset_types": asset_types,
+                "n_scenarios": n_scenarios,
+                "rich": rich,
+            }
+        )
+        return Response(
+            {
+                "task_id": task.id,
+                "status": "queued",
+                "asset_types": asset_types or "ALL",
+                "n_scenarios": n_scenarios,
+                "rich": rich,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class RetrainStatusView(APIView):
+    """GET /api/v1/ml/retrain/{task_id}/ — poll retrain task status."""
+    permission_classes = [IsAdmin]
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+        result = AsyncResult(task_id)
+        data = {
+            "task_id": task_id,
+            "status": result.status,
+            "result": result.result if result.ready() else None,
+        }
+        return Response(data)
+
+
 class CompetitionInferView(APIView):
     permission_classes = [IsAdmin]
     parser_classes = [MultiPartParser]
@@ -92,20 +175,6 @@ class CompetitionInferView(APIView):
         finally:
             os.unlink(train_path)
             os.unlink(test_path)
-
-
-class CompetitionExplainView(APIView):
-    permission_classes = [IsAdmin]
-
-    def get(self, request, coil_id):
-        from apps.ml.competition import run_competition_inference
-        import shap
-        df = run_competition_inference()
-        row = df[df["CoilID"] == int(coil_id)]
-        if row.empty:
-            return Response({"detail": "CoilID not found."}, status=404)
-        # SHAP for competition XGBoost model
-        return Response({"coil_id": coil_id, "note": "SHAP for competition model requires model artifact."})
 
 
 class CrossStageView(APIView):

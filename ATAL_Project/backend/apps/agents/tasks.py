@@ -1,5 +1,5 @@
 """
-MANAS chat task: RAG retrieval → hybrid search + rerank → vLLM call → WS stream → save.
+MANAS chat task: RAG retrieval → hybrid search + rerank → Ollama call → WS stream → save.
 """
 import json
 import logging
@@ -70,23 +70,24 @@ def process_chat_message(self, session_id: str, user_message_id: str, rag_collec
 
         channel_layer = get_channel_layer()
         group_name = f"llm_stream_{session_id}"
-        model_name = settings.VLLM_MODEL
+        model_name = settings.OLLAMA_MODEL
 
         full_response = ""
         input_tokens = 0
         output_tokens = 0
 
-        # Stream from vLLM OpenAI-compatible endpoint
-        with httpx.Client(timeout=120) as client:
+        # Stream from Ollama OpenAI-compatible endpoint
+        with httpx.Client(timeout=300) as client:
             with client.stream(
                 "POST",
-                f"{settings.VLLM_BASE_URL}/v1/chat/completions",
+                f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
                 json={
                     "model": model_name,
                     "messages": [{"role": "system", "content": system_prompt}] + messages,
                     "max_tokens": 2048,
                     "temperature": 0.2,
                     "stream": True,
+                    "think": False,
                 },
                 headers={"Content-Type": "application/json"},
             ) as resp:
@@ -134,5 +135,5 @@ def process_chat_message(self, session_id: str, user_message_id: str, rag_collec
         return {"status": "ok", "message_id": str(assistant_msg.id)}
 
     except Exception as exc:
-        logger.error("chat_task_failed", session_id=session_id, error=str(exc))
+        logger.error("chat_task_failed session_id=%s error=%s", session_id, str(exc))
         raise self.retry(exc=exc, countdown=5)

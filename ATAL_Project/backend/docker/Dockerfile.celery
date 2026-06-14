@@ -1,17 +1,17 @@
-# Celery worker + beat — shares same base as django-backend
+# Celery worker + beat — same deps stage as Dockerfile (shares layer cache)
 FROM python:3.12-slim AS deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=1000
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -24,7 +24,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
-    curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 
@@ -34,7 +34,6 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 WORKDIR /app
 COPY --chown=appuser:appuser . .
 
-RUN mkdir -p /app/staticfiles /app/media && chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /app
 
-USER appuser
 # CMD overridden in docker-compose per service (worker vs beat)

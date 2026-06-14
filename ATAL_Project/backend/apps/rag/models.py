@@ -18,6 +18,7 @@ class Document(models.Model):
     chroma_collection = models.CharField(max_length=100)
     chroma_object_ids = models.JSONField(default=list)
     source_url = models.URLField(max_length=1000, blank=True)
+    local_path = models.CharField(max_length=500, blank=True)
     version = models.CharField(max_length=50, blank=True)
     indexed_at = models.DateTimeField(null=True, blank=True)
     is_ingested = models.BooleanField(default=False)

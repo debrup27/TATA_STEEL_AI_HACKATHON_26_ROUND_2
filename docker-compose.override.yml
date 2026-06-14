@@ -1,5 +1,7 @@
 # Dev overrides — automatically applied by `docker compose up`
 # Bind-mounts source for hot reload; exposes Redis and Postgres for debugging.
+# NOTE: ./ATAL_Project/backend:/app mounts the full backend, so models/ and
+# data/ inside it are automatically available at /app/models/ and /app/data/.
 
 services:
 
@@ -15,8 +17,10 @@ services:
     volumes:
       - ./ATAL_Project/backend:/app:cached
       - chroma-data:/chroma_data
-      - ./models/bge-m3:/models/bge-m3:ro
-      - ./models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
+    environment:
+      BGE_M3_MODEL_PATH: /app/models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /app/models/bge-reranker-v2-m3
+      CORPUS_DIR: /app/data/corpus
     command: >
       uvicorn backend.asgi:application
       --host 0.0.0.0
@@ -27,6 +31,10 @@ services:
     volumes:
       - ./ATAL_Project/backend:/app:cached
       - chroma-data:/chroma_data
+    environment:
+      BGE_M3_MODEL_PATH: /app/models/bge-m3
+      BGE_RERANKER_MODEL_PATH: /app/models/bge-reranker-v2-m3
+      CORPUS_DIR: /app/data/corpus
     command: >
       celery -A backend worker
       --loglevel=debug

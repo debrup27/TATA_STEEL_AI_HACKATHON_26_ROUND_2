@@ -174,7 +174,14 @@ export default function ChatSidebar({
                 <span>Settings</span>
               </button>
               <button
-                onClick={() => window.location.href = "/login"}
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("atal_access");
+                    localStorage.removeItem("atal_refresh");
+                    window.dispatchEvent(new Event("user-state-change"));
+                  }
+                  window.location.href = "/login";
+                }}
                 className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
               >
                 <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />
@@ -197,7 +204,14 @@ export default function ChatSidebar({
               <button onClick={onOpenSettings} title="Settings" className="text-[#1b253c]/80 hover:text-orange-500 transition-colors duration-200 cursor-pointer">
                 <Settings className="w-4.5 h-4.5" />
               </button>
-              <button onClick={() => window.location.href = "/login"} title="Logout" className="text-red-400 hover:text-red-600 transition-colors duration-200 cursor-pointer">
+              <button onClick={() => {
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("atal_access");
+                  localStorage.removeItem("atal_refresh");
+                  window.dispatchEvent(new Event("user-state-change"));
+                }
+                window.location.href = "/login";
+              }} title="Logout" className="text-red-400 hover:text-red-600 transition-colors duration-200 cursor-pointer">
                 <LogOut className="w-4.5 h-4.5" />
               </button>
             </div>
@@ -311,7 +325,14 @@ export default function ChatSidebar({
                 <span>Settings</span>
               </button>
               <button
-                onClick={() => window.location.href = "/login"}
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("atal_access");
+                    localStorage.removeItem("atal_refresh");
+                    window.dispatchEvent(new Event("user-state-change"));
+                  }
+                  window.location.href = "/login";
+                }}
                 className="w-full relative flex items-center justify-center py-2.5 px-4 border border-red-200 hover:border-red-300 bg-red-50/20 hover:bg-red-50/50 rounded-xl text-sm font-bold text-red-500 hover:text-red-750 transition-all duration-200 select-none cursor-pointer shadow-3xs group"
               >
                 <LogOut className="w-4 h-4 absolute left-4 shrink-0 text-red-400 group-hover:text-red-600 transition-colors duration-200" />

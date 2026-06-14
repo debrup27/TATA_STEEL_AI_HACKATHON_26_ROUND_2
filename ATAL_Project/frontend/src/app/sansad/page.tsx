@@ -6,12 +6,13 @@ import Image from "next/image";
 import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-motion";
 import ClickSpark from "../../animations/ClickSpark";
 import AtalFooter from "../../components/AtalFooter";
-import { useMockTelemetryCells } from "@/hooks";
+import { useMockTelemetryCells, useUser } from "@/hooks";
 import { SPRING_SOFT, SPRING_MEDIUM } from "@/lib/constants";
 import SansadGrid from "@/components/SansadGrid";
 
 export default function SansadScrollGridCrossPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { user } = useUser();
   
   const [isMobile, setIsMobile] = useState(false);
 
@@ -123,7 +124,7 @@ export default function SansadScrollGridCrossPage() {
           </div>
 
           <Link 
-            href="/login"
+            href={user ? "/sansad/hub" : "/login"}
             className="bg-zinc-950 text-white p-5 rounded-2xl shadow-sm flex items-center justify-between border border-zinc-950 hover:bg-zinc-800 transition-colors"
           >
             <div>
@@ -278,7 +279,7 @@ export default function SansadScrollGridCrossPage() {
                     </motion.div>
                   </motion.div>
                   <motion.div style={{ opacity: buttonOpacity }} className="flex flex-col items-center gap-4 mt-12">
-                    <Link href="/login" className="block">
+                    <Link href={user ? "/sansad/hub" : "/login"} className="block">
                       <motion.div
                         className="flex items-center text-white text-2xl tracking-tight rounded-xl shadow-lg cursor-pointer overflow-hidden"
                         style={{ fontFamily: "var(--font-pixeloid)", backgroundColor: "#000000" }}

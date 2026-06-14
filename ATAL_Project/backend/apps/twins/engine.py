@@ -124,7 +124,7 @@ class TwinStateEngine:
                 },
             )
         except Exception as exc:
-            logger.error("twin_update_error", asset_id=asset_id, error=str(exc))
+            logger.error("twin_update_error asset_id=%s error=%s", asset_id, str(exc))
 
     @staticmethod
     def _compute_health(asset, readings) -> float:

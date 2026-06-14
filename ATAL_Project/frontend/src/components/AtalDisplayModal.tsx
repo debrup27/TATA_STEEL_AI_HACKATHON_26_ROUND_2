@@ -17,7 +17,7 @@ import {
   SourceContent,
   SourceTrigger
 } from "./ai-components/source";
-import { useMockTelemetryCells, useMockChatSimulation } from "@/hooks";
+import { useMockTelemetryCells, useMockChatSimulation, useUser } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
 import { getManasPredictions } from "@/services/prediction";
 import { SPRING_DEFAULT, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
@@ -56,6 +56,7 @@ interface RightPanelItem {
 
 export default function AtalDisplayModal() {
   const [activeTab, setActiveTab] = useState<"atal_sansad" | "atal_manas">("atal_sansad");
+  const { user } = useUser();
 
   const cells = useMockTelemetryCells();
 
@@ -413,7 +414,7 @@ export default function AtalDisplayModal() {
                 {activeTab === "atal_sansad" ? "Pipeline Operations?" : "Diagnostic Chat?"}
               </span>
               <button 
-                onClick={() => triggerPageTransition("/login")}
+                onClick={() => triggerPageTransition(user ? (activeTab === "atal_sansad" ? "/sansad/hub" : "/manas/chat") : "/login")}
                 className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none"
               >
                 {activeTab === "atal_sansad" ? "Launch Control" : "Try Manas Now"}
@@ -426,7 +427,7 @@ export default function AtalDisplayModal() {
 
       {/* Button below card */}
       <button 
-        onClick={() => triggerPageTransition("/login")}
+        onClick={() => triggerPageTransition(user ? (activeTab === "atal_sansad" ? "/sansad/hub" : "/manas/chat") : "/login")}
         className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95"
       >
         {activeTab === "atal_sansad" ? "Initialize Sansad Copilot" : "Initialize Manas Copilot"}

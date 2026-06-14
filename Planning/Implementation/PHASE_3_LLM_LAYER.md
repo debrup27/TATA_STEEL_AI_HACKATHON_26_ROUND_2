@@ -1,5 +1,9 @@
 # PHASE_3_LLM_LAYER.md — Project ATAL
 **Scope: Full industrial maintenance assistant — RAG pipeline, LangGraph agents, consolidation tool-call, factory context injection, WS streaming.**
+
+> **PHASE ORDER DECISION (2026-06-14):** Phase 3 runs BEFORE Sub-Phase 2.2 (frontend wiring). LLM chat and consolidation endpoints are live when frontend wiring begins — enables real-time AI testing in frontend during Sub-Phase 2.2.
+> Execution order: Phase 1 → Sub-Phase 2.1 → Phase 3 → Sub-Phase 2.2 → Phase 4 → Phase 5
+
 Task format: `- [ ] P3-NNN: {task} | REQ: REQ-LLM-NNN | Depends: P3-NNN`
 
 ---
@@ -161,3 +165,39 @@ Pipeline: Upload/URL → `pymupdf` text extract → `unstructured` OCR/structure
 - [ ] P3-040: Store LangGraph conversation history in Redis (short-term, 24h TTL) + `ChatMessage` PostgreSQL (permanent) per session | REQ: REQ-LLM-009 | Depends: P3-038, P3-039
 - [ ] P3-041: Implement session REST endpoints: GET `/api/v1/chat/sessions/`, POST `/api/v1/chat/sessions/` (create), GET `/api/v1/chat/sessions/{id}/messages/`, DELETE `/api/v1/chat/sessions/{id}/` | REQ: REQ-LLM-009 | Depends: P3-039
 - [ ] P3-042: Implement MANAS chat endpoint POST `/api/v1/chat/` — accepts `{session_id, asset_id, message, use_streaming: bool}`; for non-streaming: runs full LangGraph graph synchronously, returns `ChatMessageSchema`; for streaming: delegates to P3-037 | REQ: REQ-FUNCTIONAL-012, REQ-FUNCTIONAL-013 | Depends: P3-029, P3-037, P3-041
+
+---
+
+## 8. SANSAD Two-Tier Agentic Orchestration (2026-06-14 — supersedes §4 fixed pipeline)
+
+> **Design upgrade.** §4 specified a fixed single-model pipeline (diagnostic→rca→rul→recommendation→consolidation). It is replaced by a **two-tier supervisor/worker** architecture so SANSAD behaves like an HQ/parliament: gather info → MANAS (9B brain) decides what actions to take → spawn small worker agents + dispatch whitelisted tools → route decisions back to the UI.
+>
+> - **MANAS supervisor** = `qwen3.5:9b` (`OLLAMA_MODEL`) — reasons over the consolidated payload + RAG; emits tool calls and worker-spawn requests.
+> - **Worker agents** = `qwen3.5:0.8b` (`OLLAMA_SMALL_MODEL`) — bounded, parallel text sub-tasks; no DB writes.
+> - Both models stay resident in Ollama via `keep_alive` (9B-Q4 ~6GB + 0.8B ~0.8GB fit 16GB GPU).
+> - Heavy/destructive actions (retrain, work-order creation) execute via Celery through a **whitelisted tool registry only** (REQ-SECURITY-003) — the LLM never touches the ORM directly.
+
+### 8.1 Tool Registry & Security (REQ-SECURITY-003)
+- [ ] P3-043: Implement `apps/agents/graph/tools.py` — `@sansad_tool(name, arg_schema)` decorator registers callables into `TOOL_REGISTRY`; `dispatch_tool(name, args)` validates name + args against the registry, executes only whitelisted wrappers, and writes an `AgentAuditLog` row per call. Reject unknown tool names; no raw SQL / generic `.save()` exposed to the LLM. | REQ: REQ-SECURITY-003, REQ-LLM-012 | Depends: —
+- [ ] P3-044: Define whitelisted tools wrapping existing backend functions: `run_ml_inference`→`apps.ml.tasks.run_all_asset_models`, `request_retrain`→`apps.ml.tasks.trigger_retrain` (async, Supervisor-gated), `check_drift`→`apps.ml.tasks.check_model_drift`, `query_twin_state`→twins, `retrieve_docs`→`apps.rag.retrieval`, `create_work_order`→guarded `WorkOrder.objects.create`, `escalate`→notification-only. | REQ: REQ-SECURITY-003, REQ-LLM-012 | Depends: P3-043
+- [ ] P3-045: Implement `AgentAuditLog` model — `id, asset_id, tool_name, args JSON, result_summary, dispatched_by (agent role), timestamp, rejected (bool)`; one row per tool dispatch or rejection. | REQ: REQ-SECURITY-003 | Depends: —
+
+### 8.2 LLM Client Layer
+- [ ] P3-046: Extend `apps/consolidation/llm_bridge.py` — add `tools` array support in the supervisor request body (Ollama OpenAI-compatible function-calling, `think:false`); add `run_small_agent(prompt, system, ...)` hitting `OLLAMA_SMALL_MODEL` with `keep_alive`. | REQ: REQ-LLM-001, REQ-LLM-006 | Depends: —
+- [ ] P3-047: Add settings `OLLAMA_SMALL_MODEL` (default `qwen3.5:0.8b`) + `OLLAMA_KEEP_ALIVE` (default `30m`); add `langgraph` + `langchain-core` to requirements; pull both models in entrypoint/compose. | REQ: REQ-LLM-001, REQ-INFRA-001 | Depends: —
+
+### 8.3 Worker Agents (qwen3.5:0.8b)
+- [ ] P3-048: Implement `apps/agents/graph/agents.py` — worker agents as system-prompt + `run_small_agent` calls: `WorkOrderDrafter`, `SensorWindowSummarizer`, `AlarmTriager`, `CitationFormatter`, `SpareStrategist`. Pure text transforms over already-gathered data; mock fallback under `OLLAMA_MOCK=1`. | REQ: REQ-LLM-003 | Depends: P3-046
+
+### 8.4 LangGraph Supervisor Graph
+- [ ] P3-049: Implement `apps/agents/graph/state.py` — `AgentState` TypedDict: `asset_id, payload, rag_context, plan, tool_calls, tool_results, worker_tasks, worker_outputs, decision, events`. | REQ: REQ-LLM-003 | Depends: —
+- [ ] P3-050: Implement `apps/agents/graph/nodes.py` — `supervisor_node` (9B planner emits tool calls + worker spawns), `tool_node` (executes via `dispatch_tool`), `worker_node` (fan-out 0.8b agents in parallel), `aggregator_node` (assemble final `DecisionOutput`). Each node appends to `state["events"]` for WS. | REQ: REQ-LLM-003 | Depends: P3-043, P3-048, P3-049
+- [ ] P3-051: Implement `apps/agents/graph/builder.py` — `build_graph()` wires the `StateGraph`: supervisor → conditional edges → tool/worker → aggregator → END, with a bounded re-plan loop (max N iterations). | REQ: REQ-LLM-003 | Depends: P3-050
+- [ ] P3-052: Implement `apps/agents/graph/runner.py` — `run_sansad_orchestration(asset_id, trigger)`: compile graph once, invoke, stream `events` to WS group `orchestration_{asset_id}`, return `DecisionOutput`. | REQ: REQ-LLM-003 | Depends: P3-051
+
+### 8.5 Wire into Consolidation
+- [ ] P3-053: Fix `apps/consolidation/orchestrator.py` — run `run_all_asset_models(asset_id)` (fresh inference) before reading predictions; populate `cross_stage_context` from `apps.ml.cross_stage`. | REQ: REQ-FUNCTIONAL-040 | Depends: P3-044
+- [ ] P3-054: Reroute `apps/consolidation/tasks.py` — replace single `run_consolidation_llm` call with `run_sansad_orchestration(...)`; keep `MaintenanceReport`/`WorkOrder` persistence informed by tool actions the graph took. | REQ: REQ-FUNCTIONAL-041 | Depends: P3-052, P3-053
+
+### 8.6 WS Streaming + Verification
+- [ ] P3-055: Add `OrchestrationConsumer` (or extend `apps/agents/consumers.py`) for group `orchestration_{asset_id}` emitting `agent.step`, `tool.call`, `decision.done`; add `manage.py test_orchestration` smoke command mirroring `test_llm`/`test_rag_pipeline`. | REQ: REQ-LLM-008 | Depends: P3-052

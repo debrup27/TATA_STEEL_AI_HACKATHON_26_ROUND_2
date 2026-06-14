@@ -3,14 +3,20 @@ CLAUDE.md
 .cursor
 .claude
 
-# Environment files (never commit secrets)
+# Active env file at root (never commit — contains secrets)
 .env
 .env.dev
 .env.prod
 .env.local
+# Profile templates live in ATAL_Project/backend/env/ and ARE committed (no secrets)
 
-# Model weights (large binary files — download via scripts/download_models.sh)
-models/
+# Model weights (large binary files — download via ATAL_Project/backend/scripts/download_models.sh)
+# Ignores bge-m3 and bge-reranker weight directories anywhere in tree
+ATAL_Project/backend/models/bge-m3/
+ATAL_Project/backend/models/bge-reranker-v2-m3/
+
+# Corpus PDFs/HTMLs (downloaded at runtime — not committed)
+ATAL_Project/backend/data/corpus/
 
 # Python
 __pycache__/

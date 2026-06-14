@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 @shared_task(name="apps.consolidation.run", bind=True, time_limit=120)
 def run_consolidation(self, asset_id: str):
     from apps.consolidation.orchestrator import assemble_consolidated_payload
-    from apps.consolidation.llm_bridge import run_consolidation_llm
     from apps.consolidation.models import ConsolidationResult
     from apps.reports.models import MaintenanceReport
     from apps.maintenance.models import WorkOrder
@@ -27,7 +26,9 @@ def run_consolidation(self, asset_id: str):
         result_rec.consolidated_payload = payload
         result_rec.save(update_fields=["consolidated_payload"])
 
-        decision = run_consolidation_llm(payload)
+        # Two-tier agentic orchestration: supervisor (9B) + workers (0.8B)
+        from apps.agents.graph.runner import run_sansad_orchestration
+        decision = run_sansad_orchestration(asset_id, trigger="consolidation")
 
         if decision:
             result_rec.decision_output = decision
@@ -87,5 +88,5 @@ def run_consolidation(self, asset_id: str):
         result_rec.error_message = str(exc)
         result_rec.completed_at = timezone.now()
         result_rec.save()
-        logger.error("consolidation_error", asset_id=asset_id, error=str(exc))
+        logger.error("consolidation_error asset_id=%s error=%s", asset_id, str(exc))
         raise

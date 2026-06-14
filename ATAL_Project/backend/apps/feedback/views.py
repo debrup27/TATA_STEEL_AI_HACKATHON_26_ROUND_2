@@ -31,5 +31,11 @@ class FeedbackCreateView(APIView):
         report.feedback_status = mapping[fb_type]
         report.save(update_fields=["feedback_status"])
 
-        # Queue Weaviate update for corrections (deferred to Phase 3)
+        # Invalidate prompt patch cache so next MANAS call picks up this feedback
+        try:
+            from apps.feedback.tasks import invalidate_prompt_patch
+            invalidate_prompt_patch.delay()
+        except Exception:
+            pass
+
         return Response({"id": str(feedback.id), "status": "recorded"}, status=status.HTTP_201_CREATED)

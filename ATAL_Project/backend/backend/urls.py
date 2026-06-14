@@ -6,7 +6,6 @@ urlpatterns = [
     path("health/", include("apps.assets.urls.health")),
     path("api/v1/auth/", include("apps.users.urls.auth")),
     path("api/v1/admin/", include("apps.users.urls.admin")),
-    path("api/v1/factories/", include("apps.assets.urls.factories")),
     path("api/v1/assets/", include("apps.assets.urls.assets")),
     path("api/v1/sensors/", include("apps.assets.urls.sensors")),
     path("api/v1/spares/", include("apps.assets.urls.spares")),

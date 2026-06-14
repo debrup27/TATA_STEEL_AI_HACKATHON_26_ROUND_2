@@ -21,7 +21,7 @@ import {
   SourceTrigger
 } from "@/components/ai-components/source";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
-import { useMockChatSimulation } from "@/hooks";
+import { useMockChatSimulation, useUser } from "@/hooks";
 import { SPRING_SOFT, SPRING_MEDIUM, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
 
 const DemoMessage = React.memo(function DemoMessage({ 
@@ -52,6 +52,7 @@ const DemoMessage = React.memo(function DemoMessage({
 
 export default function ManasLandingPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { user } = useUser();
   
   // Interactive Chat Demo states
   const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
@@ -250,7 +251,7 @@ export default function ManasLandingPage() {
           </div>
 
           <Link 
-            href="/login"
+            href={user ? "/manas/chat" : "/login"}
             className="bg-zinc-950 text-white p-5 rounded-2xl shadow-sm flex items-center justify-between border border-zinc-950 hover:bg-zinc-800 transition-colors"
           >
             <div>
@@ -483,7 +484,7 @@ export default function ManasLandingPage() {
 
                   {/* Launch button leads directly to active chat view */}
                   <motion.div style={{ opacity: buttonOpacity }} className="flex flex-col items-center gap-4 mt-12">
-                    <Link href="/login" className="block">
+                    <Link href={user ? "/manas/chat" : "/login"} className="block">
                       <motion.div
                         className="flex items-center text-white text-2xl tracking-tight rounded-xl shadow-lg cursor-pointer overflow-hidden"
                         style={{ fontFamily: "var(--font-pixeloid)", backgroundColor: "#000000" }}

@@ -41,7 +41,7 @@ class ChatSessionDetailView(APIView):
         except ChatSession.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
-        messages = ChatMessage.objects.filter(session=session).order_by("created_at")
+        messages = ChatMessage.objects.filter(session=session).order_by("timestamp")
         data = {
             "id": str(session.id),
             "asset_id": str(session.asset_id) if session.asset_id else None,
@@ -94,7 +94,7 @@ class ChatMessageView(APIView):
             role="user",
             content=user_message,
         )
-        session.last_active = msg.created_at
+        session.last_active = msg.timestamp
         session.save(update_fields=["last_active"])
 
         rag_collections = request.data.get("rag_collections", [])

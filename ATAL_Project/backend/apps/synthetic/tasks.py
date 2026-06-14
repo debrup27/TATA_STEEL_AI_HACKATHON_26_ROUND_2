@@ -77,16 +77,11 @@ def generate_batch(self, asset_id: str, n_samples: int = 100, **gen_kwargs):
         run.completed_at = dj_tz.now()
         run.save()
 
-        logger.info(
-            "synthetic_batch_complete",
-            asset=asset.name,
-            rows=len(bulk),
-            fault_events=len(output.fault_events),
-        )
+        logger.info("synthetic_batch_complete asset=%s rows=%d fault_events=%d", asset.name, len(bulk), len(output.fault_events))
         return {"rows": len(bulk), "fault_events": len(output.fault_events)}
 
     except Exception as exc:
-        logger.error("synthetic_batch_error", asset_id=asset_id, error=str(exc))
+        logger.error("synthetic_batch_error asset_id=%s error=%s", asset_id, str(exc))
         raise
 
 
@@ -95,3 +90,38 @@ def orchestrate_all(n_samples: int = 50):
     from apps.assets.models import Asset
     for asset in Asset.objects.all():
         generate_batch.apply_async(args=[str(asset.id)], kwargs={"n_samples": n_samples})
+
+
+@shared_task(name="apps.synthetic.generate_training_dataset", bind=True)
+def generate_training_dataset(self, n_scenarios: int = 1000):
+    """
+    Weekly training dataset refresh (Celery Beat: Sunday 01:30 UTC).
+    Generates rich multi-scenario datasets for all asset types and caches results
+    so the subsequent retrain task finds fresh data.
+    """
+    from apps.synthetic.dataset_builder import build_dataset, ALL_ASSET_TYPES
+    from apps.synthetic.models import SyntheticGenerationRun
+    from apps.assets.models import Asset
+
+    if not hasattr(build_dataset, '__module__'):
+        # Import guard
+        from apps.synthetic import dataset_builder as db_module
+        ALL_ASSET_TYPES = list(db_module.GENERATOR_MAP.keys())
+
+    results = {}
+    for asset_type in GENERATOR_MAP:
+        try:
+            X, y_rul, y_fault, feature_names = build_dataset(
+                asset_type, n_scenarios=n_scenarios, rich=True
+            )
+            results[asset_type] = {
+                "n_scenarios": int(X.shape[0]),
+                "n_features": int(X.shape[1]),
+                "fault_rate": round(float(y_fault.mean()), 3),
+            }
+            logger.info("training_dataset_generated asset_type=%s n_scenarios=%d n_features=%d fault_rate=%.3f", asset_type, results[asset_type].get("n_scenarios",0), results[asset_type].get("n_features",0), results[asset_type].get("fault_rate",0))
+        except Exception as exc:
+            logger.error("training_dataset_error asset_type=%s error=%s", asset_type, str(exc))
+            results[asset_type] = {"error": str(exc)}
+
+    return results

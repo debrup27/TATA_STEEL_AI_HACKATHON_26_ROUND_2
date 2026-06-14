@@ -33,6 +33,7 @@ langgraph>=0.2.0
 
 # Embeddings & Reranking (BGE-M3 + BGE Reranker v2-M3 via FlagEmbedding)
 FlagEmbedding>=1.2.0
+sentencepiece>=0.2.0
 sentence-transformers==5.5.1
 rank-bm25==0.2.2
 

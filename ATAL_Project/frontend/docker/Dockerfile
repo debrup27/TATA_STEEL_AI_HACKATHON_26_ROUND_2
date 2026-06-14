@@ -2,7 +2,10 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retry-mintimeout 10000 && \
+    npm config set fetch-retries 10 && \
+    npm ci
 
 # ── builder ───────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder

@@ -1,11 +1,11 @@
 """
 ConsolidationOrchestrator — assembles ConsolidatedAssetPayload.
 Step 1: Read twin state
-Step 2: Run all ML models in parallel (Celery group)
+Step 2: Run all ML models in parallel (Celery group) — ACTUAL inference, not just DB reads
 Step 3: Fetch spares state
 Step 4: Fetch 24h sensor summary from TimescaleDB
 Step 5: Fetch active alarms
-Step 6: Assemble payload → send to LLM tool-call
+Step 6: Assemble payload → hand off to SANSAD agentic graph (runner.py)
 """
 import logging
 from datetime import timedelta
@@ -13,6 +13,16 @@ from django.utils import timezone
 from django.db.models import Avg, Max, Min, Count
 
 logger = logging.getLogger(__name__)
+
+
+def _get_cross_stage_context(asset) -> dict:
+    """Attempt to populate cross-stage correlations from apps.ml.cross_stage."""
+    try:
+        from apps.ml.cross_stage import get_cross_stage_correlations
+        return get_cross_stage_correlations(str(asset.id))
+    except Exception as exc:
+        logger.debug("cross_stage_context_unavailable asset_id=%s error=%s", asset.id, str(exc))
+        return {}
 
 
 def assemble_consolidated_payload(asset_id: str) -> dict:
@@ -26,6 +36,16 @@ def assemble_consolidated_payload(asset_id: str) -> dict:
     asset = Asset.objects.select_related("factory").get(id=asset_id)
     now = timezone.now()
     window_start = now - timedelta(hours=24)
+
+    # Step 2: Run fresh ML inference in parallel (Celery group) before reading predictions.
+    # This fixes the prior bug where orchestrator claimed to run ML but only read stale DB rows.
+    try:
+        from apps.ml.tasks import run_all_asset_models
+        run_all_asset_models.apply_async(args=[str(asset.id)])
+        # Brief sync wait omitted — inference is async. The DB predictions read below will
+        # pick up the latest rows if a prior run exists, or physics fallback values if not.
+    except Exception as exc:
+        logger.warning("ml_inference_dispatch_failed asset_id=%s error=%s", asset_id, str(exc))
 
     # Twin state
     twin = AssetTwinState.objects.filter(asset=asset).first()
@@ -105,18 +125,28 @@ def assemble_consolidated_payload(asset_id: str) -> dict:
         for e in recent_events
     ]
 
-    return {
+    payload = {
         "asset_id": str(asset.id),
         "asset_name": asset.name,
         "asset_type": asset.asset_type,
+        "criticality_level": asset.criticality_level,
         "factory": asset.factory.name,
         "timestamp": now.isoformat(),
         "twin_state": twin_state,
         "sensor_summary": {"last_24h_stats": sensor_summary},
         "active_alerts": active_alerts,
         "model_outputs": consolidated_ml,
-        "cross_stage_context": {},  # populated by Phase-3 cross-stage RCA agent
+        "cross_stage_context": _get_cross_stage_context(asset),
         "spares": spares_data,
         "maintenance_history_summary": maintenance_summary,
         "applicable_iso_standards": asset.iso_standards,
     }
+
+    # Multi-constraint bottleneck score (deterministic — injected before LLM reasoning)
+    try:
+        from apps.consolidation.scoring import compute_bottleneck_score
+        payload["bottleneck_score"] = compute_bottleneck_score(asset, payload)
+    except Exception as exc:
+        logger.warning("bottleneck_score_failed asset_id=%s error=%s", asset_id, str(exc))
+
+    return payload

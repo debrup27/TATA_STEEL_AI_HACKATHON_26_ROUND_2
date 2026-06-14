@@ -15,15 +15,27 @@ MODEL_ARTIFACT_ROOT = getattr(settings, "MODEL_ARTIFACT_ROOT", Path("/tmp/atal_m
 
 
 def _load_model(asset_id: str, model_type: str):
-    """Load pickled model artifact from registry."""
+    """
+    Load pickled model artifact from registry.
+    Models are registered by name '{asset_type}_{model_type}' (type-level, not instance-level).
+    """
     import joblib
+    # Resolve asset_type from asset_id
+    try:
+        asset = Asset.objects.get(id=asset_id)
+        asset_type = asset.asset_type
+    except Asset.DoesNotExist:
+        return None, None
+
+    model_name = f"{asset_type}_{model_type}"
     model_rec = MLModel.objects.filter(
-        asset_id=asset_id, model_type=model_type, status="production"
+        name=model_name, status="production"
     ).order_by("-created_at").first()
     if not model_rec:
         return None, None
     artifact_path = Path(model_rec.artifact_path)
     if not artifact_path.exists():
+        logger.warning("artifact_missing name=%s path=%s", model_name, str(artifact_path))
         return None, model_rec
     return joblib.load(artifact_path), model_rec
 
@@ -31,13 +43,20 @@ def _load_model(asset_id: str, model_type: str):
 def run_asset_inference(asset_id: str, model_type: str, features: dict) -> dict:
     """
     Load production model + run prediction.
-    Returns raw prediction_output dict.
+    features: flat dict of sensor-aggregate stats (mean/std/min/max per sensor).
+    Returns prediction_output dict.
     """
     model, model_rec = _load_model(asset_id, model_type)
     if model is None:
         return _physics_fallback(asset_id, model_type, features)
 
-    X = np.array(list(features.values())).reshape(1, -1)
+    # Order features to match training column order
+    feature_names = model_rec.training_metrics.get("feature_names", []) if model_rec else []
+    if feature_names and features:
+        X = np.array([features.get(fn, 0.0) for fn in feature_names], dtype=np.float32).reshape(1, -1)
+    else:
+        X = np.array(list(features.values()), dtype=np.float32).reshape(1, -1)
+
     try:
         pred = model.predict(X)
         confidence = None
@@ -48,12 +67,12 @@ def run_asset_inference(asset_id: str, model_type: str, features: dict) -> dict:
             "model_type": model_type,
             "prediction": float(pred[0]) if len(pred) else None,
             "confidence": confidence,
+            "model_version": model_rec.version if model_rec else None,
         }
-        # Derive standard output keys
         _enrich_output(result, model_type)
         return result
     except Exception as exc:
-        logger.warning("inference_error", model_type=model_type, error=str(exc))
+        logger.warning("inference_error model_type=%s error=%s", model_type, str(exc))
         return _physics_fallback(asset_id, model_type, features)
 
 
@@ -112,5 +131,5 @@ def compute_shap_values(asset_id: str, model_type: str, features: dict) -> dict 
             else float(explainer.expected_value[0]),
         }
     except Exception as exc:
-        logger.warning("shap_error", error=str(exc))
+        logger.warning("shap_error error=%s", str(exc))
         return None

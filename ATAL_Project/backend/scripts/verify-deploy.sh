@@ -25,20 +25,24 @@ echo ""
 check "Django /health/ returns 200" \
     "curl -sf ${API}/health/"
 
-check "Weaviate ready" \
-    "curl -sf http://localhost:8001/v1/.well-known/ready"
-
 check "Redis ping" \
-    "docker compose exec redis redis-cli ping"
+    "docker compose exec -T redis redis-cli ping"
 
 check "Postgres ready" \
-    "docker compose exec postgres-db pg_isready -U atal_user"
+    "docker compose exec -T postgres-db pg_isready -U atal_user"
 
 check "Celery worker alive" \
-    "docker compose exec celery-worker celery -A backend inspect ping --timeout 5"
+    "docker compose exec -T celery-worker celery -A backend inspect ping --timeout 5"
 
-check "vLLM /health (skip if no GPU)" \
-    "curl -sf http://localhost:8000/health --max-time 5 || true"
+check "Ollama health" \
+    "docker compose exec -T django-backend curl -sf http://ollama:11434/api/tags"
+
+check "ChromaDB collections populated" \
+    "docker compose exec -T django-backend python manage.py shell -c \"
+from apps.rag.chroma_client import get_chroma_client, COLLECTIONS
+c = get_chroma_client()
+assert any(c.get_or_create_collection(n).count() > 0 for n in ('ISOStandard','SOP'))
+\""
 
 echo ""
 echo "=== Results: ${PASS} passed / ${FAIL} failed ==="

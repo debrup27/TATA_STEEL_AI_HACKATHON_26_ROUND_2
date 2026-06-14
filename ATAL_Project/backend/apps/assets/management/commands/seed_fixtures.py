@@ -2,9 +2,10 @@
 manage.py seed_fixtures
 
 Creates the Horizon and Zephyr factories, assets, sensor definitions,
-alarm thresholds, and initial twin states. Safe to re-run (uses get_or_create).
+alarm thresholds, and initial twin states.
 """
 from django.core.management.base import BaseCommand
+from apps.assets.models import Factory
 from apps.assets.services import FactoryOnboardService
 from apps.users.models import Organization
 
@@ -29,12 +30,30 @@ class Command(BaseCommand):
         else:
             self.stdout.write(f"Using existing org: {org.name}")
 
-        service = FactoryOnboardService(org=org)
+        if not Factory.objects.filter(org=org, code="F1").exists():
+            horizon = FactoryOnboardService.onboard({
+                "org_id": str(org.id),
+                "name": "Horizon",
+                "code": "F1",
+                "factory_type": "horizon",
+            })
+            self.stdout.write(self.style.SUCCESS(
+                f"Horizon seeded: {len(horizon['assets_created'])} assets"
+            ))
+        else:
+            self.stdout.write("Horizon factory already exists — skipping.")
 
-        horizon = service.onboard("Horizon", "F1")
-        self.stdout.write(self.style.SUCCESS(f"Horizon seeded: {horizon.asset_set.count()} assets"))
-
-        zephyr = service.onboard("Zephyr", "F2")
-        self.stdout.write(self.style.SUCCESS(f"Zephyr seeded: {zephyr.asset_set.count()} assets"))
+        if not Factory.objects.filter(org=org, code="F2").exists():
+            zephyr = FactoryOnboardService.onboard({
+                "org_id": str(org.id),
+                "name": "Zephyr",
+                "code": "F2",
+                "factory_type": "zephyr",
+            })
+            self.stdout.write(self.style.SUCCESS(
+                f"Zephyr seeded: {len(zephyr['assets_created'])} assets"
+            ))
+        else:
+            self.stdout.write("Zephyr factory already exists — skipping.")
 
         self.stdout.write(self.style.SUCCESS("Fixture seeding complete."))
