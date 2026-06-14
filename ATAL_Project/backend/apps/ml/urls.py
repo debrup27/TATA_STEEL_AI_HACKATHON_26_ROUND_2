@@ -1,6 +1,7 @@
 from django.urls import path
 from apps.ml.views import (
     MLPredictView, MLPredictAsyncView, MLPredictionViewSet,
+    MLPredictionListView, MLPredictionTaskStatusView,
     MLPredictionExplainView, CompetitionInferView,
     CrossStageView, ModelStatusView, RetrainView, RetrainStatusView,
 )
@@ -11,7 +12,9 @@ urlpatterns = [
     path("<uuid:asset_id>/<str:model_type>/predict/async/", MLPredictAsyncView.as_view()),
 
     # Prediction records
-    path("predictions/<str:pk>/", MLPredictionViewSet.as_view({"get": "retrieve"})),
+    path("predictions/", MLPredictionListView.as_view()),
+    path("predictions/task/<str:task_id>/", MLPredictionTaskStatusView.as_view()),
+    path("predictions/<uuid:pk>/", MLPredictionViewSet.as_view({"get": "retrieve"})),
     path("predictions/<uuid:pk>/explain/", MLPredictionExplainView.as_view()),
 
     # Model registry

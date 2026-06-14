@@ -6,27 +6,13 @@ import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import UserPill from "@/components/UserPill";
-import {
-  tickExhausterVibration,
-  tickSinterFeO,
-  tickStrandSpeed,
-  tickExhausterHealth,
-  HUB_TICK_INTERVAL,
-} from "@/services/telemetry";
+import { HUB_TICK_INTERVAL } from "@/services/telemetry";
+import { fetchDiagnostics } from "@/services/diagnostics";
 import { useMockTelemetryLogs } from "@/hooks";
-import {
-  getFactory1Notifications,
-  getFactory2Notifications,
-  getSansadHubLogos,
-  getRulMonitorLogos,
-  getHistoricalLogsLogos,
-  getRiskPriorityLogos,
-  getRagLogsLogos,
-} from "@/services/tickers";
 import { useFactoryTickers } from "@/hooks/useFactoryTickers";
+import { useNotificationFeed } from "@/hooks/useNotificationFeed";
 import type { LogEntry } from "@/services/types";
 
-// Import modular components
 import { SystemLogItem } from "./components/SystemLogItem";
 import { SystemLogControls } from "./components/SystemLogControls";
 import MobileMonitoringView from "./components/MobileMonitoringView";
@@ -35,29 +21,27 @@ import FactoryCard from "./components/FactoryCard";
 import SubPanelCard from "./components/SubPanelCard";
 import LogDetailModal from "./components/LogDetailModal";
 
-const sansadHubLogos = getSansadHubLogos();
-const rulMonitorLogos = getRulMonitorLogos();
-const historicalLogsLogos = getHistoricalLogsLogos();
-const riskPriorityLogos = getRiskPriorityLogos();
-const ragLogsLogos = getRagLogsLogos();
+const EMPTY_TICKERS: { text: string; isSeparator: boolean }[] = [
+  { text: "Awaiting live plant feed…", isSeparator: false },
+];
 
 export default function SansadMonitoringPage() {
   const [isMobile, setIsMobile] = useState(false);
 
-  // Live factory notification tickers from real ML/alert API
   const { f1: factory1Notifications, f2: factory2Notifications } = useFactoryTickers(
-    "F1", "F2",
-    getFactory1Notifications(),
-    getFactory2Notifications(),
+    "F1",
+    "F2",
+    EMPTY_TICKERS,
+    EMPTY_TICKERS,
   );
+  const { tickers: hubTickers } = useNotificationFeed(undefined, 30_000);
+  const pillarTickers = hubTickers.length >= 2 ? hubTickers : EMPTY_TICKERS;
 
-  // Simulated telemetry states
-  const [exhausterVibration, setExhausterVibration] = useState(6.42);
-  const [exhausterHealth, setExhausterHealth] = useState(24);
-  const [sinterFeO, setSinterFeO] = useState(8.3);
-  const [strandSpeed, setStrandSpeed] = useState(3.1);
+  const [exhausterVibration, setExhausterVibration] = useState(0);
+  const [exhausterHealth, setExhausterHealth] = useState(0);
+  const [sinterFeO, setSinterFeO] = useState(0);
+  const [strandSpeed, setStrandSpeed] = useState(0);
 
-  // Live system log stream (alerts, maintenance, AI reports)
   const [isLogStreamLive, setIsLogStreamLive] = useState(true);
   const { logs: systemLogs, clear: clearSystemLogs, status: logStreamStatus } = useMockTelemetryLogs(
     HUB_TICK_INTERVAL,
@@ -66,36 +50,41 @@ export default function SansadMonitoringPage() {
   );
 
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
-  
-  const handleSelectLog = useCallback((log: LogEntry) => {
-    setActiveLogForModal(log);
-  }, []);
-
+  const handleSelectLog = useCallback((log: LogEntry) => setActiveLogForModal(log), []);
   const systemLogContainerRef = useRef<HTMLDivElement>(null);
 
-  // Handle Resize for Mobile check
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
+    const handleResize = () => setIsMobile(window.innerWidth < 1024);
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Fluctuating values simulation
   useEffect(() => {
-    const interval = setInterval(() => {
-      setExhausterVibration((prev) => tickExhausterVibration(prev));
-      setSinterFeO((prev) => tickSinterFeO(prev));
-      setStrandSpeed((prev) => tickStrandSpeed(prev));
-      setExhausterHealth((prev) => tickExhausterHealth(prev));
-    }, HUB_TICK_INTERVAL);
-
+    const loadMetrics = () => {
+      fetchDiagnostics()
+        .then((assets) => {
+          const f1 = assets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? assets[0];
+          const f2 = assets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? assets[1];
+          if (f1) {
+            setExhausterHealth(f1.health);
+            const vib = f1.sensors.find((s) => s.label.toLowerCase().includes("vib"));
+            if (vib) setExhausterVibration(parseFloat(vib.value) || 0);
+          }
+          if (f2) {
+            const feo = f2.sensors.find((s) => s.label.toLowerCase().includes("feo"));
+            const speed = f2.sensors.find((s) => s.label.toLowerCase().includes("strand") || s.label.toLowerCase().includes("speed"));
+            if (feo) setSinterFeO(parseFloat(feo.value) || 0);
+            if (speed) setStrandSpeed(parseFloat(speed.value) || 0);
+          }
+        })
+        .catch(() => undefined);
+    };
+    loadMetrics();
+    const interval = setInterval(loadMetrics, HUB_TICK_INTERVAL);
     return () => clearInterval(interval);
   }, []);
 
-  // Handle Auto-scroll for the system logs container (only while live)
   useEffect(() => {
     if (!isLogStreamLive || !systemLogContainerRef.current) return;
     systemLogContainerRef.current.scrollTop = systemLogContainerRef.current.scrollHeight;
@@ -111,7 +100,6 @@ export default function SansadMonitoringPage() {
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
       {isMobile ? (
-        // MOBILE FALLBACK VIEW
         <MobileMonitoringView
           exhausterVibration={exhausterVibration}
           exhausterHealth={exhausterHealth}
@@ -119,24 +107,16 @@ export default function SansadMonitoringPage() {
           strandSpeed={strandSpeed}
         />
       ) : (
-        // DESKTOP GRID PARTITION LAYOUT
         <div className="w-screen h-screen overflow-hidden bg-[#FAF9F5] relative flex select-none">
-          
-          {/* Left Gutter Vertical Marquee (8vw width) */}
           <VerticalMarquee direction="up" side="left" text="SANSAD" />
-
-          {/* Right Gutter Vertical Marquee (8vw width) */}
           <VerticalMarquee direction="down" side="right" text="ATAL" />
 
-          {/* Centered partitioned area spanning exactly 84vw */}
           <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5]">
-            
             <div className="w-full h-full flex flex-col">
-              {/* Top Header Bar — centered SANSAD title */}
               <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-10 bg-[#FAF9F5] z-30 select-none flex-shrink-0">
                 <div className="absolute left-1/2 -translate-x-1/2">
-                  <span 
-                    className="text-2xl font-black uppercase tracking-tight text-[#1b253c] inline-block" 
+                  <span
+                    className="text-2xl font-black uppercase tracking-tight text-[#1b253c] inline-block"
                     style={{ fontFamily: "var(--font-pixeloid)" }}
                   >
                     SANSAD
@@ -150,7 +130,10 @@ export default function SansadMonitoringPage() {
                   <img src="/short_form_logo.webp" alt="ATAL Logo" className="w-full h-full object-cover block" />
                 </Link>
                 <div className="flex items-center gap-4">
-                  <Link href="/manas/chat" className="group/link text-[10px] font-mono font-bold uppercase hover:text-[#f97316] text-[#1b253c] tracking-widest flex items-center gap-1 select-none">
+                  <Link
+                    href="/manas/chat"
+                    className="group/link text-[10px] font-mono font-bold uppercase hover:text-[#f97316] text-[#1b253c] tracking-widest flex items-center gap-1 select-none"
+                  >
                     Manas Chat <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/link:rotate-45" />
                   </Link>
                   <UserPill
@@ -160,12 +143,9 @@ export default function SansadMonitoringPage() {
                 </div>
               </div>
 
-              {/* Grid divisions (Adjacent layout boxes below the header) */}
               <div className="flex-1 flex overflow-hidden">
-                
-                {/* Column 1 (35% width) */}
+                {/* Column 1 — Horizon + Samvidhaan */}
                 <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
-                  {/* Factory 1 Box */}
                   <FactoryCard
                     href="/sansad/hub/horizon-foundry"
                     title={<>HORIZON<br />FOUNDRY</>}
@@ -175,22 +155,19 @@ export default function SansadMonitoringPage() {
                     heightClass="h-[48%]"
                     borderClass="border-b border-zinc-200"
                   />
-
-                  {/* Sansad Samvidhaan Box */}
                   <FactoryCard
                     href="/sansad/hub/samvidhaan"
                     title={<>SANSAD<br />SAMVIDHAAN</>}
                     description="Agentic concierge orchestrating the agent army — monitors RUL, traces multi-stage failure cascades, and routes structured diagnostics directly to Manas."
-                    logos={sansadHubLogos}
+                    logos={pillarTickers}
                     speed={25}
                     heightClass="h-[52%]"
-                    isSamvidhaan={true}
+                    isSamvidhaan
                   />
                 </div>
 
-                {/* Column 2 (35% width) */}
+                {/* Column 2 — Zephyr + §5.1 / §5.2 */}
                 <div className="w-[35%] h-full flex flex-col border-r border-zinc-200">
-                  {/* Factory 2 Box */}
                   <FactoryCard
                     href="/sansad/hub/zephyr-sinter"
                     title={<>ZEPHYR<br />SINTER</>}
@@ -200,38 +177,38 @@ export default function SansadMonitoringPage() {
                     heightClass="h-[48%]"
                     borderClass="border-b border-zinc-200"
                   />
-
-                  {/* Bottom stacked sub-panels */}
                   <div className="h-[52%] flex flex-col">
-                    {/* Sub-panel A: RUL Monitor */}
                     <SubPanelCard
-                      href="/sansad/hub/monitor"
-                      title="RUL Monitor"
-                      description="Equipment Remaining Useful Life predictions from live sensor telemetry."
-                      logos={rulMonitorLogos}
+                      href="/sansad/hub/diagnostics"
+                      title="Diagnostics & Prediction"
+                      description="Fault diagnosis, RCA, RUL estimates, early warnings, and cross-stage process defect links."
+                      logos={pillarTickers}
                       borderClass="border-b border-zinc-200"
                     />
-
-                    {/* Sub-panel B: Abnormality Prediction */}
                     <SubPanelCard
-                      href="/sansad/hub/abpred"
-                      title="Abnormality Prediction"
-                      description="Criticality scoring by process impact, delay severity and spares availability."
-                      logos={riskPriorityLogos}
+                      href="/sansad/hub/risk"
+                      title="Risk & Priority"
+                      description="Risk classification, urgency scoring, bottleneck ranking, and spares availability."
+                      logos={pillarTickers}
                     />
                   </div>
                 </div>
 
-                {/* Column 3 (30% width) */}
+                {/* Column 3 — Log stream + §5.3 / §5.4 */}
                 <div className="w-[30%] h-full flex flex-col">
-                  
-                  {/* LOG STREAM (top 48%) */}
                   <div className="group h-[48%] border-b border-zinc-200 p-6 flex flex-col relative transition-all duration-300 ease-in-out hover:bg-[#FAF6EE] hover:scale-[1.01] hover:z-10 hover:shadow-2xl">
-                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
-                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">+</div>
+                    <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">
+                      +
+                    </div>
+                    <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/35 group-hover:text-[#1b253c]/60 transition-colors duration-300 select-none">
+                      +
+                    </div>
 
                     <div className="flex-shrink-0 mb-3 flex justify-between items-center select-none gap-2">
-                      <h2 className="text-xl font-black text-[#1b253c] uppercase" style={{ fontFamily: "var(--font-questrial)" }}>
+                      <h2
+                        className="text-xl font-black text-[#1b253c] uppercase"
+                        style={{ fontFamily: "var(--font-questrial)" }}
+                      >
                         SYSTEM LOG STREAM
                       </h2>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -241,7 +218,10 @@ export default function SansadMonitoringPage() {
                           onToggleLive={() => setIsLogStreamLive((v) => !v)}
                           onClear={clearSystemLogs}
                         />
-                        <Link href="/sansad/hub/logs" className="flex items-center gap-1 text-[10px] font-bold text-[#1b253c]/40 hover:text-[#f97316] uppercase tracking-wider transition-colors duration-300 font-mono group/expand cursor-pointer">
+                        <Link
+                          href="/sansad/hub/logs"
+                          className="flex items-center gap-1 text-[10px] font-bold text-[#1b253c]/40 hover:text-[#f97316] uppercase tracking-wider transition-colors duration-300 font-mono group/expand cursor-pointer"
+                        >
                           <span>Click here to expand</span>
                           <ArrowUpRight className="w-4 h-4 transition-transform duration-300 group-hover/expand:rotate-45" />
                         </Link>
@@ -277,21 +257,18 @@ export default function SansadMonitoringPage() {
                     </div>
                   </div>
 
-                  {/* HISTORICAL LOGS (middle 26%) */}
                   <SubPanelCard
-                    href="/sansad/hub/historical-logs"
-                    title="Historical Logs"
-                    description="Past maintenance records, failure analyses, and SOP-driven repair history."
-                    logos={historicalLogsLogos}
+                    href="/sansad/hub/actions"
+                    title="Maintenance Actions"
+                    description="Immediate steps, long-term monitoring plans, and optimised maintenance schedules."
+                    logos={pillarTickers}
                     borderClass="border-b border-zinc-200"
                   />
-
-                  {/* RAG LOGS (bottom 26%) */}
                   <SubPanelCard
-                    href="/manas/chat?rag=1"
-                    title="RAG"
-                    description="Manas vector search queries, agent prompts, and context retrievals."
-                    logos={ragLogsLogos}
+                    href="/sansad/hub/reports"
+                    title="Intelligence Reports"
+                    description="Maintenance reports, abnormal alerts, decision summaries, and digital logbook entries."
+                    logos={pillarTickers}
                   />
                 </div>
               </div>
@@ -300,11 +277,7 @@ export default function SansadMonitoringPage() {
         </div>
       )}
 
-      {/* Modal Dialog for detailed log view */}
-      <LogDetailModal
-        log={activeLogForModal}
-        onClose={() => setActiveLogForModal(null)}
-      />
+      <LogDetailModal log={activeLogForModal} onClose={() => setActiveLogForModal(null)} />
     </ClickSpark>
   );
 }

@@ -46,8 +46,8 @@ class LLMStreamConsumer:
         from apps.agents.stream_registry import register_stream, unregister_stream
 
         session_id = scope["url_route"]["kwargs"]["session_id"]
+        self._session_id = session_id
 
-        # Accept the WebSocket handshake
         await send({"type": "websocket.accept"})
 
         loop = asyncio.get_event_loop()
@@ -57,7 +57,6 @@ class LLMStreamConsumer:
         listen_task = asyncio.ensure_future(self._listen(receive))
 
         try:
-            # Exit as soon as either side finishes (client disconnect or drain sentinel)
             await asyncio.wait(
                 {drain_task, listen_task},
                 return_when=asyncio.FIRST_COMPLETED,
@@ -77,7 +76,7 @@ class LLMStreamConsumer:
         while True:
             event = await queue.get()
             if event is None:
-                break  # sentinel — stream finished
+                break
             payload = self._format(event)
             if payload is not None:
                 try:
@@ -86,11 +85,21 @@ class LLMStreamConsumer:
                     break
 
     async def _listen(self, receive):
-        """Wait for the client to disconnect."""
+        """Handle client disconnect and cancel requests."""
+        from apps.agents.stream_registry import request_cancel
+
+        session_id = self._session_id
         while True:
             msg = await receive()
             if msg["type"] in ("websocket.disconnect", "websocket.close"):
                 break
+            if msg["type"] == "websocket.receive" and msg.get("text"):
+                try:
+                    data = json.loads(msg["text"])
+                except json.JSONDecodeError:
+                    continue
+                if data.get("type") == "cancel" and session_id:
+                    request_cancel(session_id)
 
     @staticmethod
     def _format(event: dict):
@@ -101,17 +110,24 @@ class LLMStreamConsumer:
             return {"type": "token", "token": event.get("token", "")}
         if t == "think_token":
             return {"type": "think_token", "token": event.get("token", "")}
+        if t == "phase":
+            return {"type": "phase", "phase": event.get("phase", "")}
         if t == "done":
             return {
                 "type": "done",
                 "message_id": event.get("message_id"),
                 "citations": event.get("citations", []),
                 "error": event.get("error"),
+                "cancelled": bool(event.get("cancelled", False)),
             }
         if t == "compacting":
             return {"type": "compacting"}
         if t == "compacted":
-            return {"type": "compacted", "compacted_count": event.get("compacted_count", 0)}
+            return {
+                "type": "compacted",
+                "compacted_count": event.get("compacted_count", 0),
+                "skipped": bool(event.get("skipped", False)),
+            }
         return None
 
 

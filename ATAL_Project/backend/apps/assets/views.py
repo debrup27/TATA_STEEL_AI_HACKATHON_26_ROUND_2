@@ -129,6 +129,24 @@ class HealthCheckView(APIView):
         return Response({"status": "ok"})
 
 
+class ReadyCheckView(APIView):
+    """Readiness probe — 503 until entrypoint bootstrap + smoke tests complete."""
+
+    permission_classes = []
+
+    def get(self, request):
+        import os
+
+        ready_marker = os.environ.get("ATAL_READY_MARKER", "/tmp/atal_backend_ready")
+        if not os.path.isfile(ready_marker):
+            return Response(
+                {"status": "starting", "detail": "Backend bootstrap in progress"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        boot_id = str(int(os.path.getmtime(ready_marker)))
+        return Response({"status": "ready", "boot_id": boot_id})
+
+
 class AssetSimulationView(APIView):
     """
     Simulation control for an asset — inject faults or reset campaign state.

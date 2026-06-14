@@ -3,39 +3,95 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
-import type { Citation } from "@/services/types";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { Eye } from "lucide-react";
+import type { Citation, MessageFile, RagDoc } from "@/services/types";
+import { prepareStreamingMarkdown, normalizeTechnicalMarkdown } from "@/lib/markdown-stream";
+import { loadCitationPreview, citationToMessageFile, citationPreviewToMessageFile } from "@/lib/citation-preview";
+import DocumentPreviewModal from "@/app/manas/chat/components/DocumentPreviewModal";
+import "katex/dist/katex.min.css";
 
 const CITE_SPLIT = /(\[\d+\])/g;
+const ORPHAN_CITE = /\s*\[(\d+)\]/g;
+const INLINE_CITE = /\[(\d+)\]/g;
+
+/** Citation indices actually referenced in assistant text. */
+function citedIndicesInContent(content: string, citeMap: Map<number, Citation>): Set<number> {
+  const used = new Set<number>();
+  if (!content || citeMap.size === 0) return used;
+  for (const m of content.matchAll(INLINE_CITE)) {
+    const n = Number(m[1]);
+    if (citeMap.has(n)) used.add(n);
+  }
+  return used;
+}
+
+/** Remove [n] markers that have no matching retrieved source. */
+function stripOrphanCitationMarkers(content: string, citeMap: Map<number, Citation>): string {
+  if (!content) return content;
+  if (citeMap.size === 0) {
+    return content.replace(ORPHAN_CITE, "");
+  }
+  return content.replace(ORPHAN_CITE, (full, num) => (citeMap.has(Number(num)) ? full : ""));
+}
 
 function normalizeCitations(citations: Citation[]): Citation[] {
   return citations.map((c, i) => ({
     ...c,
     index: c.index ?? i + 1,
+    documentId: c.documentId ?? (c as Citation & { document_id?: string }).document_id,
   }));
+}
+
+function shortDocLabel(doc: string, max = 32): string {
+  const trimmed = doc.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max - 1)}…`;
 }
 
 function CitationMarker({
   n,
+  citation,
   active,
   onClick,
 }: {
   n: number;
+  citation?: Citation;
   active: boolean;
   onClick: () => void;
 }) {
+  const title = citation
+    ? [citation.doc, citation.section].filter(Boolean).join(" · ")
+    : `Source ${n}`;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`inline-flex items-center justify-center min-w-[1.15rem] h-[1.15rem] px-0.5 mx-0.5 align-super text-[10px] font-bold rounded-md border transition-colors cursor-pointer ${
-        active
-          ? "bg-orange-500 text-white border-orange-500 shadow-sm"
-          : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 hover:border-orange-300"
-      }`}
-      title={`View source ${n}`}
-    >
-      {n}
-    </button>
+    <span className="relative inline-flex items-baseline group/cite mx-0.5">
+      <button
+        type="button"
+        onClick={onClick}
+        title={title}
+        aria-label={`View source ${n}: ${title}`}
+        className={`inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 align-super text-[9px] font-bold rounded-full border transition-all cursor-pointer ${
+          active
+            ? "bg-[#1b253c] text-white border-[#1b253c] shadow-md scale-110"
+            : "bg-orange-100/90 text-orange-800 border-orange-300/80 hover:bg-orange-200 hover:border-orange-400"
+        }`}
+      >
+        {n}
+      </button>
+      {citation?.doc ? (
+        <span
+          className={`pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-20 whitespace-nowrap max-w-[220px] truncate rounded-lg px-2 py-1 text-[10px] font-semibold shadow-lg border transition-opacity opacity-0 group-hover/cite:opacity-100 ${
+            active
+              ? "bg-[#1b253c] text-white border-[#1b253c]"
+              : "bg-white text-zinc-700 border-orange-200"
+          }`}
+        >
+          {shortDocLabel(citation.doc)}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -43,11 +99,16 @@ function TextWithCitationMarkers({
   children,
   activeIndex,
   onCiteClick,
+  citeMap,
 }: {
   children: React.ReactNode;
   activeIndex: number | null;
   onCiteClick: (n: number) => void;
+  citeMap: Map<number, Citation>;
 }) {
+  if (typeof children !== "string" && typeof children !== "number") {
+    return <>{children}</>;
+  }
   const text = String(children);
   if (!text.includes("[")) return <>{children}</>;
 
@@ -58,10 +119,14 @@ function TextWithCitationMarkers({
         const match = part.match(/^\[(\d+)\]$/);
         if (match) {
           const n = parseInt(match[1], 10);
+          if (!citeMap.has(n)) {
+            return null;
+          }
           return (
             <CitationMarker
               key={i}
               n={n}
+              citation={citeMap.get(n)}
               active={activeIndex === n}
               onClick={() => onCiteClick(n)}
             />
@@ -73,53 +138,151 @@ function TextWithCitationMarkers({
   );
 }
 
+function injectCitations(
+  children: React.ReactNode,
+  ctx: {
+    activeIndex: number | null;
+    onCiteClick: (n: number) => void;
+    citeMap: Map<number, Citation>;
+  },
+): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (typeof child === "string" || typeof child === "number") {
+      if (typeof child === "number") return child;
+      return (
+        <TextWithCitationMarkers
+          activeIndex={ctx.activeIndex}
+          onCiteClick={ctx.onCiteClick}
+          citeMap={ctx.citeMap}
+        >
+          {child}
+        </TextWithCitationMarkers>
+      );
+    }
+    if (React.isValidElement<{ children?: React.ReactNode }>(child)) {
+      if (child.type === TextWithCitationMarkers || child.type === CitationMarker) {
+        return child;
+      }
+      const inner = child.props.children;
+      if (inner !== undefined && inner !== null) {
+        return React.cloneElement(child, {}, injectCitations(inner, ctx));
+      }
+    }
+    return null;
+  });
+}
+
+function wrapCitations(
+  children: React.ReactNode,
+  ctx: {
+    activeIndex: number | null;
+    onCiteClick: (n: number) => void;
+    citeMap: Map<number, Citation>;
+  },
+) {
+  return injectCitations(children, ctx);
+}
+
+function HighlightedExcerpt({ text, active }: { text: string; active: boolean }) {
+  const rendered = useMemo(() => normalizeTechnicalMarkdown(text), [text]);
+  return (
+    <div
+      className={`mt-2.5 text-[12px] leading-relaxed rounded-lg px-3 py-2.5 border transition-all ${
+        active
+          ? "bg-amber-50 border-amber-300 text-zinc-800 shadow-inner ring-2 ring-amber-200/60"
+          : "bg-stone-50/80 border-stone-200/90 text-zinc-600"
+      }`}
+    >
+      <span className="text-[9px] font-bold uppercase tracking-widest text-amber-700/80 block mb-1">
+        Referenced passage
+      </span>
+      <div className="[&_.katex]:text-[1em] [&_.katex]:leading-normal [&_.katex-display]:inline [&_.katex-display]:m-0">
+        <ReactMarkdown
+          remarkPlugins={[remarkMath]}
+          rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
+          components={{
+            p: ({ children }) => <span className="inline">{children}</span>,
+          }}
+        >
+          {rendered}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
 function SourceCard({
   citation,
   active,
+  onSelect,
+  onPreview,
   onMount,
 }: {
   citation: Citation;
   active: boolean;
-  onMount?: (el: HTMLDivElement | null) => void;
+  onSelect: () => void;
+  onPreview: () => void;
+  onMount?: (el: HTMLButtonElement | null) => void;
 }) {
   const n = citation.index ?? 0;
   const isUpload = citation.source === "upload";
 
   return (
     <div
-      ref={onMount}
-      className={`rounded-xl border p-3 transition-all ${
+      className={`w-full text-left rounded-xl border p-3.5 transition-all duration-200 ${
         active
-          ? "border-orange-300 bg-orange-50/60 shadow-sm"
-          : "border-zinc-200 bg-zinc-50/80"
+          ? "border-orange-400 bg-gradient-to-br from-orange-50 via-amber-50/80 to-stone-50 shadow-md ring-2 ring-orange-200/50"
+          : "border-stone-200/90 bg-gradient-to-br from-white to-stone-50/60 hover:border-orange-200 hover:shadow-sm"
       }`}
     >
-      <div className="flex items-start gap-2.5 min-w-0">
-        <span
-          className={`shrink-0 flex items-center justify-center size-5 rounded-md text-[10px] font-bold ${
-            active ? "bg-orange-500 text-white" : "bg-white text-orange-700 border border-orange-200"
-          }`}
+      <div className="flex items-start gap-3 min-w-0">
+        <button
+          type="button"
+          ref={onMount}
+          onClick={onSelect}
+          className="shrink-0 flex items-center justify-center size-6 rounded-lg text-[11px] font-bold cursor-pointer"
+          style={{
+            background: active ? "#1b253c" : "#f97316",
+            color: "white",
+          }}
         >
           {n}
-        </span>
-        <div className="min-w-0 flex-1">
+        </button>
+        <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left cursor-pointer">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-xs font-bold text-zinc-800 truncate">{citation.doc}</p>
-            {isUpload && (
-              <span className="text-[9px] font-bold uppercase tracking-wide text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded">
+            <p className="text-sm font-bold text-[#1b253c] leading-snug">{citation.doc}</p>
+            {isUpload ? (
+              <span className="text-[9px] font-bold uppercase tracking-wide text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded-md">
                 Upload
+              </span>
+            ) : (
+              <span className="text-[9px] font-bold uppercase tracking-wide text-orange-700 bg-orange-100/80 px-1.5 py-0.5 rounded-md">
+                Library
               </span>
             )}
           </div>
           {citation.section ? (
-            <p className="text-[10px] text-zinc-500 mt-0.5 font-medium">{citation.section}</p>
-          ) : null}
-          {citation.excerpt ? (
-            <p className="mt-2 text-[11px] leading-relaxed text-zinc-600 bg-white/80 border border-zinc-200/80 rounded-lg px-2.5 py-2 line-clamp-4">
-              {citation.excerpt}
+            <p className="text-[11px] text-orange-800/80 mt-1 font-semibold flex items-center gap-1">
+              <span className="inline-block size-1 rounded-full bg-orange-400" />
+              {citation.section}
             </p>
           ) : null}
-        </div>
+          {citation.excerpt ? (
+            <HighlightedExcerpt text={citation.excerpt} active={active} />
+          ) : null}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPreview();
+          }}
+          className="shrink-0 p-1.5 rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50 hover:border-orange-300 transition-colors cursor-pointer"
+          title="Preview document"
+          aria-label={`Preview ${citation.doc}`}
+        >
+          <Eye className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
@@ -129,11 +292,28 @@ interface CitedMarkdownProps {
   content: string;
   citations?: Citation[];
   className?: string;
+  streaming?: boolean;
+  ragDocs?: RagDoc[];
+  onExpandFile?: (file: MessageFile) => void;
 }
 
-export function CitedMarkdown({ content, citations = [], className = "" }: CitedMarkdownProps) {
+export function CitedMarkdown({
+  content,
+  citations = [],
+  className = "",
+  streaming = false,
+  ragDocs = [],
+  onExpandFile,
+}: CitedMarkdownProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const sourceRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewBody, setPreviewBody] = useState("");
+  const [previewPages, setPreviewPages] = useState<string[]>([]);
+  const [previewFileType, setPreviewFileType] = useState<string | undefined>();
+  const [previewTruncated, setPreviewTruncated] = useState(false);
+  const sourceRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   const normalized = useMemo(() => normalizeCitations(citations), [citations]);
   const sorted = useMemo(
@@ -141,11 +321,78 @@ export function CitedMarkdown({ content, citations = [], className = "" }: Cited
     [normalized],
   );
 
+  const citeMap = useMemo(() => {
+    const map = new Map<number, Citation>();
+    for (const c of sorted) {
+      if (c.index != null) map.set(c.index, c);
+    }
+    return map;
+  }, [sorted]);
+
   const handleCiteClick = useCallback((n: number) => {
     setActiveIndex((prev) => (prev === n ? null : n));
-    const el = sourceRefs.current[n];
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    requestAnimationFrame(() => {
+      const el = sourceRefs.current[n];
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   }, []);
+
+  const handlePreviewCitation = useCallback(
+    async (citation: Citation) => {
+      const file = citationToMessageFile(citation, ragDocs);
+      if (file && onExpandFile) {
+        onExpandFile(file);
+        return;
+      }
+      setPreviewOpen(true);
+      setPreviewLoading(true);
+      setPreviewTitle(citation.doc);
+      setPreviewBody("");
+      setPreviewPages([]);
+      setPreviewTruncated(false);
+      try {
+        const data = await loadCitationPreview(citation, ragDocs);
+        if (onExpandFile && (data.sourceFormat === "pdf" || data.sourceFormat === "markdown" || data.sourceFormat === "image" || data.pages.length > 0)) {
+          setPreviewOpen(false);
+          onExpandFile(citationPreviewToMessageFile(data));
+          return;
+        }
+        setPreviewTitle(data.title);
+        setPreviewBody(data.body);
+        setPreviewPages(data.pages);
+        setPreviewFileType(data.fileType);
+        setPreviewTruncated(Boolean(data.truncated));
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [ragDocs, onExpandFile],
+  );
+
+  const renderedContent = useMemo(() => {
+    const base = streaming ? prepareStreamingMarkdown(content) : content;
+    const stripped = stripOrphanCitationMarkers(base, citeMap);
+    return normalizeTechnicalMarkdown(stripped);
+  }, [content, streaming, citeMap]);
+
+  const referencedIndices = useMemo(
+    () => citedIndicesInContent(renderedContent, citeMap),
+    [renderedContent, citeMap],
+  );
+
+  const displayedCitations = useMemo(
+    () => sorted.filter((c) => referencedIndices.has(c.index ?? 0)),
+    [sorted, referencedIndices],
+  );
+
+  const citeCtx = useMemo(
+    () => ({
+      activeIndex,
+      onCiteClick: handleCiteClick,
+      citeMap,
+    }),
+    [activeIndex, handleCiteClick, citeMap],
+  );
 
   const markdownComponents = useMemo<Partial<Components>>(
     () => ({
@@ -153,32 +400,35 @@ export function CitedMarkdown({ content, citations = [], className = "" }: Cited
         const isInline = (props as { inline?: boolean }).inline;
         if (isInline) {
           return (
-            <code className="bg-zinc-100 text-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">
+            <code className="bg-stone-100 text-stone-800 px-1.5 py-0.5 rounded text-xs font-mono">
               {children}
             </code>
           );
         }
         return (
-          <pre className="bg-zinc-900 text-zinc-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
+          <pre className="bg-[#1b253c] text-stone-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
             <code>{children}</code>
           </pre>
         );
       },
-      text: ({ children }) => (
-        <TextWithCitationMarkers activeIndex={activeIndex} onCiteClick={handleCiteClick}>
-          {children}
-        </TextWithCitationMarkers>
+      h1: ({ children }) => (
+        <h1 className="text-xl font-bold mt-5 mb-2">{children}</h1>
       ),
-      h1: ({ children }) => <h1 className="text-xl font-bold mt-5 mb-2">{children}</h1>,
-      h2: ({ children }) => <h2 className="text-lg font-bold mt-5 mb-1">{children}</h2>,
-      h3: ({ children }) => <h3 className="text-base font-bold mt-4 mb-1">{children}</h3>,
+      h2: ({ children }) => (
+        <h2 className="text-lg font-bold mt-5 mb-1">{children}</h2>
+      ),
+      h3: ({ children }) => (
+        <h3 className="text-base font-bold mt-4 mb-1">{children}</h3>
+      ),
       strong: ({ children }) => <strong>{children}</strong>,
       em: ({ children }) => <em>{children}</em>,
       ul: ({ children }) => <ul className="list-disc ml-5 my-2 space-y-1">{children}</ul>,
       ol: ({ children }) => <ol className="list-decimal ml-5 my-2 space-y-1">{children}</ol>,
-      li: ({ children }) => <li className="my-0.5">{children}</li>,
+      li: ({ children }) => <li className="my-0.5">{wrapCitations(children, citeCtx)}</li>,
       blockquote: ({ children }) => (
-        <blockquote className="border-l-4 border-orange-300 pl-3 my-2 text-zinc-600 italic">{children}</blockquote>
+        <blockquote className="border-l-4 border-orange-400 pl-3 my-2 text-zinc-600 italic">
+          {children}
+        </blockquote>
       ),
       a: ({ href, children }) => (
         <a
@@ -190,30 +440,50 @@ export function CitedMarkdown({ content, citations = [], className = "" }: Cited
           {children}
         </a>
       ),
-      p: ({ children }) => <p className="my-1.5">{children}</p>,
+      p: ({ children }) => <p className="my-1.5">{wrapCitations(children, citeCtx)}</p>,
+      td: ({ children }) => <td className="border border-stone-200 px-2 py-1">{children}</td>,
+      th: ({ children }) => (
+        <th className="border border-stone-200 bg-stone-50 px-2 py-1 text-left font-semibold">
+          {children}
+        </th>
+      ),
     }),
-    [activeIndex, handleCiteClick],
+    [citeCtx],
   );
+
+  const showSources =
+    displayedCitations.length > 0 && (!streaming || referencedIndices.size > 0);
 
   return (
     <div className={className}>
-      <div className="leading-relaxed manas-markdown prose prose-zinc max-w-none prose-headings:font-bold prose-p:my-1.5 prose-li:my-0.5 prose-strong:font-bold">
-        <ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown>
+      <div className="leading-relaxed manas-markdown prose prose-zinc max-w-none prose-headings:font-bold prose-p:my-1.5 prose-li:my-0.5 prose-strong:font-bold [&_.katex]:text-[1.05em] [&_.katex]:leading-normal [&_.katex-display]:inline [&_.katex-display]:m-0 [&_p:has(.katex)]:leading-[1.65]">
+        <ReactMarkdown
+          remarkPlugins={[remarkMath]}
+          rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
+          components={markdownComponents}
+        >
+          {renderedContent || ""}
+        </ReactMarkdown>
       </div>
 
-      {sorted.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-zinc-100">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-2">
-            Sources
-          </p>
-          <div className="space-y-2">
-            {sorted.map((c) => {
+      {showSources && (
+        <div className="mt-5 rounded-2xl border border-orange-200/60 bg-gradient-to-b from-orange-50/40 to-stone-50/30 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#1b253c] text-white">
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em]">Sources</p>
+            <span className="text-[10px] font-bold bg-orange-500 text-white px-2 py-0.5 rounded-full">
+              {displayedCitations.length}
+            </span>
+          </div>
+          <div className="p-3 space-y-2">
+            {displayedCitations.map((c) => {
               const n = c.index ?? 0;
               return (
                 <SourceCard
                   key={`${n}-${c.doc}`}
                   citation={c}
                   active={activeIndex === n}
+                  onSelect={() => handleCiteClick(n)}
+                  onPreview={() => handlePreviewCitation(c)}
                   onMount={(el) => {
                     sourceRefs.current[n] = el;
                   }}
@@ -222,6 +492,17 @@ export function CitedMarkdown({ content, citations = [], className = "" }: Cited
             })}
           </div>
         </div>
+      )}
+      {previewOpen && (
+        <DocumentPreviewModal
+          title={previewTitle}
+          body={previewBody}
+          pages={previewPages}
+          fileType={previewFileType}
+          loading={previewLoading}
+          truncated={previewTruncated}
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </div>
   );

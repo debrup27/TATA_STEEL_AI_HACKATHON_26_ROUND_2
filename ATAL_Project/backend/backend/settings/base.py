@@ -212,6 +212,10 @@ OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="-1")
 EMBEDDING_DEVICE = config("EMBEDDING_DEVICE", default="cuda")
 RAG_USE_RERANKER = config("RAG_USE_RERANKER", default=False, cast=bool)
 INGEST_CORPUS_ON_START = config("INGEST_CORPUS_ON_START", default=False, cast=bool)
+RAG_OCR_DPI = config("RAG_OCR_DPI", default=200, cast=int)
+RAG_OCR_MAX_PAGES = config("RAG_OCR_MAX_PAGES", default=5, cast=int)
+# fast = 50 scenarios / 40 trees (boot default); full = 1000 scenarios rich; skip = no boot train
+ATAL_TRAIN_MODE = config("ATAL_TRAIN_MODE", default="fast")
 
 # --- Artifact roots ---
 # MODEL_ARTIFACT_ROOT must be on a persistent Docker volume so trained models

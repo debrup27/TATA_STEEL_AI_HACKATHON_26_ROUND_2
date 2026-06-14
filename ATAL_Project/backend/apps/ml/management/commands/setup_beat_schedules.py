@@ -53,9 +53,9 @@ class Command(BaseCommand):
             },
         )
 
-        # ── Telemetry WS broadcast every 30 seconds ───────────────────────────
+        # ── Telemetry WS broadcast every 10 seconds ───────────────────────────
         telemetry_ws_interval, _ = IntervalSchedule.objects.get_or_create(
-            every=30, period=IntervalSchedule.SECONDS
+            every=10, period=IntervalSchedule.SECONDS
         )
         PeriodicTask.objects.update_or_create(
             name="telemetry-ws-broadcast",
@@ -67,9 +67,9 @@ class Command(BaseCommand):
             },
         )
 
-        # ── Live telemetry simulation every 30 seconds ─────────────────────────
+        # ── Live telemetry simulation every 10 seconds ─────────────────────────
         telemetry_interval, _ = IntervalSchedule.objects.get_or_create(
-            every=30, period=IntervalSchedule.SECONDS
+            every=10, period=IntervalSchedule.SECONDS
         )
         PeriodicTask.objects.update_or_create(
             name="synthetic-telemetry-live",
@@ -78,7 +78,7 @@ class Command(BaseCommand):
                 "task": "apps.synthetic.orchestrate_all",
                 "kwargs": '{"n_samples": 6}',
                 "enabled": True,
-                "description": "Live telemetry simulation — writes to TimescaleDB every 30s",
+                "description": "Live telemetry simulation — writes to TimescaleDB every 10s",
             },
         )
 
@@ -164,7 +164,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             "[setup_beat_schedules] Periodic tasks seeded: "
             "weekly-ml-retrain, weekly-synthetic-dataset-refresh, "
-            "telemetry-ws-broadcast, synthetic-telemetry-live, model-drift-check, "
-            "weekly-feedback-training-export, ml-inference-all-assets, "
-            "consolidation-critical-assets"
+            "telemetry-ws-broadcast(10s), synthetic-telemetry-live(10s), model-drift-check, "
+            "weekly-feedback-training-export, ml-inference-all-assets(5m), "
+            "consolidation-critical-assets, ollama-keepalive"
         ))

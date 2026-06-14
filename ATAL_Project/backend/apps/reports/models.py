@@ -22,6 +22,12 @@ class MaintenanceReport(models.Model):
         HIGH = "high", "High"
         CRITICAL = "critical", "Critical"
 
+    class ReportType(models.TextChoices):
+        MAINTENANCE = "maintenance", "Maintenance Report"
+        ABNORMAL_ALERT = "abnormal_alert", "Abnormal Alert"
+        DECISION_SUMMARY = "decision_summary", "Decision Summary"
+        DIGITAL_LOG = "digital_log", "Digital Log"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name="reports")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -29,6 +35,12 @@ class MaintenanceReport(models.Model):
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="reports"
     )
     source = models.CharField(max_length=20, choices=Source.choices)
+    report_type = models.CharField(
+        max_length=20,
+        choices=ReportType.choices,
+        default=ReportType.MAINTENANCE,
+    )
+    title = models.CharField(max_length=255, blank=True, default="")
     diagnosis = models.TextField(blank=True)
     rca = models.TextField(blank=True)
     risk_level = models.CharField(

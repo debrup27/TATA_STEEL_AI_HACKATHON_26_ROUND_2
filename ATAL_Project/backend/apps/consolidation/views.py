@@ -12,10 +12,11 @@ class ConsolidationSyncView(APIView):
 
     def post(self, request, asset_id):
         from apps.consolidation.orchestrator import assemble_consolidated_payload
-        from apps.consolidation.llm_bridge import run_consolidation_llm
+        from apps.agents.graph.runner import run_sansad_orchestration
+
         asset = get_object_or_404(Asset, pk=asset_id)
         payload = assemble_consolidated_payload(str(asset.id))
-        decision = run_consolidation_llm(payload)
+        decision = run_sansad_orchestration(str(asset.id), trigger="sync_api")
         return Response({
             "asset_id": str(asset_id),
             "consolidated_payload": payload,
@@ -53,35 +54,71 @@ class BottleneckScoreView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from apps.assets.models import Asset, SparesPart
+        from apps.assets.models import Asset
         from apps.assets.services import AssetHealthService
-        from apps.ml.models import MLPrediction
+        from apps.consolidation.orchestrator import assemble_consolidated_payload
+        from apps.consolidation.scoring import compute_bottleneck_score
+        from apps.reports.models import MaintenanceReport
 
-        assets = Asset.objects.all()
+        assets = Asset.objects.select_related("factory").all()
         scores = []
-        for asset in assets:
+        for rank, asset in enumerate(
+            sorted(assets, key=lambda a: a.criticality_level or "medium"), start=1
+        ):
             health = AssetHealthService.compute(asset)
-            spares = SparesPart.objects.filter(asset=asset)
-            spares_factor = 1.0 if all(s.quantity_in_stock > 0 for s in spares) else 1.5
-            lead_factor = 1.0 + sum(s.lead_time_days for s in spares) / max(len(spares) * 30, 1)
+            payload = assemble_consolidated_payload(str(asset.id))
+            bottleneck = compute_bottleneck_score(asset, payload)
+            report = (
+                MaintenanceReport.objects.filter(asset=asset)
+                .order_by("-created_at")
+                .first()
+            )
 
-            CRITICALITY_WEIGHT = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-            crit = CRITICALITY_WEIGHT.get(asset.criticality_level, 2)
-            delay_severity = max(0, (100 - health["health_score"]) / 100)
+            spares_parts = payload.get("spares", {}).get("parts", [])
+            spares_available = all(
+                (p.get("quantity_in_stock") or 0) > 0 for p in spares_parts
+            ) if spares_parts else True
+            lead_days = max(
+                [p.get("lead_time_days") or 0 for p in spares_parts if (p.get("quantity_in_stock") or 0) == 0],
+                default=0,
+            )
 
-            urgency = crit * delay_severity * spares_factor * lead_factor
+            composite = bottleneck["composite_score"]
+            urgency_pct = round(composite * 100, 1)
+            impact = (
+                report.diagnosis[:200]
+                if report and report.diagnosis
+                else f"Health {health['health_score']:.0f}% — {bottleneck['composite_label']} bottleneck risk."
+            )
+            recommendation = (
+                (report.immediate_actions or [""])[0]
+                if report and report.immediate_actions
+                else f"Prioritize {asset.name} — composite score {composite:.2f}."
+            )
+
             scores.append({
                 "asset_id": str(asset.id),
                 "asset_name": asset.name,
                 "factory": asset.factory.name,
-                "urgency_score": round(urgency, 3),
+                "urgency_score": urgency_pct,
                 "health_score": health["health_score"],
                 "criticality_level": asset.criticality_level,
-                "spares_factor": spares_factor,
-                "lead_time_factor": round(lead_factor, 3),
+                "risk_level": bottleneck["composite_label"],
+                "bottleneck_rank": 0,
+                "process_criticality": round(bottleneck["process_criticality"] * 100, 1),
+                "delay_severity": round(bottleneck["delay_severity"] * 100, 1),
+                "spares_available": spares_available,
+                "procurement_lead_days": int(lead_days),
+                "composite_score": composite,
+                "impact": impact,
+                "recommendation": recommendation,
             })
 
-        scores.sort(key=lambda x: x["urgency_score"], reverse=True)
+        scores.sort(key=lambda x: x["composite_score"], reverse=True)
+        for i, row in enumerate(scores, start=1):
+            row["bottleneck_rank"] = i
+            row["urgency_score"] = round(row["composite_score"] * 100, 1)
+
         return Response({"ranked_assets": scores})
 
 

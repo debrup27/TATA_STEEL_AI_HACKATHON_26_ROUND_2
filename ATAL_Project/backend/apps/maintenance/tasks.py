@@ -97,6 +97,8 @@ def draft_logbook_entry(event_id: str):
     MaintenanceReport.objects.create(
         asset=event.asset,
         source=MaintenanceReport.Source.AI_GENERATED,
+        report_type=MaintenanceReport.ReportType.DIGITAL_LOG,
+        title=f"Digital Log — {event.event_type}",
         report_text=entry,
         diagnosis="Maintenance completed — auto-generated logbook entry.",
     )

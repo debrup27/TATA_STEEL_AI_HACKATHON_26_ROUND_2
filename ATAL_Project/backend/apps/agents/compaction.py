@@ -36,7 +36,7 @@ def should_compact(messages: list[dict]) -> bool:
     return history_token_count(messages) > threshold
 
 
-def compact_history(session_id: str) -> int:
+def compact_history(session_id: str, *, force: bool = False) -> int:
     """
     Summarise old messages, persist summary as a system ChatMessage, delete originals.
     Notifies the frontend via stream_registry (compacting / compacted events).
@@ -54,6 +54,11 @@ def compact_history(session_id: str) -> int:
     )
 
     if len(messages) <= _KEEP_RECENT:
+        if force:
+            send_to_stream(
+                session_id,
+                {"type": "compacted", "compacted_count": 0, "skipped": True},
+            )
         return 0
 
     to_compact = messages[: -_KEEP_RECENT]

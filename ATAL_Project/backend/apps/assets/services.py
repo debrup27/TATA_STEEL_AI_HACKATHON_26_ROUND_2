@@ -6,6 +6,23 @@ from apps.rag.models import Document
 from apps.maintenance.models import MaintenanceEvent
 
 
+from apps.ml.inference import MAX_SANE_RUL_HOURS
+
+
+def _sanitize_rul_hours(rul_hours) -> float | None:
+    if rul_hours is None:
+        return None
+    try:
+        hours = float(rul_hours)
+    except (TypeError, ValueError):
+        return None
+    if hours < 0:
+        return 0.0
+    if hours > MAX_SANE_RUL_HOURS:
+        return None
+    return round(hours, 1)
+
+
 class AssetHealthService:
     @staticmethod
     def compute(asset: Asset) -> dict:
@@ -20,7 +37,7 @@ class AssetHealthService:
 
         last_pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
         pred_out = last_pred.prediction_output if last_pred else {}
-        rul_hours = pred_out.get("rul_hours")
+        rul_hours = _sanitize_rul_hours(pred_out.get("rul_hours"))
         anomaly_score = pred_out.get("anomaly_score")
         fault_classification = pred_out.get("fault_classification")
         ml_source = pred_out.get("source")
@@ -31,9 +48,11 @@ class AssetHealthService:
                 asset=asset, model__model_type="rul_predictor"
             ).order_by("-prediction_time").first()
             if rul_pred and "rul_hours" in rul_pred.prediction_output:
-                rul_hours = rul_pred.prediction_output["rul_hours"]
+                rul_hours = _sanitize_rul_hours(rul_pred.prediction_output["rul_hours"])
             elif rul_pred and "rul_days" in rul_pred.prediction_output:
-                rul_hours = float(rul_pred.prediction_output["rul_days"]) * 24.0
+                rul_hours = _sanitize_rul_hours(
+                    float(rul_pred.prediction_output["rul_days"]) * 24.0
+                )
 
         # Heuristic fallback: derive RUL from campaign hours + asset-type degradation ceiling
         if rul_hours is None:

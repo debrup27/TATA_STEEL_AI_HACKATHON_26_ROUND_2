@@ -66,6 +66,8 @@ def run_consolidation(self, asset_id: str):
             report = MaintenanceReport.objects.create(
                 asset=asset,
                 source=MaintenanceReport.Source.AI_GENERATED,
+                report_type=MaintenanceReport.ReportType.MAINTENANCE,
+                title=f"Maintenance Report — {asset.name}",
                 diagnosis=summary or _humanize_report_text(decision.get("diagnosis", ""), asset),
                 rca=decision.get("rca", ""),
                 risk_level=decision.get("risk_level"),

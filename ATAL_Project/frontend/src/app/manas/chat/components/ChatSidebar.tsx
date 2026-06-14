@@ -44,10 +44,14 @@ export default function ChatSidebar({
   const { logout } = useUser();
 
   // Filter sessions based on search query, newest on top
-  const filteredSessions = sessions.filter((session) =>
-    session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    session.messages.some((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
-  ).reverse();
+  const filteredSessions = sessions.filter((session) => {
+    const title = (session.title ?? "").toLowerCase();
+    const q = searchQuery.toLowerCase();
+    if (title.includes(q)) return true;
+    return (session.messages ?? []).some((m) =>
+      (m.content ?? "").toLowerCase().includes(q),
+    );
+  }).reverse();
 
   return (
     <>

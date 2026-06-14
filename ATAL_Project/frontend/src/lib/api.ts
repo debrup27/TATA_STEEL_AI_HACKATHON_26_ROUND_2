@@ -96,8 +96,9 @@ export async function apiFetch(
   retry = true,
 ): Promise<Response> {
   const token = getAccessToken();
+  const isFormBody = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormBody ? {} : { "Content-Type": "application/json" }),
     ...((init?.headers as Record<string, string> | undefined) ?? {}),
   };
   // Do not attach Authorization header to authentication endpoints to avoid
@@ -118,6 +119,19 @@ export async function apiFetch(
   }
 
   return res;
+}
+
+export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const res = await apiFetch(path, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail =
+      (body as { detail?: string }).detail ??
+      (body as { error?: string }).error ??
+      res.statusText;
+    throw new ApiError(res.status, detail, body);
+  }
+  return res.blob();
 }
 
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {

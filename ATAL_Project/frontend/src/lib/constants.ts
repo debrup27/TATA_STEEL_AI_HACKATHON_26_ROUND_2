@@ -47,6 +47,16 @@ export const SCROLL_THRESHOLD = 100;
 export const TEXTAREA_MAX_ROWS = 10;
 export const TEXTAREA_MAX_LENGTH = 2000;
 
+/** Image/scanned PDF uploads — OCR + page previews scale per page. */
+export const MAX_IMAGE_PDF_PAGES = 10;
+/** Text-selectable PDF uploads — full-page text extract, still bounded for RAG payload. */
+export const MAX_TEXT_PDF_PAGES = 20;
+export const MIN_PDF_TEXT_PER_PAGE = 48;
+export const PDF_TOO_MANY_PAGES_MESSAGE =
+  "Cannot process this file — it's too large. For image-based PDFs, use documents with 10 pages or fewer.";
+export const PDF_TOO_MANY_TEXT_PAGES_MESSAGE =
+  "Cannot process this file — it's too large. For text-based PDFs, use documents with 20 pages or fewer.";
+
 /* ─── Page Transition ─── */
 
 export const WASH_DURATION = 1300;

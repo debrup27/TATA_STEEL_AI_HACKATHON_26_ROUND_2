@@ -39,6 +39,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Rich mode: wider parameter space for 7-day scheduled retraining",
         )
+        parser.add_argument(
+            "--fast",
+            action="store_true",
+            help="Fast boot training: fewer scenarios/trees (default for docker compose without --train)",
+        )
 
     def handle(self, *args, **options):
         asset_types = None
@@ -52,13 +57,14 @@ class Command(BaseCommand):
         skip = options["skip_if_exists"]
         n_scenarios = options["scenarios"]
         rich = options["rich"]
+        fast = options["fast"]
 
         self.stdout.write(self.style.MIGRATE_HEADING(
             f"[train_models] Starting ML training pipeline"
         ))
         self.stdout.write(
             f"  asset_types={asset_types or 'ALL'}  "
-            f"scenarios={n_scenarios}  rich={rich}  skip_if_exists={skip}"
+            f"scenarios={n_scenarios}  rich={rich}  fast={fast}  skip_if_exists={skip}"
         )
 
         t0 = time.time()
@@ -67,6 +73,7 @@ class Command(BaseCommand):
             n_scenarios=n_scenarios,
             rich=rich,
             skip_if_exists=skip,
+            fast=fast,
         )
 
         elapsed = round(time.time() - t0, 1)

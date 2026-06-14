@@ -58,3 +58,25 @@ class ChatMessage(models.Model):
     class Meta:
         db_table = "agents_chat_message"
         ordering = ["timestamp"]
+
+
+class ChatMessageFeedback(models.Model):
+    class Rating(models.TextChoices):
+        UP = "up", "Up"
+        DOWN = "down", "Down"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(
+        ChatMessage, on_delete=models.CASCADE, related_name="feedbacks",
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="chat_message_feedbacks")
+    rating = models.CharField(max_length=8, choices=Rating.choices)
+    traits_snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "agents_chat_message_feedback"
+        constraints = [
+            models.UniqueConstraint(fields=["message", "user"], name="uniq_chat_msg_feedback_per_user"),
+        ]
+        ordering = ["-created_at"]

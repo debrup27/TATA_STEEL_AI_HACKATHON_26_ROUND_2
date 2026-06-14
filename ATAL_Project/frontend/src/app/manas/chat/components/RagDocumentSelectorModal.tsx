@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X, Trash2, ChevronDown, Eye, Check } from "lucide-react";
 import { Markdown } from "@/components/ai-components/markdown";
-import { getLibraryDocuments, fetchLibraryDocumentPreview } from "@/services/chat";
+import { getLibraryDocuments, fetchLibraryDocumentPreview, fetchLibraryDocumentFileUrl } from "@/services/chat";
 import { groupLibraryDocuments, previewTextForDoc } from "@/lib/rag-doc-groups";
+import { inferDocumentFormat, ragDocFormat } from "@/lib/document-format";
+import { BrowserPdfViewer } from "@/components/BrowserPdfViewer";
 import type { RagDoc } from "@/services/types";
 
 interface RagDocumentSelectorModalProps {
@@ -80,12 +82,28 @@ export default function RagDocumentSelectorModal({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ maintenance_log: true });
   const [previewDoc, setPreviewDoc] = useState<RagDoc | null>(null);
   const [previewBody, setPreviewBody] = useState("");
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | undefined>();
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFormat, setPreviewFormat] = useState<ReturnType<typeof ragDocFormat>>("text");
+  const previewPdfRevokeRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (previewPdfRevokeRef.current) {
+        URL.revokeObjectURL(previewPdfRevokeRef.current);
+      }
+    };
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setFetched(false);
+    setLibraryDocs([]);
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    setFetched(false);
     getLibraryDocuments()
       .then((docs) => { if (!cancelled) setLibraryDocs(docs); })
       .finally(() => { if (!cancelled) setFetched(true); });
@@ -98,15 +116,44 @@ export default function RagDocumentSelectorModal({
     selectedPreloaded.length + customDocs.length;
 
   const loadPreview = useCallback(async (doc: RagDoc) => {
+    if (previewPdfRevokeRef.current) {
+      URL.revokeObjectURL(previewPdfRevokeRef.current);
+      previewPdfRevokeRef.current = undefined;
+    }
+
     setPreviewDoc(doc);
     setPreviewLoading(true);
     setPreviewBody("");
+    setPreviewPdfUrl(undefined);
+    setPreviewFormat(ragDocFormat(doc));
+
     try {
       if (doc.isCustom) {
-        setPreviewBody(previewTextForDoc(doc));
-      } else if (doc.id) {
+        const format = ragDocFormat(doc);
+        setPreviewFormat(format);
+        if (format === "pdf" && doc.pdfUrl) {
+          setPreviewPdfUrl(doc.pdfUrl);
+          return;
+        }
+        if (format === "markdown" || format === "text") {
+          setPreviewBody(previewTextForDoc(doc));
+        } else {
+          setPreviewBody("No preview available.");
+        }
+        return;
+      }
+
+      if (doc.id) {
         const res = await fetchLibraryDocumentPreview(doc.id);
-        setPreviewBody(res.excerpt);
+        const format = inferDocumentFormat(doc.name, doc.type, res.source_format);
+        setPreviewFormat(format);
+        if (format === "pdf") {
+          const url = await fetchLibraryDocumentFileUrl(doc.id);
+          previewPdfRevokeRef.current = url;
+          setPreviewPdfUrl(url);
+        } else {
+          setPreviewBody(res.excerpt);
+        }
       } else {
         setPreviewBody("No preview available.");
       }
@@ -153,7 +200,7 @@ export default function RagDocumentSelectorModal({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="size-8 rounded-full flex items-center justify-center hover:bg-zinc-100 transition-colors cursor-pointer text-zinc-500"
           >
             <X size={16} />
@@ -266,24 +313,26 @@ export default function RagDocumentSelectorModal({
                 {previewDoc?.name ?? "Select a document"}
               </p>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 text-sm text-zinc-700 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/10">
+            <div className="flex-1 overflow-hidden p-3 text-sm text-zinc-700 flex flex-col min-h-0">
               {!previewDoc && (
-                <p className="text-xs text-zinc-400 italic">Click the eye icon on any document to preview it here.</p>
+                <p className="text-xs text-zinc-400 italic p-1">Click the eye icon on any document to preview it here.</p>
               )}
               {previewDoc && previewLoading && (
-                <p className="text-xs text-zinc-500">Loading preview…</p>
+                <p className="text-xs text-zinc-500 p-1">Loading preview…</p>
               )}
-              {previewDoc && !previewLoading && previewDoc.pages?.[0]?.startsWith("data:image") && (
-                <img
-                  src={previewDoc.pages[0]}
-                  alt={previewDoc.name}
-                  className="w-full rounded-lg border border-zinc-200 mb-3 max-h-48 object-contain bg-white"
+              {previewDoc && !previewLoading && previewFormat === "pdf" && previewPdfUrl && (
+                <BrowserPdfViewer
+                  src={previewPdfUrl}
+                  title={previewDoc.name}
+                  className="flex-1 min-h-[320px] h-full"
                 />
               )}
-              {previewDoc && !previewLoading && previewBody && (
-                <Markdown className="text-sm prose prose-zinc prose-sm max-w-none">
-                  {previewBody.slice(0, 4000)}
-                </Markdown>
+              {previewDoc && !previewLoading && previewFormat !== "pdf" && previewBody && (
+                <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/10">
+                  <Markdown className="text-sm prose prose-zinc prose-sm max-w-none">
+                    {previewBody.slice(0, 12000)}
+                  </Markdown>
+                </div>
               )}
             </div>
             {selectedCount > 0 && (
@@ -297,7 +346,7 @@ export default function RagDocumentSelectorModal({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-200 shrink-0 bg-white">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="h-10 px-5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-bold uppercase cursor-pointer"
           >
             Cancel

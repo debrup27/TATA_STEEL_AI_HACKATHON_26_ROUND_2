@@ -4,6 +4,7 @@ from apps.maintenance.views import (
     MaintenanceEventViewSet, DelayLogViewSet, WorkOrderViewSet,
     FaultMessageIngestView, FailureReportIngestView,
 )
+from apps.maintenance.action_plans_views import ActionPlansListView, ActionPlanDetailView
 
 router = DefaultRouter()
 router.register("events", MaintenanceEventViewSet, basename="maintenance-events")
@@ -11,6 +12,8 @@ router.register("delay-logs", DelayLogViewSet, basename="delay-logs")
 router.register("work-orders", WorkOrderViewSet, basename="work-orders")
 
 urlpatterns = router.urls + [
+    path("action-plans/", ActionPlansListView.as_view()),
+    path("action-plans/<uuid:asset_id>/", ActionPlanDetailView.as_view()),
     path("fault-messages/", FaultMessageIngestView.as_view()),
     path("failure-reports/", FailureReportIngestView.as_view()),
 ]

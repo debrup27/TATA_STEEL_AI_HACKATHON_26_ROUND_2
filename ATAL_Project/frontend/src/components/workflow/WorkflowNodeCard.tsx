@@ -134,7 +134,7 @@ export default function WorkflowNodeCard({
                   ? "border-zinc-200 shadow-xs hover:shadow-md"
                   : "border-zinc-100 shadow-3xs hover:opacity-100"
         }`}
-        onMouseDown={(e) => { if (!isExpanded) onNodeDragStart(e, node.id); }}
+        onMouseDown={(e) => onNodeDragStart(e, node.id)}
         onClick={() => { if (!isExpanded) onNodeClick(node.id); }}
       >
         {/* Drag handle */}
@@ -214,7 +214,8 @@ export default function WorkflowNodeCard({
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 pr-1 space-y-2.5">
+              {/* data-no-drag: prevents accidental drag initiation from scrollable content body */}
+              <div data-no-drag="true" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden mt-2 pr-1 space-y-2.5">
 
                 {/* Health + RUL cards */}
                 <div className="grid grid-cols-2 gap-2">

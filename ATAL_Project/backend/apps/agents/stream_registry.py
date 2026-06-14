@@ -18,8 +18,39 @@ from typing import Optional
 
 _registry: dict[str, tuple[asyncio.Queue, asyncio.AbstractEventLoop]] = {}
 _pending: dict[str, list[dict]] = {}
+_cancel_events: dict[str, threading.Event] = {}
 _lock = threading.Lock()
 _MAX_PENDING = 500
+
+
+def arm_stream(session_id: str) -> None:
+    """Reset cancel flag when a new generation starts."""
+    with _lock:
+        ev = _cancel_events.get(session_id)
+        if ev is None:
+            _cancel_events[session_id] = threading.Event()
+        else:
+            ev.clear()
+
+
+def request_cancel(session_id: str) -> None:
+    with _lock:
+        ev = _cancel_events.get(session_id)
+        if ev is None:
+            ev = threading.Event()
+            _cancel_events[session_id] = ev
+        ev.set()
+
+
+def is_cancelled(session_id: str) -> bool:
+    with _lock:
+        ev = _cancel_events.get(session_id)
+        return bool(ev and ev.is_set())
+
+
+def clear_cancel(session_id: str) -> None:
+    with _lock:
+        _cancel_events.pop(session_id, None)
 
 
 def register_stream(

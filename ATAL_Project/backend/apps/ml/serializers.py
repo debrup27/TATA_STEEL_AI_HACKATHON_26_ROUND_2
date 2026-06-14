@@ -13,9 +13,11 @@ class MLModelSerializer(serializers.ModelSerializer):
 
 
 class MLPredictionSerializer(serializers.ModelSerializer):
+    asset_name = serializers.CharField(source="asset.name", read_only=True)
+
     class Meta:
         model = MLPrediction
         fields = [
-            "id", "model", "asset", "prediction_time", "prediction_output",
+            "id", "model", "asset", "asset_name", "prediction_time", "prediction_output",
             "confidence", "shap_values", "celery_task_id",
         ]

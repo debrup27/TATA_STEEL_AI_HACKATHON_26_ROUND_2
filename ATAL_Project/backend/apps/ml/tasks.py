@@ -144,6 +144,7 @@ def run_all_asset_models(self, asset_id: str):
         "rul_hours": rul_res.get("rul_hours"),
         "anomaly_score": anomaly_res.get("anomaly_score"),
         "fault_classification": cls_res.get("fault_classification"),
+        "fault_confidence": cls_res.get("confidence"),
         "rul_health": rul_res.get("health_score"),
         "anomaly_health": anomaly_res.get("health_score"),
         "classifier_health": cls_res.get("health_score"),

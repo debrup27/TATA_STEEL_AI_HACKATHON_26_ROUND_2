@@ -2,6 +2,7 @@
 
 import React from "react";
 import { MessageSquare, Trash2 } from "lucide-react";
+import { getSessionPreviewText } from "@/lib/chat-preview";
 import type { ChatSession } from "@/services/types";
 
 interface SessionListItemProps {
@@ -19,8 +20,7 @@ export const SessionListItem = React.memo(function SessionListItem({
   onSelect,
   onDelete,
 }: SessionListItemProps) {
-  const lastMsg = session.messages[session.messages.length - 1];
-  const previewText = lastMsg?.content || session.lastMessagePreview;
+  const previewText = getSessionPreviewText(session);
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();

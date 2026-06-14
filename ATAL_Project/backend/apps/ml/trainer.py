@@ -149,22 +149,42 @@ def _register_model(
     return rec
 
 
-def _train_rul(X: np.ndarray, y_rul: np.ndarray) -> tuple:
+def _xgb_fit_params(fast: bool) -> dict:
+    """XGBoost uses CPU (tree_method=hist). GPU reserved for Ollama/BGE at boot."""
+    if fast:
+        return {
+            "n_estimators": 40,
+            "max_depth": 4,
+            "learning_rate": 0.1,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "tree_method": "hist",
+            "n_jobs": 2,
+            "verbosity": 0,
+        }
+    return {
+        "n_estimators": 200,
+        "max_depth": 6,
+        "learning_rate": 0.05,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "tree_method": "hist",
+        "n_jobs": -1,
+        "verbosity": 0,
+    }
+
+
+def _train_rul(X: np.ndarray, y_rul: np.ndarray, *, fast: bool = False) -> tuple:
     from xgboost import XGBRegressor
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import mean_absolute_error, r2_score
 
     X_tr, X_val, y_tr, y_val = train_test_split(X, y_rul, test_size=0.2, random_state=42)
+    params = _xgb_fit_params(fast)
     model = XGBRegressor(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
         objective="reg:squarederror",
         random_state=42,
-        n_jobs=-1,
-        verbosity=0,
+        **params,
     )
     model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
     preds = model.predict(X_val)
@@ -177,7 +197,7 @@ def _train_rul(X: np.ndarray, y_rul: np.ndarray) -> tuple:
     return model, metrics
 
 
-def _train_classifier(X: np.ndarray, y_fault: np.ndarray) -> tuple:
+def _train_classifier(X: np.ndarray, y_fault: np.ndarray, *, fast: bool = False) -> tuple:
     from xgboost import XGBClassifier
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import f1_score, accuracy_score, roc_auc_score
@@ -188,17 +208,12 @@ def _train_classifier(X: np.ndarray, y_fault: np.ndarray) -> tuple:
     neg = len(y_tr) - pos
     scale = neg / max(pos, 1)
 
+    params = _xgb_fit_params(fast)
     model = XGBClassifier(
-        n_estimators=200,
-        max_depth=5,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
         scale_pos_weight=scale,
         objective="binary:logistic",
         random_state=42,
-        n_jobs=-1,
-        verbosity=0,
+        **params,
     )
     model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
     preds = model.predict(X_val)
@@ -214,7 +229,7 @@ def _train_classifier(X: np.ndarray, y_fault: np.ndarray) -> tuple:
     return model, metrics
 
 
-def _train_anomaly(X: np.ndarray, y_fault: np.ndarray) -> tuple:
+def _train_anomaly(X: np.ndarray, y_fault: np.ndarray, *, fast: bool = False) -> tuple:
     from sklearn.ensemble import IsolationForest
     from sklearn.metrics import roc_auc_score
 
@@ -224,10 +239,10 @@ def _train_anomaly(X: np.ndarray, y_fault: np.ndarray) -> tuple:
         X_normal = X  # fallback if dataset is all-fault
 
     model = IsolationForest(
-        n_estimators=200,
+        n_estimators=40 if fast else 200,
         contamination=0.1,
         random_state=42,
-        n_jobs=-1,
+        n_jobs=2 if fast else -1,
     )
     model.fit(X_normal)
 
@@ -249,6 +264,7 @@ def train_asset_type(
     asset_type: str,
     n_scenarios: int = 300,
     rich: bool = False,
+    fast: bool = False,
 ) -> Dict[str, dict]:
     """
     Train all three model types for one asset type.
@@ -267,7 +283,7 @@ def train_asset_type(
 
     # -- RUL Predictor --
     try:
-        rul_model, rul_metrics = _train_rul(X, y_rul)
+        rul_model, rul_metrics = _train_rul(X, y_rul, fast=fast)
         rul_metrics["feature_names"] = feature_names
         path = _artifact_path(asset_type, "rul_predictor", version)
         joblib.dump(rul_model, path)
@@ -280,7 +296,7 @@ def train_asset_type(
 
     # -- Fault Classifier --
     try:
-        cls_model, cls_metrics = _train_classifier(X, y_fault)
+        cls_model, cls_metrics = _train_classifier(X, y_fault, fast=fast)
         cls_metrics["feature_names"] = feature_names
         path = _artifact_path(asset_type, "classifier", version)
         joblib.dump(cls_model, path)
@@ -293,7 +309,7 @@ def train_asset_type(
 
     # -- Anomaly Detector --
     try:
-        anm_model, anm_metrics = _train_anomaly(X, y_fault)
+        anm_model, anm_metrics = _train_anomaly(X, y_fault, fast=fast)
         anm_metrics["feature_names"] = feature_names
         path = _artifact_path(asset_type, "anomaly_detector", version)
         joblib.dump(anm_model, path)
@@ -312,6 +328,7 @@ def train_all(
     n_scenarios: int = 300,
     rich: bool = False,
     skip_if_exists: bool = False,
+    fast: bool = False,
 ) -> Dict[str, Dict[str, dict]]:
     """
     Train all asset types. Returns nested {asset_type: {model_type: metrics}}.
@@ -345,7 +362,7 @@ def train_all(
                     continue
 
         try:
-            all_results[at] = train_asset_type(at, n_scenarios=n_scenarios, rich=rich)
+            all_results[at] = train_asset_type(at, n_scenarios=n_scenarios, rich=rich, fast=fast)
         except Exception as exc:
             logger.error("train_asset_error asset_type=%s error=%s", at, exc)
             all_results[at] = {"error": str(exc)}

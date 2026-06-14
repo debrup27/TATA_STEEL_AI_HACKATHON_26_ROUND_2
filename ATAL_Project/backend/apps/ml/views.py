@@ -10,6 +10,39 @@ from apps.assets.models import Asset
 from apps.users.permissions import IsAdmin
 
 
+class MLPredictionListView(APIView):
+    """GET /api/v1/ml/predictions/ — latest prediction records."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = MLPrediction.objects.select_related("model", "asset", "asset__factory").order_by(
+            "-prediction_time"
+        )
+        asset_id = request.query_params.get("asset_id")
+        model_type = request.query_params.get("model_type")
+        limit = min(int(request.query_params.get("limit", 20)), 100)
+        if asset_id:
+            qs = qs.filter(asset_id=asset_id)
+        if model_type:
+            qs = qs.filter(model__model_type=model_type)
+        data = MLPredictionSerializer(qs[:limit], many=True).data
+        return Response(data)
+
+
+class MLPredictionTaskStatusView(APIView):
+    """GET /api/v1/ml/predictions/task/{task_id}/ — poll async inference Celery task."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, task_id):
+        from celery.result import AsyncResult
+        result = AsyncResult(task_id)
+        if result.ready():
+            return Response({"status": result.status, "result": result.result})
+        return Response({"status": result.status, "result": None})
+
+
 class MLPredictionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = MLPredictionSerializer
     permission_classes = [IsAuthenticated]
@@ -22,15 +55,7 @@ class MLPredictionViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(asset_id=asset_id)
         if model_type:
             qs = qs.filter(model__model_type=model_type)
-        return qs
-
-    def retrieve(self, request, *args, **kwargs):
-        task_id = kwargs.get("pk")
-        from celery.result import AsyncResult
-        result = AsyncResult(task_id)
-        if result.ready():
-            return Response({"status": result.status, "result": result.result})
-        return Response({"status": result.status, "result": None})
+        return qs.order_by("-prediction_time")
 
 
 class MLPredictView(APIView):

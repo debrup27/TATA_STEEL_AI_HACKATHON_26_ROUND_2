@@ -7,9 +7,6 @@ import type { CanvasAlertMessage } from "@/hooks/useFactoryCanvasAlerts";
 
 interface WorkflowFloatingAlertsProps {
   messages: CanvasAlertMessage[];
-  /** Canvas-space anchor below the node row */
-  anchorX: number;
-  anchorY: number;
 }
 
 const SEVERITY_STYLES = {
@@ -18,31 +15,22 @@ const SEVERITY_STYLES = {
   info: "border-zinc-200 bg-white/95 text-zinc-800 shadow-zinc-100",
 } as const;
 
-export default function WorkflowFloatingAlerts({
-  messages,
-  anchorX,
-  anchorY,
-}: WorkflowFloatingAlertsProps) {
+export default function WorkflowFloatingAlerts({ messages }: WorkflowFloatingAlertsProps) {
   if (!messages.length) return null;
-
-  const panelWidth = 520;
-  const left = anchorX - panelWidth / 2;
-  const top = anchorY + 48;
 
   return (
     <div
-      className="absolute z-40 pointer-events-none"
-      style={{ left, top, width: panelWidth }}
+      className="absolute bottom-14 left-1/2 -translate-x-1/2 z-40 pointer-events-none w-[520px] max-w-[90%]"
     >
       <AnimatePresence mode="popLayout">
         {messages.map((msg, idx) => (
           <motion.div
             key={msg.id}
             layout
-            initial={{ opacity: 0, y: 12, scale: 0.97 }}
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ duration: 0.22, delay: idx * 0.04 }}
+            exit={{ opacity: 0, y: -12, scale: 0.95, transition: { duration: 0.28, ease: "easeIn" } }}
+            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1], delay: idx * 0.05 }}
             className={`mb-2.5 rounded-2xl border px-4 py-3 shadow-lg backdrop-blur-sm ${SEVERITY_STYLES[msg.severity]}`}
           >
             <div className="flex items-start gap-2.5">

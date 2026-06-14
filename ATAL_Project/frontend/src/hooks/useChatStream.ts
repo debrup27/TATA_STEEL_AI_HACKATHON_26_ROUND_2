@@ -4,14 +4,17 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { connectWebSocket } from "@/lib/ws";
 import type { Citation } from "@/services/types";
 
+export type StreamPhase = "idle" | "waiting" | "rag" | "post_rag" | "thinking" | "answering";
+
 export interface UseChatStreamOptions {
   sessionId: string | null;
   onToken?: (token: string) => void;
   onThinkToken?: (token: string) => void;
   onDone?: (payload?: Record<string, unknown>) => void;
+  onCitations?: (citations: Citation[]) => void;
   onError?: () => void;
   onCompacting?: () => void;
-  onCompacted?: (payload?: { compacted_count: number }) => void;
+  onCompacted?: (payload?: { compacted_count: number; skipped?: boolean }) => void;
   timeoutMs?: number;
 }
 
@@ -20,6 +23,7 @@ export function useChatStream({
   onToken,
   onThinkToken,
   onDone,
+  onCitations,
   onError,
   onCompacting,
   onCompacted,
@@ -28,12 +32,15 @@ export function useChatStream({
   const [isStreaming, setIsStreaming] = useState(false);
   const [awaitingFirstToken, setAwaitingFirstToken] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>("idle");
   const wsRef = useRef<WebSocket | null>(null);
+  const connectedSessionRef = useRef<string | null>(null);
   const wsReadyRef = useRef<Promise<void> | null>(null);
   const wsReadyResolveRef = useRef<(() => void) | null>(null);
   const onTokenRef = useRef(onToken);
   const onThinkTokenRef = useRef(onThinkToken);
   const onDoneRef = useRef(onDone);
+  const onCitationsRef = useRef(onCitations);
   const onErrorRef = useRef(onError);
   const onCompactingRef = useRef(onCompacting);
   const onCompactedRef = useRef(onCompacted);
@@ -43,10 +50,11 @@ export function useChatStream({
     onTokenRef.current = onToken;
     onThinkTokenRef.current = onThinkToken;
     onDoneRef.current = onDone;
+    onCitationsRef.current = onCitations;
     onErrorRef.current = onError;
     onCompactingRef.current = onCompacting;
     onCompactedRef.current = onCompacted;
-  }, [onToken, onThinkToken, onDone, onError, onCompacting, onCompacted]);
+  }, [onToken, onThinkToken, onDone, onCitations, onError, onCompacting, onCompacted]);
 
   const clearStreamTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -67,25 +75,37 @@ export function useChatStream({
       `/ws/chat/${sessionId}/`,
       (data) => {
         if (data.type === "started") {
-          // Task is alive — restart the timeout clock from now
           clearStreamTimeout();
+          setStreamPhase("waiting");
           timeoutRef.current = setTimeout(() => {
             setIsStreaming(false);
             setAwaitingFirstToken(false);
+            setStreamPhase("idle");
             onDoneRef.current?.({ error: "No response from model — it may still be loading. Try again in a moment." });
           }, timeoutMs);
+        }
+        if (data.type === "phase" && typeof data.phase === "string") {
+          const phase = data.phase as string;
+          if (phase === "rag") setStreamPhase("rag");
+          else if (phase === "rag_done") setStreamPhase("post_rag");
+          else if (phase === "thinking") {
+            setStreamPhase("thinking");
+            setIsThinking(true);
+          }
         }
         if (data.type === "think_token" && typeof data.token === "string") {
           clearStreamTimeout();
           setAwaitingFirstToken(false);
           setIsThinking(true);
+          setStreamPhase("thinking");
           onThinkTokenRef.current?.(data.token);
         }
         if (data.type === "token" && typeof data.token === "string") {
-          clearStreamTimeout(); // got a token — cancel timeout
+          clearStreamTimeout();
           setAwaitingFirstToken(false);
           setIsThinking(false);
           setIsStreaming(true);
+          setStreamPhase("answering");
           onTokenRef.current?.(data.token);
         }
         if (data.type === "compacting") {
@@ -94,13 +114,18 @@ export function useChatStream({
         if (data.type === "compacted") {
           onCompactedRef.current?.({
             compacted_count: (data.compacted_count as number) ?? 0,
+            skipped: Boolean(data.skipped),
           });
+        }
+        if (data.type === "citations" && Array.isArray(data.citations)) {
+          onCitationsRef.current?.(data.citations as Citation[]);
         }
         if (data.type === "done") {
           clearStreamTimeout();
           setIsStreaming(false);
           setAwaitingFirstToken(false);
           setIsThinking(false);
+          setStreamPhase("idle");
           onDoneRef.current?.(data as Record<string, unknown>);
         }
       },
@@ -110,11 +135,15 @@ export function useChatStream({
       },
     );
     ws.onopen = () => {
+      connectedSessionRef.current = sessionId;
       wsReadyResolveRef.current?.();
     };
     wsRef.current = ws;
     return () => {
       ws.close();
+      if (connectedSessionRef.current === sessionId) {
+        connectedSessionRef.current = null;
+      }
       clearStreamTimeout();
     };
   }, [sessionId, timeoutMs, clearStreamTimeout]);
@@ -123,6 +152,7 @@ export function useChatStream({
     setIsStreaming(true);
     setAwaitingFirstToken(true);
     setIsThinking(false);
+    setStreamPhase("waiting");
     // Global fallback: if neither "started" nor any WS event arrives in timeoutMs,
     // the Celery worker is probably not running.
     clearStreamTimeout();
@@ -138,32 +168,46 @@ export function useChatStream({
     setIsStreaming(false);
     setAwaitingFirstToken(false);
     setIsThinking(false);
+    setStreamPhase("idle");
   }, [clearStreamTimeout]);
 
-  const waitUntilReady = useCallback(async () => {
+  const waitUntilReady = useCallback(async (expectedSessionId?: string | null) => {
+    const sid = expectedSessionId ?? sessionId;
+    if (!sid) return false;
     const deadline = Date.now() + 8000;
     while (Date.now() < deadline) {
-      const p = wsReadyRef.current;
-      if (p && wsRef.current?.readyState === WebSocket.OPEN) {
-        await p;
-        return;
-      }
-      if (p) {
-        await Promise.race([p, new Promise((r) => setTimeout(r, 100))]);
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+      if (
+        connectedSessionRef.current === sid &&
+        wsRef.current?.readyState === WebSocket.OPEN
+      ) {
+        return true;
       }
       await new Promise((r) => setTimeout(r, 50));
     }
-  }, []);
+    return false;
+  }, [sessionId]);
+
+  const cancel = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "cancel" }));
+    }
+    clearStreamTimeout();
+    setIsStreaming(false);
+    setAwaitingFirstToken(false);
+    setIsThinking(false);
+    setStreamPhase("idle");
+  }, [clearStreamTimeout]);
 
   return {
     isStreaming,
     isThinking,
+    streamPhase,
     start,
     reset,
+    cancel,
     waitUntilReady,
-    isLoading: isStreaming,
-    showProcessing: awaitingFirstToken,
+    isLoading: awaitingFirstToken || isThinking || isStreaming,
+    showProcessing: awaitingFirstToken || isThinking || isStreaming,
     currentStep: 0,
   };
 }

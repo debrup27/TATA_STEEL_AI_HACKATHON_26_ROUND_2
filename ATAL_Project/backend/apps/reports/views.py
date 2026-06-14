@@ -11,10 +11,14 @@ from apps.feedback.models import Feedback
 
 class MaintenanceReportViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
-    filterset_fields = ["asset", "risk_level", "source", "feedback_status"]
+    filterset_fields = ["asset", "risk_level", "source", "feedback_status", "report_type"]
 
     def get_queryset(self):
-        return MaintenanceReport.objects.select_related("asset", "created_by").order_by("-created_at")
+        qs = MaintenanceReport.objects.select_related("asset", "asset__factory", "created_by").order_by("-created_at")
+        report_type = self.request.query_params.get("report_type")
+        if report_type:
+            qs = qs.filter(report_type=report_type)
+        return qs
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -92,7 +96,10 @@ class AlertReportView(APIView):
         report = MaintenanceReport.objects.create(
             asset=asset,
             source=MaintenanceReport.Source.AI_GENERATED,
+            report_type=MaintenanceReport.ReportType.ABNORMAL_ALERT,
+            title=f"Abnormal Alert — {asset.name}",
             diagnosis=f"Active abnormal alerts: {alarms.count()}",
             report_text="\n".join([f"[{a.severity.upper()}] {a.message}" for a in alarms]),
+            risk_level="high" if alarms.filter(severity__in=["critical", "trip"]).exists() else "medium",
         )
         return Response(ReportDetailSerializer(report).data, status=status.HTTP_201_CREATED)

@@ -6,7 +6,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Service Layer
 
-All data access goes through `src/services/`. Each service is an async module with endpoint-style functions that return Promises. Currently all data is hardcoded mocks — swap the implementation for real HTTP calls when a backend exists.
+All data access goes through `src/services/`. Each service is an async module with HTTP calls to the Django backend (`/api/v1/...`). SANSAD §5 hub pages use `diagnostics.ts`, `actionPlans.ts`, `prediction.ts`, `reports.ts`, and `notifications.ts` — no mock exports.
 
 - `types.ts` — All shared interfaces (TelemetryCell, ChatSession, AssetHealth, etc.)
 - `telemetry.ts` — Telemetry cells, hub metrics, log generation, random walk ticks

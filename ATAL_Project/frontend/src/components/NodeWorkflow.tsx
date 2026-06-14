@@ -31,6 +31,7 @@ import {
   CANVAS_ORIGIN,
   CANVAS_EXTENT,
 } from "./workflow/layout";
+// computeNodesBounds kept for centerCanvas usage
 
 
 interface NodeWorkflowProps {
@@ -59,10 +60,6 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
 
   const nodes = factoryNodes[activeFactory];
   const canvasAlerts = useFactoryCanvasAlerts(nodes);
-  const alertsAnchor = React.useMemo(() => {
-    const b = computeNodesBounds(nodes);
-    return { x: b.centerX, y: b.maxY };
-  }, [nodes]);
 
   // setNodes helper to dynamically update the active factory
   const setNodes = useCallback((newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
@@ -371,7 +368,8 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
       target.closest("button") ||
       target.closest("input") ||
       target.closest(".action-button") ||
-      target.closest(".panel-button")
+      target.closest(".panel-button") ||
+      target.closest("[data-no-drag]")
     ) {
       return;
     }
@@ -777,12 +775,10 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
             );
           })}
 
-          <WorkflowFloatingAlerts
-            messages={canvasAlerts}
-            anchorX={alertsAnchor.x}
-            anchorY={alertsAnchor.y}
-          />
         </div>
+
+        {/* Alerts panel — fixed to bottom of canvas container, outside transform so nodes can't move it */}
+        <WorkflowFloatingAlerts messages={canvasAlerts} />
 
         {/* Floating Zoom Controls Panel */}
         <WorkflowZoomControls

@@ -1,11 +1,46 @@
 #!/usr/bin/env bash
 set -e
 
+READY_MARKER="${ATAL_READY_MARKER:-/tmp/atal_backend_ready}"
+rm -f "${READY_MARKER}"
+
+banner() {
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════════╗"
+  printf "║ %-64s ║\n" "$1"
+  echo "╚══════════════════════════════════════════════════════════════════╝"
+  echo ""
+}
+
 # ── Fix volume permissions (runs as root before dropping privileges) ───────────
 chown -R appuser:appuser /model-artifacts /app/staticfiles /chroma_data 2>/dev/null || true
 
 # ── All subsequent steps run as appuser ───────────────────────────────────────
 RUN_AS="gosu appuser"
+
+# ── Test / one-off containers: migrate only, skip seeds & ML training ─────────
+if [ "${ATAL_ENTRYPOINT_LITE:-0}" = "1" ]; then
+    echo "[entrypoint] Lite mode — migrate only, then exec command."
+    until $RUN_AS python -c "
+import psycopg, os, sys
+try:
+    psycopg.connect(
+        host=os.environ.get('POSTGRES_HOST','postgres-db'),
+        port=os.environ.get('POSTGRES_PORT','5432'),
+        dbname=os.environ.get('POSTGRES_DB','atal_db'),
+        user=os.environ.get('POSTGRES_USER','atal_user'),
+        password=os.environ.get('POSTGRES_PASSWORD',''),
+    ).close()
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+"; do
+        sleep 2
+    done
+    $RUN_AS python manage.py migrate --noinput
+    echo "[entrypoint] Lite boot complete."
+    exec "$@"
+fi
 
 # ── Celery worker/beat: lightweight boot (django-backend runs full seed pipeline) ─
 if [ "${CELERY_LIGHT_ENTRYPOINT:-0}" = "1" ]; then
@@ -28,6 +63,7 @@ except Exception:
     done
     $RUN_AS python manage.py migrate --noinput
     echo "[entrypoint] Starting Celery process..."
+    touch "${READY_MARKER}"
     exec "$@"
 fi
 
@@ -51,27 +87,74 @@ except Exception:
 done
 echo "[entrypoint] PostgreSQL ready."
 
-# ── Wait for Ollama + ensure model is pulled ──────────────────────────────────
+# ── Wait for Ollama + verify models (pull only if missing) ───────────────────
+ollama_model_present() {
+    local name="$1"
+    curl -sf "${OLLAMA_HOST}/api/tags" | grep -q "\"name\":\"${name}\""
+}
+
+pull_ollama_model() {
+    local name="$1"
+    local label="$2"
+    local tmp
+    tmp=$(mktemp)
+    echo "[entrypoint] Pulling ${label} ${name}..."
+    if ! curl -fsS --max-time 1800 -X POST "${OLLAMA_HOST}/api/pull" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${name}\"}" -o "${tmp}"; then
+        rm -f "${tmp}"
+        return 1
+    fi
+    if grep -q '"error"' "${tmp}"; then
+        echo "[entrypoint] pull error: $(tail -1 "${tmp}")" >&2
+        rm -f "${tmp}"
+        return 1
+    fi
+    rm -f "${tmp}"
+    return 0
+}
+
+ensure_ollama_model() {
+    local name="$1"
+    local label="$2"
+    if ollama_model_present "${name}"; then
+        echo "[entrypoint] ${label} ${name} already available"
+        return 0
+    fi
+    if pull_ollama_model "${name}" "${label}"; then
+        return 0
+    fi
+    if ollama_model_present "${name}"; then
+        echo "[entrypoint] ${name} available after pull retry"
+        return 0
+    fi
+    echo "[entrypoint] ERROR: ${name} missing. Run: bash ATAL_Project/backend/scripts/pull_ollama_models.sh" >&2
+    exit 1
+}
+
 if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ]; then
     echo "[entrypoint] Waiting for Ollama..."
     OLLAMA_HOST="${OLLAMA_BASE_URL:-http://ollama:11434}"
     until curl -sf "${OLLAMA_HOST}/api/tags" > /dev/null; do
         sleep 5
     done
-    echo "[entrypoint] Pulling supervisor model ${OLLAMA_MODEL:-qwen3.5:9b}..."
-    curl -sf -X POST "${OLLAMA_HOST}/api/pull" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\":\"${OLLAMA_MODEL:-qwen3.5:9b}\"}" \
-        | tail -1 || echo "[entrypoint] WARNING: supervisor model pull returned non-zero"
-    echo "[entrypoint] Pulling worker model ${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}..."
-    curl -sf -X POST "${OLLAMA_HOST}/api/pull" \
-        -H "Content-Type: application/json" \
-        -d "{\"name\":\"${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}\"}" \
-        | tail -1 || echo "[entrypoint] WARNING: worker model pull returned non-zero"
+    MAIN_MODEL="${OLLAMA_MODEL:-qwen3.5:9b}"
+    SMALL_MODEL="${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}"
+    ensure_ollama_model "${MAIN_MODEL}" "supervisor model"
+    ensure_ollama_model "${SMALL_MODEL}" "worker model"
     echo "[entrypoint] Models ready."
     echo "[entrypoint] Warming Ollama models into memory..."
-    $RUN_AS python manage.py warm_ollama --skip-rag \
-        || echo "[entrypoint] WARNING: Ollama warmup failed — first chat may be slow."
+    for attempt in 1 2 3; do
+        if $RUN_AS python manage.py warm_ollama --skip-rag; then
+            break
+        fi
+        if [ "${attempt}" -eq 3 ]; then
+            echo "[entrypoint] ERROR: Ollama warmup failed after 3 attempts" >&2
+            exit 1
+        fi
+        echo "[entrypoint] Ollama warmup retry ${attempt}/3 in 10s..." >&2
+        sleep 10
+    done
 fi
 
 # ── Apply migrations ───────────────────────────────────────────────────────────
@@ -131,9 +214,17 @@ orchestrate_all.delay(n_samples=30)
 print('[entrypoint] orchestrate_all queued')
 " 2>/dev/null || echo "[entrypoint] WARNING: could not queue orchestrate_all"
 
-# ── Train ML models (skip if production artifacts already exist on disk) ───────
-echo "[entrypoint] Training ML models (skip if artifacts present)..."
-$RUN_AS python manage.py train_models --skip-if-exists --scenarios 300
+# ── Train ML models (fast by default; use --train / ATAL_TRAIN_MODE=full for full) ─
+TRAIN_MODE="${ATAL_TRAIN_MODE:-fast}"
+if [ "$TRAIN_MODE" = "skip" ]; then
+    echo "[entrypoint] Skipping ML training (ATAL_TRAIN_MODE=skip)."
+elif [ "$TRAIN_MODE" = "full" ]; then
+    echo "[entrypoint] Full ML training (ATAL_TRAIN_MODE=full)..."
+    $RUN_AS python manage.py train_models --scenarios 1000 --rich
+else
+    echo "[entrypoint] Fast ML training (ATAL_TRAIN_MODE=fast, skip-if-exists)..."
+    $RUN_AS python manage.py train_models --skip-if-exists --fast --scenarios 50
+fi
 
 # ── Kick off initial ML inference for all assets (populates RUL/health on nodes) ─
 echo "[entrypoint] Queueing ML inference for all assets..."
@@ -160,11 +251,12 @@ if echo "$*" | grep -q "uvicorn\|gunicorn\|asgi"; then
         sleep 2
     done
     echo "[entrypoint] Running backend smoke tests..."
+    banner "ATAL Backend — smoke test suite"
     gosu appuser python manage.py run_smoke_tests \
         --skip-celery \
         $([ "${SKIP_OLLAMA_WAIT:-0}" = "1" ] && echo "--skip-ollama") \
         || echo "[entrypoint] WARNING: Some smoke tests failed — check logs."
-    echo "[entrypoint] Smoke tests complete. Handing off to main process..."
+    banner "ATAL Backend — smoke tests complete"
     # Kill background instance and re-exec as the main process
     kill $APP_PID 2>/dev/null || true
     wait $APP_PID 2>/dev/null || true
@@ -174,9 +266,10 @@ fi
 if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ] && echo "$*" | grep -q "uvicorn\|gunicorn\|asgi"; then
     echo "[entrypoint] Re-warming Ollama models before serving traffic..."
     $RUN_AS python manage.py warm_ollama --skip-rag \
-        || echo "[entrypoint] WARNING: inference warmup failed — first chat may be slow."
+        || echo "[entrypoint] WARNING: re-warm skipped (models loaded at startup / ollama busy)"
 fi
 
 # ── Start application (as appuser) ────────────────────────────────────────────
 echo "[entrypoint] Starting application..."
+touch "${READY_MARKER}"
 exec gosu appuser "$@"

@@ -99,7 +99,8 @@ def _citation_from_chunk(props: dict, d: dict, *, index: int, excerpt: str) -> d
     score = d.get("reranker_score") or d.get("rrf_score", 0) or (1.0 - d.get("distance", 1.0))
     source = "upload" if props.get("doc_type") == "upload" or d.get("source") == "upload" else "library"
     clean_section = "" if section in ("", "upload") else section
-    return {
+    doc_id = (props.get("document_id") or "").strip()
+    cite = {
         "index": index,
         "doc": doc_title,
         "section": clean_section,
@@ -107,6 +108,49 @@ def _citation_from_chunk(props: dict, d: dict, *, index: int, excerpt: str) -> d
         "score": round(float(score), 3),
         "source": source,
     }
+    if doc_id:
+        cite["document_id"] = doc_id
+    return cite
+
+def _sansad_context_addendum(session) -> str:
+    """Inject latest SANSAD plant context when session carries asset or metadata from §5 pages."""
+    meta = session.session_metadata or {}
+    lines: list[str] = []
+    source = meta.get("sansad_source")
+    if source:
+        lines.append(f"User navigated from SANSAD section: {source}.")
+    initial = meta.get("initial_prompt")
+    if initial:
+        lines.append(f"Suggested focus: {initial}")
+    asset_id = session.asset_id
+    if not asset_id and not lines:
+        return ""
+    if asset_id:
+        try:
+            from apps.reports.models import MaintenanceReport
+            from apps.alerts.models import AlarmEvent
+
+            report = (
+                MaintenanceReport.objects.filter(asset_id=asset_id)
+                .order_by("-created_at")
+                .first()
+            )
+            if report:
+                diag = (report.diagnosis or report.report_text or "")[:600]
+                lines.append(
+                    f"Latest maintenance report ({report.risk_level}): {diag}"
+                )
+            for alarm in AlarmEvent.objects.filter(
+                asset_id=asset_id, acknowledged=False
+            ).order_by("-created_at")[:3]:
+                lines.append(
+                    f"Active alert [{alarm.severity}]: {alarm.message or alarm.alarm_type}"
+                )
+        except Exception as exc:
+            logger.warning("sansad context skipped: %s", exc)
+    if not lines:
+        return ""
+    return "\n\n[SANSAD plant context]\n" + "\n".join(lines)
 
 # System prompt — grounded in hackathon problem statement §4/§5/§6
 # ---------------------------------------------------------------------------
@@ -134,7 +178,9 @@ Hydraulic AGC Cylinders (HAGCC), Acid Pickling Tanks (APT), Tandem Cold Mill Sta
 Continuous Galvanizing Pot (CGP), High-Pressure Air Knives (HPAK).
 
 ## Source Citation Rules (MANDATORY)
-- Retrieved sources below are numbered [1], [2], [3], etc.
+- Use [n] citation markers ONLY when numbered retrieved sources appear in the Retrieved Context section below.
+- If Retrieved Context says no documents were selected or lists no numbered sources, do NOT use [n] markers at all.
+- When sources are present, they are numbered [1], [2], [3], etc.
 - When a sentence or claim uses retrieved documentation, append the matching source number in \
 square brackets immediately after that sentence or clause, e.g. \
 "Cylinder pressure must not exceed 210 bar [1]."
@@ -148,12 +194,19 @@ square brackets immediately after that sentence or clause, e.g. \
 ## Response Structure
 For diagnostic responses:
 1. **Probable Fault** — state the fault and confidence level
-2. **Evidence** — cite specific retrieved content with [n] markers
+2. **Evidence** — cite specific retrieved content with [n] markers (only when sources were retrieved)
 3. **Root Cause** — ranked causal factors
 4. **Risk Level** — low/medium/high/critical + justification
 5. **Recommended Actions** — numbered steps with safety notes (LOTO where applicable)
 
-For general questions: answer concisely with inline [n] citations where applicable.
+For general greetings and questions without retrieved sources: answer concisely and never use [n] citation markers.
+
+## Conversation Style (MANDATORY)
+- Do NOT open with "Hello! I am MANAS" or repeat your full name/acronym on every reply. Greet briefly only if the user greeted first and this is the opening exchange.
+- NEVER dump a capabilities overview, asset list, or "how I operate" essay unless the user explicitly asks what you can do.
+- If the user asks for diagnosis or "in-detail" analysis but provides no fault data, sensor readings, error codes, or asset ID: ask up to 3 focused questions (asset/stage, symptoms, alarms/logs). If Retrieved Context contains loaded documents, briefly state what those documents cover and one concrete way they apply — do not write multi-paragraph filler.
+- When Retrieved Context has numbered sources, answer from those excerpts first; do not explain MANAS instead of using the documents.
+- Stay direct: no throat-clearing, no "However, to fulfill your request…" preambles.
 
 ## Retrieved Context
 {rag_context}
@@ -173,24 +226,6 @@ _ROLE_ADDENDA: dict[str, str] = {
         "coordination, shift planning, escalation criteria, and downtime impact. Highlight "
         "what to delegate vs. what needs specialist support."
     ),
-    "reliability_engineer": (
-        "The user is a **reliability engineer**. Emphasise root-cause patterns, failure "
-        "modes, degradation trends, RUL interpretation, and data-driven recommendations. "
-        "Reference statistical or condition-monitoring reasoning where relevant."
-    ),
-    "maintenance_planner": (
-        "The user is a **maintenance planner**. Focus on work-order scope, spares, lead times, "
-        "outage windows, and sequencing of tasks. Include checklist-style planning outputs."
-    ),
-    "operations_manager": (
-        "The user is an **operations manager**. Summarise production risk, bottleneck impact, "
-        "urgency trade-offs, and business-critical decisions. Keep recommendations actionable "
-        "at plant level."
-    ),
-    "safety_officer": (
-        "The user is a **safety officer**. Lead with hazard identification, permit/LOTO "
-        "requirements, ISO/safety standard alignment, and risk mitigation before procedural detail."
-    ),
 }
 
 
@@ -199,13 +234,13 @@ def _role_system_addendum(role: str | None) -> str:
         return ""
     key = str(role).strip().lower().replace(" ", "_").replace("-", "_")
     text = _ROLE_ADDENDA.get(key)
-    if text:
-        return f"\n\n## Active User Role\n{text}"
-    label = role.replace("_", " ").title()
-    return (
-        f"\n\n## Active User Role\nThe user is acting as **{label}**. "
-        "Tailor tone, depth, and recommendations to that responsibility."
-    )
+    if not text:
+        return ""
+    return f"\n\n## Active User Role\n{text}"
+
+
+class _CancelledStream(Exception):
+    """User requested stop via WebSocket cancel."""
 
 
 def run_chat_logic(
@@ -229,10 +264,20 @@ def run_chat_logic(
     from apps.agents.ollama_warmup import ollama_keep_alive_value
     from django.conf import settings
 
-    from apps.agents.stream_registry import send_to_stream
+    from apps.agents.stream_registry import (
+        arm_stream,
+        clear_cancel,
+        is_cancelled,
+        send_to_stream,
+    )
 
     group_name = f"llm_stream_{session_id}"
-    channel_layer = None  # lazy — primary path uses in-process stream_registry
+    channel_layer = None
+    session = None
+    full_response = ""
+    full_reasoning = ""
+    citations: list[dict] = []
+    model_name = ""
 
     def _get_channel_layer():
         nonlocal channel_layer
@@ -265,7 +310,8 @@ def run_chat_logic(
                 logger.warning("channel_layer fallback failed: %s", _e)
 
     try:
-        session = ChatSession.objects.get(id=session_id)
+        arm_stream(session_id)
+        session = ChatSession.objects.select_related("user").get(id=session_id)
         user_msg = ChatMessage.objects.get(id=user_message_id)
         user_content = user_msg.content
 
@@ -277,6 +323,12 @@ def run_chat_logic(
         raw_docs: list = []
         custom_text = (custom_rag_context or "").strip()
         titles = [t for t in (rag_document_titles or []) if t]
+        has_rag_request = bool(rag_collections or titles or custom_text or custom_documents)
+
+        if has_rag_request:
+            _send({"type": "phase", "phase": "rag"})
+            if is_cancelled(session_id):
+                raise _CancelledStream()
 
         if rag_collections or titles:
             try:
@@ -295,24 +347,27 @@ def run_chat_logic(
             rag_context = (
                 "[No reference documents selected for this message. "
                 "Answer from conversation history and general maintenance reasoning only. "
-                "Do not invent numeric thresholds or standard values.]"
+                "Do not use [n] citation markers. "
+                "Do not invent numeric thresholds or standard values. "
+                "Do not introduce yourself or list capabilities — be concise.]"
             )
             snippets: list[str] = []
             citations: list[dict] = []
         else:
+            top_k = 4 if deep_thinking else 6
             if settings.RAG_USE_RERANKER:
                 from apps.rag.reranker import rerank
                 try:
-                    reranked = rerank(user_content, raw_docs, top_k=6)
+                    reranked = rerank(user_content, raw_docs, top_k=top_k)
                 except Exception as _e:
                     logger.warning("rerank failed: %s", _e)
-                    reranked = raw_docs[:6]
+                    reranked = raw_docs[:top_k]
             else:
                 reranked = sorted(
                     raw_docs,
                     key=lambda x: x.get("rrf_score", 0) or (1.0 - x.get("distance", 1.0)),
                     reverse=True,
-                )[:6]
+                )[:top_k]
 
             snippets = []
             citations = []
@@ -336,7 +391,16 @@ def run_chat_logic(
                 snippets.append(f"{header}\n{content}")
                 citations.append(_citation_from_chunk(props, d, index=cite_index, excerpt=content))
 
-            rag_context = "\n---\n".join(snippets) or "[No relevant document excerpts retrieved]"
+            rag_context = "\n---\n".join(snippets) or (
+                "[Documents are loaded but no excerpts matched this query. "
+                "Say what is missing (asset, symptom, or question focus) in 2–4 sentences. "
+                "Do not list MANAS capabilities or give a generic overview.]"
+            )
+
+        if has_rag_request:
+            _send({"type": "phase", "phase": "rag_done"})
+            if citations:
+                _send({"type": "citations", "citations": citations})
 
         logger.info("MANAS RAG done — %d docs, %d snippets, session=%s", len(raw_docs), len(snippets), session_id[:8])
 
@@ -370,6 +434,16 @@ def run_chat_logic(
 
         system_prompt = _MANAS_SYSTEM_PROMPT.format(rag_context=rag_context)
         system_prompt += _role_system_addendum(user_role)
+        system_prompt += _sansad_context_addendum(session)
+        try:
+            from apps.agents.preference_profile import get_preference_patch
+
+            system_prompt += get_preference_patch(session.user)
+        except Exception as _pref_err:
+            logger.warning("preference patch skipped: %s", _pref_err)
+
+        if is_cancelled(session_id):
+            raise _CancelledStream()
 
         model_name = settings.OLLAMA_MODEL
         full_response = ""
@@ -381,13 +455,16 @@ def run_chat_logic(
         import time as _time
 
         ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
+        predict_budget = 1536 if deep_thinking else 2048
+        if deep_thinking:
+            _send({"type": "phase", "phase": "thinking"})
         ollama_payload = {
             "model": model_name,
             "messages": [{"role": "system", "content": system_prompt}] + messages,
             "stream": True,
             "think": bool(deep_thinking),
             "keep_alive": ollama_keep_alive_value(),
-            "options": {"num_predict": 2048, "temperature": 0.2},
+            "options": {"num_predict": predict_budget, "temperature": 0.2},
         }
 
         for _attempt in range(1, 4):
@@ -405,6 +482,9 @@ def run_chat_logic(
                         resp.raise_for_status()
                         logger.info("MANAS Ollama HTTP %s — streaming started session=%s", resp.status_code, session_id[:8])
                         for line in resp.iter_lines():
+                            if is_cancelled(session_id):
+                                logger.info("MANAS stream cancelled session=%s", session_id[:8])
+                                break
                             if not line:
                                 continue
                             try:
@@ -435,6 +515,10 @@ def run_chat_logic(
                     raise
 
         # ── Persist assistant message ──────────────────────────────────────
+        cancelled = is_cancelled(session_id)
+        if cancelled and not full_response.strip():
+            full_response = "*(Response stopped.)*"
+
         assistant_msg = ChatMessage.objects.create(
             session=session,
             role="assistant",
@@ -451,9 +535,38 @@ def run_chat_logic(
             "type": "done",
             "message_id": str(assistant_msg.id),
             "citations": citations,
+            "cancelled": cancelled,
         })
 
+        clear_cancel(session_id)
         return {"status": "ok", "message_id": str(assistant_msg.id)}
+
+    except _CancelledStream:
+        partial = full_response.strip() or "*(Response stopped.)*"
+        msg_id = None
+        if session is not None:
+            try:
+                assistant_msg = ChatMessage.objects.create(
+                    session=session,
+                    role="assistant",
+                    content=partial,
+                    reasoning=full_reasoning,
+                    citations=citations,
+                    model_used=model_name,
+                )
+                session.last_active = assistant_msg.timestamp
+                session.save(update_fields=["last_active"])
+                msg_id = str(assistant_msg.id)
+            except Exception:
+                msg_id = None
+        _send({
+            "type": "done",
+            "message_id": msg_id,
+            "citations": citations,
+            "cancelled": True,
+        })
+        clear_cancel(session_id)
+        return {"status": "cancelled", "message_id": msg_id}
 
     except Exception as exc:
         logger.error("run_chat_logic failed session_id=%s error=%s", session_id, exc, exc_info=True)
@@ -463,6 +576,7 @@ def run_chat_logic(
             "citations": [],
             "error": f"Processing failed: {exc}",
         })
+        clear_cancel(session_id)
         return {"status": "error", "error": str(exc)}
 
 

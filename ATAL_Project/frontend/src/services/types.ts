@@ -40,6 +40,13 @@ export interface RiskAsset {
   sparesAvailable: boolean;
   downtimeHours: number;
   recommendation: string;
+  factory?: string;
+  riskLevel?: "low" | "medium" | "high" | "critical";
+  urgencyScore?: number;
+  bottleneckRank?: number;
+  processCriticality?: number;
+  delaySeverity?: number;
+  procurementLeadDays?: number;
 }
 
 export interface AssetHealth {
@@ -66,8 +73,17 @@ export interface FactoryData {
 export interface MessageFile {
   name: string;
   type: string;
-  pages: string[];
+  pages?: string[];
+  /** Plain or markdown text for expanded text preview. */
+  body?: string;
+  /** Library document id — fetches raw file for PDF viewer. */
+  documentId?: string;
+  /** Blob URL for uploaded PDFs — native browser viewer. */
+  pdfUrl?: string;
+  sourceFormat?: DocumentSourceFormat;
 }
+
+export type DocumentSourceFormat = "pdf" | "markdown" | "html" | "text" | "image";
 
 export interface Citation {
   /** 1-based source number matching inline [n] markers in the answer. */
@@ -78,9 +94,11 @@ export interface Citation {
   excerpt?: string;
   score?: number;
   source?: "library" | "upload";
+  documentId?: string;
 }
 
 export interface Message {
+  id?: string;
   role: "user" | "assistant" | "system";
   content: string;
   /** Model chain-of-thought when Deep Thinking is enabled. */
@@ -88,6 +106,8 @@ export interface Message {
   files?: MessageFile[];
   citations?: Citation[];
   isCompacting?: boolean;
+  /** User thumbs feedback on assistant replies. */
+  feedbackRating?: "up" | "down";
 }
 
 export interface RagDoc {
@@ -97,6 +117,8 @@ export interface RagDoc {
   type?: string;
   docType?: string;
   pages?: string[];
+  /** Blob URL for uploaded PDF — session-scoped native viewer. */
+  pdfUrl?: string;
   /** Extracted plain text sent to backend RAG (not base64 previews). */
   textContent?: string;
   isCustom?: boolean;

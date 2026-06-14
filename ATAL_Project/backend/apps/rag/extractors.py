@@ -9,6 +9,12 @@ from typing import Optional, Tuple
 
 from django.conf import settings
 
+# Image/scanned uploads: OCR is ~2–5s/page; keep uploads small.
+MAX_UPLOAD_IMAGE_PDF_PAGES = 10
+# Text-selectable uploads: fast extract but cap for RAG context size.
+MAX_UPLOAD_TEXT_PDF_PAGES = 20
+_MIN_TEXT_PER_PAGE = 48
+
 
 def _corpus_dir() -> Path:
     return Path(getattr(settings, "CORPUS_DIR", os.environ.get("CORPUS_DIR", "/app/data/corpus")))
@@ -51,16 +57,96 @@ def resolve_local_path(doc) -> Optional[Path]:
     return None
 
 
-def _extract_pdf(path: Path) -> str:
-    import fitz
+def _ocr_page_text(page) -> str:
+    """Tesseract OCR via PyMuPDF for sparse/scanned PDF pages."""
+    from django.conf import settings
 
-    parts = []
+    dpi = max(72, min(int(getattr(settings, "RAG_OCR_DPI", 200)), 300))
+    try:
+        tp = page.get_textpage_ocr(language="eng", dpi=dpi, full=True)
+        return (tp.extractText() or "").strip()
+    except Exception:
+        return ""
+
+
+def _describe_visual_page(page, page_num: int, doc_name: str) -> str:
+    blocks = page.get_text("dict").get("blocks", [])
+    img_blocks = sum(1 for b in blocks if b.get("type") == 1)
+    try:
+        drawings = len(page.get_drawings())
+    except Exception:
+        drawings = 0
+    w, h = int(page.rect.width), int(page.rect.height)
+    return (
+        f"## Page {page_num}\n"
+        f"[Visual page in '{doc_name}': {w}×{h}pt layout with "
+        f"{img_blocks} image region(s) and {drawings} diagram element(s). "
+        f"Figures/photos on this page — open the PDF preview for exact visuals.]"
+    )
+
+
+def _pdf_is_image_heavy(pdf, sample_pages: int = 3) -> bool:
+    """Heuristic: little selectable text on the first pages → scanned/image PDF."""
+    chars = 0
+    for i in range(min(len(pdf), sample_pages)):
+        chars += len((pdf[i].get_text("text") or "").strip())
+    return chars < _MIN_TEXT_PER_PAGE * max(1, min(len(pdf), sample_pages))
+
+
+def _extract_pdf(path: Path, *, doc_name: str | None = None, max_pages: int | None = None) -> str:
+    import fitz
+    from django.conf import settings
+
+    label = doc_name or path.name
+    parts: list[str] = []
+    ocr_budget = max(0, int(getattr(settings, "RAG_OCR_MAX_PAGES", 5)))
+    ocr_used = 0
     with fitz.open(path) as pdf:
-        for page_num, page in enumerate(pdf, start=1):
-            text = page.get_text("text")
-            if text.strip():
+        page_limit = min(len(pdf), max_pages) if max_pages else len(pdf)
+        for page_num in range(1, page_limit + 1):
+            page = pdf[page_num - 1]
+            text = (page.get_text("text") or "").strip()
+            if len(text) < 48 and ocr_used < ocr_budget:
+                ocr = _ocr_page_text(page)
+                if ocr:
+                    ocr_used += 1
+                if len(ocr) > len(text):
+                    text = ocr
+            elif len(text) < 48:
+                parts.append(_describe_visual_page(page, page_num, label))
+                continue
+            if text:
                 parts.append(f"\n## Page {page_num}\n{text}")
+            else:
+                parts.append(_describe_visual_page(page, page_num, label))
     return "\n".join(parts)
+
+
+def extract_upload_file(path: Path) -> Tuple[str, str]:
+    """Extract text from an uploaded file path (PDF with OCR/visual fallback)."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        import fitz
+
+        with fitz.open(path) as pdf:
+            n = len(pdf)
+            if n > MAX_UPLOAD_IMAGE_PDF_PAGES and _pdf_is_image_heavy(pdf):
+                raise ValueError(
+                    f"PDF has {n} pages. Image-based uploads are limited to "
+                    f"{MAX_UPLOAD_IMAGE_PDF_PAGES} pages — split the document or "
+                    "export a shorter excerpt."
+                )
+            if n > MAX_UPLOAD_TEXT_PDF_PAGES and not _pdf_is_image_heavy(pdf):
+                raise ValueError(
+                    f"PDF has {n} pages. Text-based uploads are limited to "
+                    f"{MAX_UPLOAD_TEXT_PDF_PAGES} pages — split the document or "
+                    "export a shorter excerpt."
+                )
+        text = _extract_pdf(path, doc_name=path.name)
+        return text, "upload_pdf"
+    if suffix in (".html", ".htm"):
+        return _extract_html(path), "upload_html"
+    return _extract_plain(path), "upload_text"
 
 
 def _extract_html(path: Path) -> str:
@@ -106,7 +192,7 @@ def extract_text(doc) -> Tuple[str, str]:
     if local and local.is_file():
         suffix = local.suffix.lower()
         if suffix == ".pdf":
-            return _extract_pdf(local), "local_pdf"
+            return _extract_pdf(local, doc_name=doc.title), "local_pdf"
         if suffix in (".html", ".htm"):
             return _extract_html(local), "local_html"
         return _extract_plain(local), "local_text"

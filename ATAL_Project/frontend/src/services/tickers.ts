@@ -82,17 +82,52 @@ export function getRiskPriorityLogos(): TickerItem[] {
   ];
 }
 
-export function getRagLogsLogos(): TickerItem[] {
+export function getDiagnosticsTicker(): TickerItem[] {
   return [
-    { text: "QUERY: F1-EQ09 EXHAUSTER BEARING — RAG MATCH 98.4%", isSeparator: false },
+    { text: "F1-EQ09 — Spalling 87% confidence", isSeparator: false },
     { text: "✦", isSeparator: true },
-    { text: "VECTOR SEARCH: CASCADE SIMILARITY INDEX", isSeparator: false },
+    { text: "RUL: 14 days · Exhauster", isSeparator: false },
     { text: "✦", isSeparator: true },
-    { text: "PROMPT COMPILED: SANSAD WORK ORDER PAYLOAD", isSeparator: false },
+    { text: "Early warning: seizure risk 10d", isSeparator: false },
     { text: "✦", isSeparator: true },
-    { text: "CONTEXT RETRIEVED: 3 HISTORICAL CASES", isSeparator: false },
+    { text: "RCA: grease ISO 4406 breach", isSeparator: false },
     { text: "✦", isSeparator: true },
   ];
+}
+
+export function getRiskTicker(): TickerItem[] {
+  return getRiskPriorityLogos();
+}
+
+export function getActionsTicker(): TickerItem[] {
+  return [
+    { text: "LOTO SOP-SAF-04 — step 1 queued", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "SKF 22224 EK — PO expedite", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "Window-14 outage slot reserved", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "5-step repair plan ready", isSeparator: false },
+    { text: "✦", isSeparator: true },
+  ];
+}
+
+export function getReportsTicker(): TickerItem[] {
+  return [
+    { text: "REP-F1-EQ09 — critical diagnostic", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "ALT-F2-EQ04 — abnormal alert", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "DEC-OPS — bottleneck summary", isSeparator: false },
+    { text: "✦", isSeparator: true },
+    { text: "LOG-MNT-118 — digital log entry", isSeparator: false },
+    { text: "✦", isSeparator: true },
+  ];
+}
+
+/** @deprecated Use getReportsTicker — RAG removed from hub */
+export function getRagLogsLogos(): TickerItem[] {
+  return getReportsTicker();
 }
 
 export function getManasTickerLogos(): TickerItem[] {

@@ -799,6 +799,7 @@ def chunk_document(doc) -> List[Dict]:
         page = _extract_page_number(chunk_text)
         meta = {
             "title": doc.title,
+            "document_id": str(doc.id),
             "content": chunk_text,
             "section": section,
             "page": str(page) if page is not None else "",

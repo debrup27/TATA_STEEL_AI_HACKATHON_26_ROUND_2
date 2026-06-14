@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from apps.agents.models import ChatSession, ChatMessage
+from apps.agents.models import ChatSession, ChatMessage, ChatMessageFeedback
 import uuid
 
 
@@ -11,12 +11,14 @@ class ChatSessionListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        last_messages = ChatMessage.objects.filter(session=OuterRef("pk")).order_by("-timestamp")
+        last_user = ChatMessage.objects.filter(
+            session=OuterRef("pk"), role="user"
+        ).order_by("-timestamp")
         sessions = (
             ChatSession.objects.filter(user=request.user)
             .annotate(
-                last_message_content=Subquery(last_messages.values("content")[:1]),
-                last_message_role=Subquery(last_messages.values("role")[:1]),
+                last_message_content=Subquery(last_user.values("content")[:1]),
+                last_message_role=Subquery(last_user.values("role")[:1]),
             )
             .order_by("-last_active")
         )
@@ -31,7 +33,7 @@ class ChatSessionListView(APIView):
             }
             if s.last_message_content:
                 entry["last_message"] = {
-                    "role": s.last_message_role,
+                    "role": s.last_message_role or "user",
                     "content": s.last_message_content,
                 }
             data.append(entry)
@@ -56,9 +58,19 @@ class ChatSessionDetailView(APIView):
             return Response(status=status.HTTP_404_NOT_FOUND)
 
         messages = ChatMessage.objects.filter(session=session).order_by("timestamp")
+        feedback_map = {
+            str(f.message_id): f.rating
+            for f in ChatMessageFeedback.objects.filter(
+                message__session=session,
+                user=request.user,
+            )
+        }
         data = {
             "id": str(session.id),
             "asset_id": str(session.asset_id) if session.asset_id else None,
+            "created_at": session.created_at,
+            "last_active": session.last_active,
+            "metadata": session.session_metadata,
             "messages": [
                 {
                     "id": str(m.id),
@@ -70,6 +82,7 @@ class ChatSessionDetailView(APIView):
                     "model_used": m.model_used,
                     "token_usage": m.token_usage,
                     "created_at": m.timestamp,
+                    "feedback_rating": feedback_map.get(str(m.id)),
                 }
                 for m in messages
             ],
@@ -103,6 +116,104 @@ class ChatWarmupView(APIView):
             name="manas-warmup",
         ).start()
         return Response({"status": "warming"})
+
+
+class ChatCompactView(APIView):
+    """
+    POST /api/v1/chat/sessions/<session_id>/compact/
+    Manually summarise older messages (same as auto-compaction, without sending a chat turn).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        import threading
+
+        from apps.agents.compaction import compact_history
+
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        sid = str(session.id)
+
+        def _run():
+            compact_history(sid, force=True)
+
+        threading.Thread(target=_run, daemon=True, name=f"manas-compact-{sid[:8]}").start()
+        return Response({"status": "compacting"}, status=status.HTTP_202_ACCEPTED)
+
+
+class ChatOptimizePromptView(APIView):
+    """
+    POST /api/v1/chat/optimize-prompt/
+    Rewrite a user draft into a MANAS-scoped maintenance diagnostics prompt.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.agents.prompt_optimizer import optimize_maintenance_prompt
+
+        draft = (request.data.get("draft") or "").strip()
+        if not draft:
+            return Response({"error": "draft required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_rag = bool(request.data.get("has_rag_context", False))
+        user_role = (request.data.get("user_role") or "").strip()
+
+        try:
+            optimized = optimize_maintenance_prompt(
+                draft,
+                has_rag_context=has_rag,
+                user_role=user_role,
+            )
+        except Exception as exc:
+            return Response(
+                {"error": f"optimizer unavailable: {exc}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"optimized": optimized, "draft": draft})
+
+
+class ChatMessageFeedbackView(APIView):
+    """
+    POST /api/v1/chat/messages/<message_id>/feedback/
+    Body: { "rating": "up" | "down" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, message_id):
+        from apps.agents.preference_profile import analyze_response_traits, record_message_feedback
+
+        rating = (request.data.get("rating") or "").strip().lower()
+        if rating not in ("up", "down"):
+            return Response({"error": "rating must be 'up' or 'down'"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            message = ChatMessage.objects.select_related("session").get(id=message_id)
+        except ChatMessage.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        if message.session.user_id != request.user.id:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        if message.role != ChatMessage.Role.ASSISTANT:
+            return Response({"error": "only assistant messages can be rated"}, status=status.HTTP_400_BAD_REQUEST)
+
+        traits = analyze_response_traits(message.content)
+        ChatMessageFeedback.objects.update_or_create(
+            message=message,
+            user=request.user,
+            defaults={"rating": rating, "traits_snapshot": traits},
+        )
+        profile = record_message_feedback(request.user, message, rating)
+
+        return Response({
+            "status": "recorded",
+            "rating": rating,
+            "style_summary": profile.get("summary", ""),
+        })
 
 
 class ChatMessageView(APIView):

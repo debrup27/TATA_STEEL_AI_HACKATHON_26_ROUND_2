@@ -9,6 +9,7 @@ import type {
   ChatSession,
   Message,
 } from "@/services/types";
+import { stripMarkdownPreview } from "@/lib/chat-preview";
 
 export interface BackendFactory {
   id: string;
@@ -51,6 +52,48 @@ export interface BackendRankedAsset {
   urgency_score: number;
   health_score: number;
   criticality_level?: string;
+  risk_level?: string;
+  bottleneck_rank?: number;
+  process_criticality?: number;
+  delay_severity?: number;
+  spares_available?: boolean;
+  procurement_lead_days?: number;
+  impact?: string;
+  recommendation?: string;
+  composite_score?: number;
+}
+
+export interface BackendDiagnosticAsset {
+  id: string;
+  name: string;
+  factory: string;
+  stage: string;
+  health: number;
+  rulDays: number | null;
+  rulHours?: number | null;
+  probableFault: string;
+  faultConfidence: number;
+  rootCauses: { factor: string; weight: number; evidence: string }[];
+  earlyWarning: string | null;
+  processDefects: { stage: string; defect: string; link: string }[];
+  sensors: { label: string; value: string; status: "nominal" | "warning" | "critical" }[];
+  isNormalOperation?: boolean;
+  faultClass?: number;
+}
+
+export interface BackendActionPlan {
+  id: string;
+  assetId?: string;
+  asset: string;
+  factory: string;
+  riskLevel: string;
+  immediateActions: string[];
+  steps: { order: number; action: string; safety: string; duration: string }[];
+  longTermMonitoring: string[];
+  spares: { part: string; qty: number; leadDays: number; inStock: boolean }[];
+  optimizedPlanSummary: string;
+  workOrderId?: string | null;
+  reportId?: string | null;
 }
 
 export interface BackendMaintenanceEvent {
@@ -66,8 +109,12 @@ export interface BackendMaintenanceEvent {
 export interface BackendReport {
   id: string;
   asset: string;
+  asset_name?: string;
+  factory_name?: string;
   created_at: string;
   source?: string;
+  report_type?: string;
+  title?: string;
   risk_level?: string;
   urgency_score?: number;
   diagnosis?: string;
@@ -91,6 +138,7 @@ export interface BackendChatMessage {
   reasoning?: string;
   citations?: unknown[];
   created_at?: string;
+  feedback_rating?: "up" | "down" | null;
 }
 
 function healthStatus(score: number, status?: string): AssetHealth["status"] {
@@ -131,26 +179,87 @@ export function mapFactoryHealth(
   };
 }
 
-export function mapRiskAsset(r: BackendRankedAsset, _index = 0): RiskAsset {
-  void _index;
-  const score = Math.min(100, Math.round(r.urgency_score * 25));
+export function mapRiskAsset(r: BackendRankedAsset, index = 0): RiskAsset {
+  const score = Math.min(100, Math.round(r.urgency_score));
+  const riskLevel = (r.risk_level ?? "").toLowerCase();
   let urgency: RiskAsset["urgency"] = "LOW";
-  if (score >= 80) urgency = "CRITICAL";
-  else if (score >= 60) urgency = "HIGH";
-  else if (score >= 40) urgency = "MEDIUM";
+  if (score >= 80 || riskLevel === "critical") urgency = "CRITICAL";
+  else if (score >= 60 || riskLevel === "high") urgency = "HIGH";
+  else if (score >= 40 || riskLevel === "medium") urgency = "MEDIUM";
 
   return {
     id: r.asset_id,
     name: r.asset_name,
     score,
     urgency,
-    impact: `Factory: ${r.factory}. Health score ${Math.round(r.health_score)}%. Criticality: ${r.criticality_level ?? "medium"}.`,
-    sparesAvailable: true,
-    downtimeHours: Math.max(2, Math.round((100 - r.health_score) / 10)),
-    recommendation:
-      urgency === "CRITICAL"
-        ? "Schedule immediate inspection and prepare replacement spares."
-        : "Monitor closely and plan maintenance during next outage window.",
+    impact: r.impact ?? `Factory: ${r.factory}. Health score ${Math.round(r.health_score)}%.`,
+    sparesAvailable: r.spares_available ?? true,
+    downtimeHours: Math.max(2, Math.round((r.delay_severity ?? (100 - r.health_score)) / 10)),
+    recommendation: r.recommendation ?? "Monitor and plan maintenance during next outage window.",
+    factory: r.factory,
+    riskLevel: (riskLevel || urgency.toLowerCase()) as RiskAsset["riskLevel"],
+    urgencyScore: score,
+    bottleneckRank: r.bottleneck_rank ?? index + 1,
+    processCriticality: r.process_criticality ?? 50,
+    delaySeverity: r.delay_severity ?? Math.round(100 - r.health_score),
+    procurementLeadDays: r.procurement_lead_days ?? 0,
+  };
+}
+
+export function mapDiagnosticAsset(d: BackendDiagnosticAsset) {
+  const asText = (v: unknown, fallback = ""): string => {
+    if (v == null) return fallback;
+    if (typeof v === "string") return v;
+    if (typeof v === "object") {
+      const row = v as Record<string, unknown>;
+      if (row.sensor != null) {
+        const dev = row.deviation_pct != null ? ` — ${row.deviation_pct}% deviation` : "";
+        return `${row.sensor}${dev}`;
+      }
+      if (row.factor != null) return String(row.factor);
+    }
+    return String(v);
+  };
+
+  return {
+    ...d,
+    probableFault: asText(d.probableFault, ""),
+    rulDays: d.rulDays ?? null,
+    rulHours: d.rulHours ?? null,
+    earlyWarning: d.earlyWarning ? asText(d.earlyWarning) : null,
+    rootCauses: (d.rootCauses ?? []).map((rc) => ({
+      factor: asText(rc.factor, "Unknown factor"),
+      weight: Number(rc.weight) || 0,
+      evidence: asText(rc.evidence, "—"),
+    })),
+    processDefects: (d.processDefects ?? []).map((pd) => ({
+      stage: asText(pd.stage, "—"),
+      defect: asText(pd.defect, "Process deviation"),
+      link: asText(pd.link, ""),
+    })),
+    sensors: (d.sensors ?? []).map((s) => ({
+      label: asText(s.label, "Sensor"),
+      value: asText(s.value, "—"),
+      status: s.status ?? "nominal",
+    })),
+    isNormalOperation: Boolean(d.isNormalOperation),
+  };
+}
+
+export function mapActionPlan(p: BackendActionPlan) {
+  return {
+    id: p.id,
+    asset: p.asset,
+    factory: p.factory,
+    riskLevel: (p.riskLevel ?? "medium") as import("@/services/sansadOutputs").RiskLevel,
+    immediateActions: p.immediateActions ?? [],
+    steps: p.steps ?? [],
+    longTermMonitoring: p.longTermMonitoring ?? [],
+    spares: p.spares ?? [],
+    optimizedPlanSummary: p.optimizedPlanSummary ?? "",
+    assetId: p.assetId,
+    workOrderId: p.workOrderId,
+    reportId: p.reportId,
   };
 }
 
@@ -195,29 +304,91 @@ export function mapRagDoc(d: {
   };
 }
 
+export function isGenericSessionTitle(title: string | undefined, sessionId?: string): boolean {
+  const t = (title ?? "").trim();
+  if (!t || t === "New Chat" || t === "New Session") return true;
+  if (/^Session [0-9a-f]{8}$/i.test(t)) return true;
+  if (sessionId && t === `Session ${sessionId.slice(0, 8)}`) return true;
+  return false;
+}
+
+function titleFromUserContent(content: string): string {
+  const plain = stripMarkdownPreview(content, 40);
+  if (!plain) return "";
+  return plain.length > 25 ? `${plain.slice(0, 25)}...` : plain;
+}
+
+function titleFromMessages(messages: Message[]): string | undefined {
+  const first = messages.find((m) => m.role === "user" && m.content?.trim());
+  return first ? titleFromUserContent(first.content) || undefined : undefined;
+}
+
+/** Prefer stored title; fall back to first user message, then Session <id>. */
+export function resolveSessionTitle(opts: {
+  sessionId: string;
+  metadataTitle?: string;
+  existingTitle?: string;
+  lastMessage?: { role: string; content: string };
+  messages?: Message[];
+}): string {
+  const { sessionId, metadataTitle, existingTitle, lastMessage, messages } = opts;
+
+  for (const t of [existingTitle, metadataTitle]) {
+    if (t && !isGenericSessionTitle(t, sessionId)) return t.trim();
+  }
+
+  const fromMessages = messages?.length ? titleFromMessages(messages) : undefined;
+  if (fromMessages) return fromMessages;
+
+  if (lastMessage?.role === "user" && lastMessage.content?.trim()) {
+    const fromLast = titleFromUserContent(lastMessage.content);
+    if (fromLast) return fromLast;
+  }
+
+  return `Session ${sessionId.slice(0, 8)}`;
+}
+
 export function mapChatSession(
   s: BackendChatSession,
   messages: BackendChatMessage[] = [],
 ): ChatSession {
   const ts = s.last_active ?? s.created_at ?? new Date().toISOString();
   const mappedMessages = messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
+    .filter((m) => m.role === "user" || m.role === "assistant" || m.role === "system")
     .map((m) => ({
+      id: m.id,
       role: m.role as Message["role"],
-      content: m.content,
+      content: m.content ?? "",
       reasoning: m.reasoning?.trim() || undefined,
+      feedbackRating:
+        m.feedback_rating === "up" || m.feedback_rating === "down"
+          ? m.feedback_rating
+          : undefined,
       citations: Array.isArray(m.citations)
-        ? (m.citations as Citation[])
+        ? (m.citations as Citation[]).map((c) => ({
+            ...c,
+            documentId:
+              c.documentId ?? (c as Citation & { document_id?: string }).document_id,
+          }))
         : undefined,
     }));
-  const lastMessagePreview =
-    mappedMessages.length > 0
-      ? mappedMessages[mappedMessages.length - 1].content
-      : s.last_message?.content;
+  const lastUser = [...mappedMessages]
+    .reverse()
+    .find((m) => m.role === "user" && m.content?.trim());
+  const lastMessagePreview = lastUser
+    ? stripMarkdownPreview(lastUser.content)
+    : s.last_message?.role === "user" && s.last_message.content?.trim()
+      ? stripMarkdownPreview(s.last_message.content)
+      : undefined;
 
   return {
     id: s.id,
-    title: (s.metadata?.title as string) ?? `Session ${s.id.slice(0, 8)}`,
+    title: resolveSessionTitle({
+      sessionId: s.id,
+      metadataTitle: s.metadata?.title as string | undefined,
+      lastMessage: s.last_message,
+      messages: mappedMessages,
+    }),
     createdAt: new Date(ts).toLocaleString(),
     messages: mappedMessages,
     lastMessagePreview,
@@ -229,19 +400,32 @@ export function mapReportListItem(r: BackendReport & { asset_name?: string }): {
   code: string;
   date: string;
   asset: string;
+  factory: string;
   module: string;
   author: string;
   verdict: string;
   reportMarkdown: string;
+  type: "maintenance" | "abnormal_alert" | "decision_summary" | "digital_log";
+  title: string;
+  summary: string;
+  audience: "engineer" | "supervisor" | "operations";
 } {
+  const type = (r.report_type ?? "maintenance") as "maintenance" | "abnormal_alert" | "decision_summary" | "digital_log";
+  const title = r.title || r.diagnosis?.slice(0, 80) || "Maintenance Report";
+  const body = r.report_text ?? r.diagnosis ?? "No report body available.";
   return {
     id: r.id,
     code: `REP-${r.id.slice(0, 8).toUpperCase()}`,
     date: r.created_at?.slice(0, 10) ?? "—",
     asset: r.asset_name ?? r.asset,
+    factory: r.factory_name ?? "—",
     module: r.source ?? "AI-Generated",
     author: "MANAS",
     verdict: (r.risk_level ?? "pending").toUpperCase(),
-    reportMarkdown: r.report_text ?? r.diagnosis ?? "No report body available.",
+    reportMarkdown: body,
+    type,
+    title,
+    summary: r.diagnosis?.slice(0, 200) ?? body.slice(0, 200),
+    audience: type === "decision_summary" ? "supervisor" : "engineer",
   };
 }

@@ -1,4 +1,4 @@
-import { apiJson } from "@/lib/api";
+import { apiJson, apiBlob } from "@/lib/api";
 import type { Message, RagDoc } from "./types";
 
 const WELCOME_MESSAGE = "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics.";
@@ -20,6 +20,31 @@ export async function warmChatStack(): Promise<void> {
   } catch {
     // Non-fatal — stack may already be warm from entrypoint
   }
+}
+
+export async function optimizeMaintenancePrompt(
+  draft: string,
+  options?: { hasRagContext?: boolean; userRole?: string },
+): Promise<string> {
+  const res = await apiJson<{ optimized: string }>("/api/v1/chat/optimize-prompt/", {
+    method: "POST",
+    body: JSON.stringify({
+      draft,
+      has_rag_context: Boolean(options?.hasRagContext),
+      user_role: options?.userRole ?? "",
+    }),
+  });
+  return (res.optimized || draft).trim();
+}
+
+export async function submitChatMessageFeedback(
+  messageId: string,
+  rating: "up" | "down",
+): Promise<{ style_summary?: string }> {
+  return apiJson(`/api/v1/chat/messages/${messageId}/feedback/`, {
+    method: "POST",
+    body: JSON.stringify({ rating }),
+  });
 }
 
 /** Plant document library (ingested on backend — user opts in per session). */
@@ -63,12 +88,31 @@ const DOC_TYPE_TO_COLLECTION: Record<string, string> = {
   model_explanation: "model_explanation",
 };
 
+function inferDocTypeFromName(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes("sop")) return "sop";
+  if (lower.includes("iso")) return "iso_standard";
+  if (lower.includes("safety") || lower.includes("osha") || lower.includes("lockout")) {
+    return "safety_code";
+  }
+  if (lower.includes("maintenance") || lower.includes("mr-")) return "maintenance_log";
+  return "manual";
+}
+
 export async function fetchLibraryDocumentPreview(documentId: string): Promise<{
   title: string;
   doc_type: string;
   excerpt: string;
+  truncated?: boolean;
+  char_count?: number;
+  source_format?: string;
 }> {
   return apiJson(`/api/v1/rag/documents/${documentId}/preview/`);
+}
+
+export async function fetchLibraryDocumentFileUrl(documentId: string): Promise<string> {
+  const blob = await apiBlob(`/api/v1/rag/documents/${documentId}/file/`);
+  return URL.createObjectURL(blob);
 }
 
 /** Build backend RAG payload from user-selected library + uploaded docs. */
@@ -88,7 +132,7 @@ export function ragPayloadFromDocs(docs: RagDoc[]): RagMessagePayload {
       continue;
     }
     documentTitles.push(doc.name);
-    const dt = (doc.docType || doc.type || "manual").toLowerCase();
+    const dt = (doc.docType || doc.type || inferDocTypeFromName(doc.name)).toLowerCase();
     const coll = DOC_TYPE_TO_COLLECTION[dt] ?? "manual";
     collections.push(coll);
   }

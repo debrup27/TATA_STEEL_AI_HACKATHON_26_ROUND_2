@@ -60,6 +60,7 @@ interface PromptInputTextareaProps {
   className?: string;
   maxRows?: number;
   maxLength?: number;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 function PromptInputTextarea({
@@ -67,6 +68,7 @@ function PromptInputTextarea({
   className = "",
   maxRows = TEXTAREA_MAX_ROWS,
   maxLength = TEXTAREA_MAX_LENGTH,
+  onKeyDown,
 }: PromptInputTextareaProps) {
   const { value, onValueChange, onSubmit, isLoading } = usePromptInput();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -81,6 +83,8 @@ function PromptInputTextarea({
   }, [value, maxRows]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!isLoading) onSubmit();

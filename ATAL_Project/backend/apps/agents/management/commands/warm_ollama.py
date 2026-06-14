@@ -15,9 +15,14 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         result = warm_inference_stack(rag=not options["skip_rag"])
-        ollama_ok = all(result.get("ollama", {}).values())
+        ollama = result.get("ollama", {})
+        ollama_ok = all(ollama.values())
         rag_ok = all(result.get("rag", {}).values()) if "rag" in result else True
         if ollama_ok and rag_ok:
             self.stdout.write(self.style.SUCCESS(f"Warmup complete: {result}"))
-        else:
-            self.stdout.write(self.style.WARNING(f"Warmup partial: {result}"))
+            return
+        if not ollama_ok:
+            failed = [m for m, ok in ollama.items() if not ok]
+            self.stderr.write(self.style.ERROR(f"Required Ollama models failed: {failed}"))
+            raise SystemExit(1)
+        self.stdout.write(self.style.WARNING(f"Warmup partial (RAG only): {result}"))

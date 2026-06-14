@@ -5,25 +5,33 @@ import { motion } from "framer-motion";
 import { DURATION_VERY_SLOW } from "@/lib/constants";
 import { CitedMarkdown } from "@/components/ai-components/CitedMarkdown";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-components/reasoning";
-import type { Message, MessageFile } from "@/services/types";
+import type { Message, MessageFile, RagDoc } from "@/services/types";
+import { MessageFeedback } from "./MessageFeedback";
 
 interface MessageItemProps {
   message: Message;
   index: number;
   onExpandFile: (file: MessageFile) => void;
+  ragDocs?: RagDoc[];
   reasoningStreaming?: boolean;
+  contentStreaming?: boolean;
+  showReasoningSlot?: boolean;
+  onFeedback?: (messageId: string, rating: "up" | "down") => void | Promise<void>;
 }
 
 const MessageItem = React.memo(function MessageItem({
   message,
   index,
   onExpandFile,
+  ragDocs = [],
   reasoningStreaming = false,
+  contentStreaming = false,
+  showReasoningSlot = false,
+  onFeedback,
 }: MessageItemProps) {
   if (message.role === "system") {
     return (
       <motion.div
-        layout
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
@@ -52,97 +60,97 @@ const MessageItem = React.memo(function MessageItem({
   }
 
   const isUser = message.role === "user";
+  const showReasoning = showReasoningSlot || !!message.reasoning || reasoningStreaming;
 
-  if (!isUser && !message.content && !(message.citations?.length) && !message.reasoning) {
+  if (!isUser && !message.content && !(message.citations?.length) && !showReasoning) {
     return null;
   }
 
-  return (
-    <motion.div
-      layout
-      initial={{ y: 80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: DURATION_VERY_SLOW, ease: [0.22, 1, 0.36, 1], delay: index === 0 ? 0.15 : 0 }}
-      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-    >
-      <div
-        className={`leading-relaxed flex flex-col gap-2 ${
-          isUser
-            ? "max-w-[80%] text-sm font-semibold bg-zinc-900 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-3xs"
-            : "max-w-full text-base md:text-[17px] font-normal text-zinc-900 w-full py-2"
-        }`}
-      >
-        {message.files && message.files.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-1">
-            {message.files.map((file, idx) => {
-              const isPdf = file.type === "application/pdf";
-              return (
-                <div
-                  key={idx}
-                  onClick={() => onExpandFile(file)}
-                  className={`relative group cursor-pointer rounded-xl overflow-hidden border ${
-                    isPdf
-                      ? "flex items-center gap-2 px-3 py-2 bg-zinc-800 text-white border-zinc-700 hover:bg-zinc-750 max-w-[200px]"
-                      : "w-24 h-24 relative hover:opacity-90 border-zinc-200"
-                  }`}
-                >
-                  {isPdf ? (
-                    <>
-                      <svg
-                        className="w-5 h-5 text-orange-400 shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                        />
-                      </svg>
-                      <span className="text-xs truncate font-semibold">{file.name}</span>
-                    </>
-                  ) : (
-                    <img
-                      src={file.pages[0]}
-                      alt={file.name}
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+  // User messages animate in once; assistant streams in a static container (no layout jump)
+  const bubbleClass = isUser
+    ? "max-w-[80%] text-sm font-semibold bg-zinc-900 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-3xs"
+    : "max-w-full text-base md:text-[17px] font-normal text-zinc-900 w-full py-2 min-h-[1.5rem]";
 
-        {isUser ? (
-          <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : (
-          <>
-            {(message.reasoning || reasoningStreaming) && (
-              <Reasoning isStreaming={reasoningStreaming}>
-                <ReasoningTrigger>
-                  {reasoningStreaming ? "Thinking…" : "View reasoning"}
-                </ReasoningTrigger>
-                <ReasoningContent markdown className="text-zinc-600">
-                  {message.reasoning || ""}
-                </ReasoningContent>
-              </Reasoning>
-            )}
-            {(message.content || !reasoningStreaming) && (
+  const inner = (
+    <div className={`leading-relaxed flex flex-col gap-2 ${bubbleClass}`}>
+      {message.files && message.files.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-1">
+          {message.files.map((file, idx) => {
+            const isPdf = file.type === "application/pdf";
+            return (
+              <div
+                key={idx}
+                onClick={() => onExpandFile(file)}
+                className={`relative group cursor-pointer rounded-xl overflow-hidden border ${
+                  isPdf
+                    ? "flex items-center gap-2 px-3 py-2 bg-zinc-800 text-white border-zinc-700 max-w-[200px]"
+                    : "w-24 h-24 relative hover:opacity-90 border-zinc-200"
+                }`}
+              >
+                {isPdf ? (
+                  <>
+                    <svg className="w-5 h-5 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs truncate font-semibold">{file.name}</span>
+                  </>
+                ) : (
+                  <img src={file.pages?.[0]} alt={file.name} className="w-full h-full object-cover" draggable={false} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {isUser ? (
+        <div className="whitespace-pre-wrap">{message.content}</div>
+      ) : (
+        <>
+          {showReasoning && (
+            <Reasoning isStreaming={reasoningStreaming} defaultOpen={reasoningStreaming}>
+              <ReasoningTrigger>View reasoning</ReasoningTrigger>
+              <ReasoningContent isStreaming={reasoningStreaming} markdown={!reasoningStreaming}>
+                {message.reasoning || ""}
+              </ReasoningContent>
+            </Reasoning>
+          )}
+          {(message.content || contentStreaming || !reasoningStreaming) &&
+            (message.content || message.citations?.length || contentStreaming ? (
               <CitedMarkdown
                 content={message.content}
                 citations={message.citations}
+                streaming={contentStreaming}
+                ragDocs={ragDocs}
+                onExpandFile={onExpandFile}
                 className="text-base md:text-[17px]"
               />
-            )}
-          </>
-        )}
-      </div>
-    </motion.div>
+            ) : null)}
+          {message.id && onFeedback && message.content.trim() && !contentStreaming ? (
+            <MessageFeedback
+              rating={message.feedbackRating}
+              onRate={(rating) => onFeedback(message.id!, rating)}
+            />
+          ) : null}
+        </>
+      )}
+    </div>
   );
+
+  if (isUser) {
+    return (
+      <motion.div
+        initial={{ y: 24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: DURATION_VERY_SLOW, ease: [0.22, 1, 0.36, 1], delay: index === 0 ? 0.1 : 0 }}
+        className="flex justify-end"
+      >
+        {inner}
+      </motion.div>
+    );
+  }
+
+  return <div className="flex justify-start">{inner}</div>;
 });
 
 export default MessageItem;

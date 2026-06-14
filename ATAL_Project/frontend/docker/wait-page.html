@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>atal</title>
+    <style>
+      @font-face {
+        font-family: "Questrial";
+        src: url("/fonts/Questrial-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: "Pixeloid";
+        src: url("/fonts/PixeloidSansBold-1jpBg.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #faf9f5;
+        color: #1b253c;
+      }
+      .card {
+        text-align: center;
+        padding: 2rem;
+      }
+      .logo {
+        width: min(280px, 72vw);
+        height: auto;
+        margin: 0 auto 2rem;
+        margin-left: calc(50% - min(140px, 36vw) - 12px);
+        display: block;
+      }
+      .title {
+        font-family: "Pixeloid", monospace;
+        font-size: 1.5rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        margin-top: 0.5rem;
+        transform: translateX(10px);
+      }
+      .dots {
+        display: inline-block;
+        min-width: 1.75em;
+        margin-left: 0.75rem;
+        text-align: left;
+      }
+      .wait {
+        margin-top: 1.25rem;
+        font-family: "Questrial", system-ui, sans-serif;
+        font-size: 0.95rem;
+        color: #64748b;
+        font-weight: 400;
+      }
+      .retry {
+        margin-top: 0.5rem;
+        min-height: 1.25rem;
+        font-family: "Questrial", system-ui, sans-serif;
+        font-size: 0.85rem;
+        color: #94a3b8;
+        font-weight: 400;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <img class="logo" src="/long_form_logo.webp" alt="atal" />
+      <p class="title">atal<span class="dots" id="dots">.</span></p>
+      <p class="wait">Please wait while the backend loads.</p>
+      <p class="retry" id="retry">Checking backend…</p>
+    </div>
+    <script>
+      (function () {
+        var POLL_MS = 10000;
+        var dotSeq = [1, 2, 3, 2];
+        var dotIdx = 0;
+        var attempts = 0;
+        var secondsLeft = POLL_MS / 1000;
+        var dotsEl = document.getElementById("dots");
+        var retryEl = document.getElementById("retry");
+        var backendReady = false;
+
+        function backendUrl() {
+          return window.location.protocol + "//" + window.location.hostname + ":8000/health/ready/";
+        }
+
+        setInterval(function () {
+          dotIdx = (dotIdx + 1) % dotSeq.length;
+          dotsEl.textContent = ".".repeat(dotSeq[dotIdx]);
+        }, 450);
+
+        setInterval(function () {
+          if (backendReady) return;
+          secondsLeft = secondsLeft <= 1 ? POLL_MS / 1000 : secondsLeft - 1;
+          if (attempts > 0) {
+            retryEl.textContent =
+              "Backend not ready — retrying in " + secondsLeft + "s… (attempt " + attempts + ")";
+          }
+        }, 1000);
+
+        function waitForNextApp() {
+          retryEl.textContent = "Backend ready — loading app…";
+          var reloadTimer = window.setInterval(async function () {
+            try {
+              var res = await fetch(window.location.origin + "/", {
+                cache: "no-store",
+                headers: { Accept: "text/html" },
+              });
+              var html = await res.text();
+              // Next.js dev serves a real app shell; wait-server only serves the boot page.
+              if (res.ok && html.indexOf('id="dots"') === -1) {
+                window.clearInterval(reloadTimer);
+                window.location.reload();
+              }
+            } catch (e) {
+              /* Next.js not up yet */
+            }
+          }, 3000);
+        }
+
+        async function poll() {
+          attempts += 1;
+          if (attempts === 1) {
+            retryEl.textContent = "Checking backend…";
+          } else {
+            secondsLeft = POLL_MS / 1000;
+            retryEl.textContent =
+              "Backend not ready — retrying in " + secondsLeft + "s… (attempt " + attempts + ")";
+          }
+
+          try {
+            var res = await fetch(backendUrl(), { cache: "no-store" });
+            if (res.ok) {
+              var body = await res.json();
+              if (body && body.status === "ready") {
+                backendReady = true;
+                if (body.boot_id) {
+                  try {
+                    sessionStorage.setItem("atal_last_boot_id", body.boot_id);
+                  } catch (e) {
+                    /* ignore */
+                  }
+                }
+                waitForNextApp();
+                return;
+              }
+            }
+          } catch (e) {
+            /* backend still starting */
+          }
+
+          window.setTimeout(poll, POLL_MS);
+        }
+
+        poll();
+      })();
+    </script>
+  </body>
+</html>

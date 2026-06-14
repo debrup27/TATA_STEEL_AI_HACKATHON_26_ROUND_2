@@ -1,11 +1,19 @@
 FROM node:20-alpine
 WORKDIR /app
+
+RUN apk add --no-cache wget
+
 COPY package.json package-lock.json* ./
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retry-mintimeout 10000 && \
     npm config set fetch-retries 10 && \
     npm ci
+
+COPY docker/entrypoint.sh docker/wait-server.mjs docker/wait-page.html docker/check-backend-ready.mjs ./docker/
+RUN chmod +x /app/docker/entrypoint.sh
+
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-CMD ["sh", "-c", "test -x node_modules/.bin/jest || npm install && npm run test:run && npm run lint && npm run build && npm run dev"]
+
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

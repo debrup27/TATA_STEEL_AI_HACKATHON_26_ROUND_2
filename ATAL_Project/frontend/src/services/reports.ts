@@ -24,8 +24,11 @@ export interface PlantKpis {
   period_days: number;
 }
 
-export async function fetchReports(): Promise<ReportItem[]> {
-  const rows = await apiList<BackendReport>("/api/v1/reports/");
+export async function fetchReports(opts?: { report_type?: string }): Promise<ReturnType<typeof mapReportListItem>[]> {
+  const params = new URLSearchParams();
+  if (opts?.report_type) params.set("report_type", opts.report_type);
+  const qs = params.toString();
+  const rows = await apiList<BackendReport>(`/api/v1/reports/${qs ? `?${qs}` : ""}`);
   return rows.map(mapReportListItem);
 }
 

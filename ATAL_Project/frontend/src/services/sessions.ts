@@ -1,6 +1,7 @@
 import { apiJson, apiList } from "@/lib/api";
 import {
   mapChatSession,
+  resolveSessionTitle,
   type BackendChatSession,
   type BackendChatMessage,
 } from "@/lib/mappers";
@@ -19,12 +20,26 @@ export async function fetchSessionDetail(sessionId: string): Promise<ChatSession
   return mapChatSession(detail, detail.messages ?? []);
 }
 
-export async function createSession(assetId?: string, title?: string): Promise<ChatSession> {
+export async function createSession(
+  assetId?: string,
+  metadata?: Record<string, unknown> | string,
+): Promise<ChatSession> {
+  const meta =
+    typeof metadata === "string"
+      ? { title: metadata }
+      : (metadata ?? {});
+  const title =
+    typeof metadata === "string"
+      ? metadata
+      : typeof meta.title === "string"
+        ? meta.title
+        : undefined;
+
   const res = await apiJson<{ id: string }>("/api/v1/chat/sessions/", {
     method: "POST",
     body: JSON.stringify({
       asset_id: assetId ?? null,
-      metadata: title ? { title } : {},
+      metadata: meta,
     }),
   });
   return {
@@ -65,6 +80,14 @@ export async function persistSessions(_sessions?: ChatSession[]): Promise<void> 
 export function deleteSession(sessionId: string, sessions: ChatSession[]): ChatSession[] {
   void deleteSessionRemote(sessionId).catch(() => undefined);
   return sessions.filter((s) => s.id !== sessionId);
+}
+
+export async function compactChatSession(
+  sessionId: string,
+): Promise<{ status: string }> {
+  return apiJson(`/api/v1/chat/sessions/${sessionId}/compact/`, {
+    method: "POST",
+  });
 }
 
 export async function sendChatMessage(

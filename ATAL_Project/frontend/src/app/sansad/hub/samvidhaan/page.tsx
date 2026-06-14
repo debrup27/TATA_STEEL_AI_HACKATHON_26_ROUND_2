@@ -8,75 +8,58 @@ import ClickSpark from "@/animations/ClickSpark";
 import LogoLoop from "@/animations/LogoLoop";
 import NodeWorkflow from "@/components/NodeWorkflow";
 import BottomSplitCard from "./components/BottomSplitCard";
+import { useNotificationFeed } from "@/hooks/useNotificationFeed";
+import { fetchDiagnostics } from "@/services/diagnostics";
+import { fetchPlantKpis } from "@/services/reports";
+import type { DiagnosticAsset } from "@/services/sansadOutputs";
 
-const graphsTickerLogos = [
-  { text: "VIBRATION SPECTRA: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "RUL PROJECTION: 14d TREND", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "DEGRADATION MODEL: NOMINAL", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "ANOMALY FREQ: 0.02%", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const maintenanceTickerLogos = [
-  { text: "REPLACE BEARING: RAISING WO", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "SPARE PARTS: SIGNED & RESERVED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "CALIBRATION SOP: INSTALLED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "ALIGNMENT CALENDAR: SYNCED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const reportsTickerLogos = [
-  { text: "DIAGNOSTIC REPORT: SENT", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "SUPERVISOR OVERLAY: APPROVED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "DIGITAL LOG: MR-2024-441 SYNCED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "SAFETY MATRIX: 100% PASS", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-
-
-
-
-
-const manasTickerLogos = [
-  { text: "RAG DATABASE: SYNCED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "LATENCY: 12ms", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "COG_REASONING: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "ANOMALY ALERTS DISPATCHED", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
-
-const samvidhaanTickerLogos = [
-  { text: "SYSTEM: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "RUL_AVG: 1,162h", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "SAFETY COMPLIANCE: 100%", isSeparator: false },
-  { text: "✦", isSeparator: true },
-  { text: "POLICIES ENFORCED: ACTIVE", isSeparator: false },
-  { text: "✦", isSeparator: true },
-];
+const FALLBACK_TICKER = [{ text: "Awaiting live feed…", isSeparator: false }];
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SamvidhaanPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const { tickers: liveTickers } = useNotificationFeed(undefined, 30_000);
+  const sectionTickers = liveTickers.length >= 2 ? liveTickers : FALLBACK_TICKER;
+
+  const [f1Asset, setF1Asset] = useState<DiagnosticAsset | null>(null);
+  const [f2Asset, setF2Asset] = useState<DiagnosticAsset | null>(null);
+  const [plantKpis, setPlantKpis] = useState<{ avgRulH?: number; health?: number }>({});
 
   const [activeFactoryModal, setActiveFactoryModal] = useState<"f1" | "f2" | null>(null);
 
+  useEffect(() => {
+    fetchDiagnostics()
+      .then((assets) => {
+        setF1Asset(assets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? assets[0] ?? null);
+        setF2Asset(assets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? assets[1] ?? null);
+      })
+      .catch(() => undefined);
+    fetchPlantKpis()
+      .then((k) => {
+        setPlantKpis({
+          avgRulH: k.avg_asset_rul_hours ?? undefined,
+          health: k.plant_health_score ?? undefined,
+        });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const samvidhaanTickerLogos = [
+    ...(plantKpis.health != null
+      ? [{ text: `PLANT HEALTH: ${Math.round(plantKpis.health)}%`, isSeparator: false }, { text: "✦", isSeparator: true }]
+      : []),
+    ...(plantKpis.avgRulH != null
+      ? [{ text: `RUL AVG: ${Math.round(plantKpis.avgRulH)}h`, isSeparator: false }, { text: "✦", isSeparator: true }]
+      : []),
+    ...sectionTickers,
+  ];
+
+  const readSensor = (asset: DiagnosticAsset | null, match: RegExp) => {
+    const row = asset?.sensors.find((s) => match.test(s.label.toLowerCase()));
+    return row?.value?.replace(/[^\d.]/g, "") ?? "—";
+  };
 
 
   // Drag coordinates for the 4 nodes
@@ -461,14 +444,14 @@ export default function SamvidhaanPage() {
                   <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
                     <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Exhauster Vibration</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">6.42</span>
+                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f1Asset, /vib/)}</span>
                       <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">mm/s</span>
                     </div>
                   </div>
                   <div className="flex flex-col bg-rose-50 rounded-xl px-4 py-2.5 border border-rose-100">
                     <span className="text-[9px] font-mono font-semibold text-rose-400 uppercase tracking-widest mb-1">Bearing RUL ⚠</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-rose-600 leading-none">14</span>
+                      <span className="text-[32px] font-mono font-extrabold text-rose-600 leading-none">{f1Asset?.rulDays ?? "—"}</span>
                       <span className="text-[13px] font-mono font-bold text-rose-400 mb-0.5">days</span>
                     </div>
                   </div>
@@ -537,21 +520,21 @@ export default function SamvidhaanPage() {
                   <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
                     <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">FeO Content</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">8.3</span>
+                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f2Asset, /feo/)}</span>
                       <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">%</span>
                     </div>
                   </div>
                   <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
                     <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Strand Speed</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">3.1</span>
+                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f2Asset, /strand|speed/)}</span>
                       <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">m/min</span>
                     </div>
                   </div>
                   <div className="flex flex-col bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[9px] font-mono font-semibold text-amber-500 uppercase tracking-widest mb-1">Waste Fan RUL</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-amber-600 leading-none">18</span>
+                      <span className="text-[32px] font-mono font-extrabold text-amber-600 leading-none">{f2Asset?.rulDays ?? "—"}</span>
                       <span className="text-[13px] font-mono font-bold text-amber-400 mb-0.5">days</span>
                     </div>
                   </div>
@@ -683,7 +666,7 @@ export default function SamvidhaanPage() {
                   <div className="flex flex-col gap-2 mt-auto w-full no-drag">
                     <div className="overflow-hidden border-t border-[#1b253c]/8 pt-2">
                       <LogoLoop
-                        logos={manasTickerLogos}
+                        logos={sectionTickers}
                         speed={22}
                         direction="left"
                         logoHeight={13}
@@ -795,19 +778,19 @@ export default function SamvidhaanPage() {
               href="/sansad/hub/samvidhaan/graphs"
               title="Graphs"
               description="Predictive lifecycle tracking, exhauster vibration spectral graphs, and degradation trendlines."
-              logos={graphsTickerLogos}
+              logos={sectionTickers}
             />
             <BottomSplitCard
-              href="/sansad/hub/samvidhaan/maintenance"
-              title="Maintenance"
-              description="Step-by-step SOP repairs, immediate action checklists, and optimized spare parts procurement strategy."
-              logos={maintenanceTickerLogos}
+              href="/sansad/hub/samvidhaan/legend"
+              title="Legend"
+              description="Site-wide glossary — abbreviations, ISO terms, role meanings, and equipment keywords."
+              logos={sectionTickers}
             />
             <BottomSplitCard
               href="/sansad/hub/samvidhaan/reports"
               title="Reports"
               description="Engineering decision summaries, supervisor sign-offs, abnormal incident alerts, and digital logbook."
-              logos={reportsTickerLogos}
+              logos={sectionTickers}
             />
           </div>
 

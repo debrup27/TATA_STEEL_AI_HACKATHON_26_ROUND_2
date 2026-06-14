@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiList } from "@/lib/api";
 import type { FlowNode } from "@/components/workflow/types";
 
@@ -50,9 +50,15 @@ function alertSeverity(sev?: string): CanvasAlertMessage["severity"] {
   return "info";
 }
 
-/** Live system + predictive messages for all assets on the factory canvas. */
+const MAX_VISIBLE = 3;
+const ROTATE_INTERVAL_MS = 4500;
+
+/** Fallback alerts removed — canvas shows empty state when backend has no alerts. */
+/** Live system + predictive messages for all assets on the factory canvas, cycling every few seconds. */
 export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] {
-  const [messages, setMessages] = useState<CanvasAlertMessage[]>([]);
+  const [allMessages, setAllMessages] = useState<CanvasAlertMessage[]>([]);
+  const [offset, setOffset] = useState(0);
+  const offsetRef = useRef(0);
 
   const nodeKey = nodes.map((n) => n.id).join(",");
 
@@ -138,16 +144,37 @@ export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] 
         return 3;
       };
       next.sort((a, b) => rank(a) - rank(b));
-      setMessages(next.slice(0, 6));
+
+      setAllMessages(next);
+      offsetRef.current = 0;
+      setOffset(0);
     };
 
     void load();
-    const interval = setInterval(() => void load(), 10_000);
+    const interval = setInterval(() => void load(), 15_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [nodeKey, nodes]);
+  }, [nodeKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return nodes.length ? messages : [];
+  // Rotate visible window independently of API refetch
+  useEffect(() => {
+    if (allMessages.length <= MAX_VISIBLE) return;
+    const timer = setInterval(() => {
+      offsetRef.current = (offsetRef.current + 1) % allMessages.length;
+      setOffset(offsetRef.current);
+    }, ROTATE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [allMessages.length]);
+
+  if (!nodes.length || !allMessages.length) return [];
+
+  // Slice a rotating window of MAX_VISIBLE from the full list
+  const total = allMessages.length;
+  const visible: CanvasAlertMessage[] = [];
+  for (let i = 0; i < Math.min(MAX_VISIBLE, total); i++) {
+    visible.push(allMessages[(offset + i) % total]);
+  }
+  return visible;
 }
