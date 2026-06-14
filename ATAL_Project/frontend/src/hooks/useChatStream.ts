@@ -25,6 +25,8 @@ export function useChatStream({
 }: UseChatStreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const wsReadyRef = useRef<Promise<void> | null>(null);
+  const wsReadyResolveRef = useRef<(() => void) | null>(null);
   const onTokenRef = useRef(onToken);
   const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
@@ -50,6 +52,11 @@ export function useChatStream({
   useEffect(() => {
     if (!sessionId) return;
     wsRef.current?.close();
+    let readyResolve: () => void;
+    wsReadyRef.current = new Promise<void>((resolve) => {
+      readyResolve = resolve;
+    });
+    wsReadyResolveRef.current = readyResolve!;
     const ws = connectWebSocket(
       `/ws/chat/${sessionId}/`,
       (data) => {
@@ -85,6 +92,9 @@ export function useChatStream({
         onErrorRef.current?.();
       },
     );
+    ws.onopen = () => {
+      wsReadyResolveRef.current?.();
+    };
     wsRef.current = ws;
     return () => {
       ws.close();
@@ -108,10 +118,27 @@ export function useChatStream({
     setIsStreaming(false);
   }, [clearStreamTimeout]);
 
+  const waitUntilReady = useCallback(async () => {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const p = wsReadyRef.current;
+      if (p && wsRef.current?.readyState === WebSocket.OPEN) {
+        await p;
+        return;
+      }
+      if (p) {
+        await Promise.race([p, new Promise((r) => setTimeout(r, 100))]);
+        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }, []);
+
   return {
     isStreaming,
     start,
     reset,
+    waitUntilReady,
     isLoading: isStreaming,
     showProcessing: isStreaming,
     currentStep: 0,

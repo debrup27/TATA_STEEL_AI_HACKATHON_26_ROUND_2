@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState, useRef } from "react";
+import { flushSync } from "react-dom";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
@@ -382,7 +383,10 @@ export default function ManasChatPage() {
       const created = await createSession(undefined, messageText.slice(0, 40) || "New Chat");
       targetId = created.id;
       setSessions((prev) => [...prev, created]);
-      setActiveSessionId(created.id);
+      flushSync(() => {
+        setActiveSessionId(created.id);
+      });
+      await chatSim.waitUntilReady();
     }
 
     thinkingSessionIdRef.current = targetId;
@@ -408,6 +412,7 @@ export default function ManasChatPage() {
 
     chatSim.start();
     try {
+      await chatSim.waitUntilReady();
       await sendChatMessage(targetId, messageText, ragCollectionsFromDocs(ragNames));
     } catch {
       setSessions((prev) =>

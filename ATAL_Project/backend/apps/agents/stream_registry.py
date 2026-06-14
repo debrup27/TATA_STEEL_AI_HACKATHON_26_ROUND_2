@@ -17,7 +17,9 @@ import threading
 from typing import Optional
 
 _registry: dict[str, tuple[asyncio.Queue, asyncio.AbstractEventLoop]] = {}
+_pending: dict[str, list[dict]] = {}
 _lock = threading.Lock()
+_MAX_PENDING = 500
 
 
 def register_stream(
@@ -27,12 +29,19 @@ def register_stream(
     q: asyncio.Queue = asyncio.Queue()
     with _lock:
         _registry[session_id] = (q, loop)
+        backlog = _pending.pop(session_id, [])
+    for event in backlog:
+        try:
+            loop.call_soon_threadsafe(q.put_nowait, event)
+        except Exception:
+            pass
     return q
 
 
 def unregister_stream(session_id: str) -> None:
     with _lock:
         entry = _registry.pop(session_id, None)
+        _pending.pop(session_id, None)
     if entry:
         # Unblock any pending drain by pushing a sentinel
         q, loop = entry
@@ -43,12 +52,16 @@ def unregister_stream(session_id: str) -> None:
 
 
 def send_to_stream(session_id: str, event: dict) -> bool:
-    """Thread-safe. Returns True if the event was queued for the consumer."""
+    """Thread-safe. Returns True if queued (live consumer or short-term buffer)."""
     with _lock:
         entry = _registry.get(session_id)
-    if entry is None:
-        return False
-    q, loop = entry
+        if entry is None:
+            buf = _pending.setdefault(session_id, [])
+            buf.append(event)
+            if len(buf) > _MAX_PENDING:
+                del buf[: len(buf) - _MAX_PENDING]
+            return True
+        q, loop = entry
     try:
         loop.call_soon_threadsafe(q.put_nowait, event)
         return True

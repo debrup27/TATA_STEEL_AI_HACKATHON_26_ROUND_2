@@ -265,6 +265,31 @@ class Command(BaseCommand):
         except Exception as e:
             fail("Chat session create", str(e))
 
+        # ── 13b. MANAS chat reply (Ollama native /api/chat) ───────────────────
+        if chat_session_id and token:
+            try:
+                from apps.agents.models import ChatSession, ChatMessage
+                from apps.agents.tasks import run_chat_logic
+
+                session = ChatSession.objects.get(id=chat_session_id)
+                msg = ChatMessage.objects.create(
+                    session=session, role="user", content="Reply with the word OK only."
+                )
+                result = run_chat_logic(str(chat_session_id), str(msg.id), [])
+                assistant = (
+                    ChatMessage.objects.filter(session=session, role="assistant")
+                    .order_by("-timestamp")
+                    .first()
+                )
+                if result.get("status") == "ok" and assistant and assistant.content.strip():
+                    ok(f"MANAS chat reply — {len(assistant.content)} chars")
+                elif result.get("status") == "error":
+                    fail("MANAS chat reply", result.get("error", "unknown"))
+                else:
+                    fail("MANAS chat reply", "empty assistant content")
+            except Exception as e:
+                fail("MANAS chat reply", str(e))
+
         # ── 14. Consolidation trigger ─────────────────────────────────────────
         if asset_id and token:
             try:

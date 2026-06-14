@@ -9,7 +9,6 @@ import LogoLoop, { LogoItem } from "../animations/LogoLoop";
 import ClickSpark from "../animations/ClickSpark";
 import AtalDisplayModal from "../components/AtalDisplayModal";
 import AtalDeveloperSection from "../components/AtalDeveloperSection";
-import AtalVideoSection from "../components/AtalVideoSection";
 import AtalBottomBanner from "../components/AtalBottomBanner";
 import AtalFooter from "../components/AtalFooter";
 import { triggerPageTransition } from "../animations/PageTransition";
@@ -212,7 +211,6 @@ export default function Home() {
 
           {/* New Sections rendered below the modal and hands container */}
           <AtalDeveloperSection />
-          <AtalVideoSection />
           <AtalBottomBanner />
         </div>
       </div>

@@ -87,18 +87,36 @@ def run_chat_logic(session_id: str, user_message_id: str, rag_collections: list)
 
     from apps.agents.stream_registry import send_to_stream
 
-    channel_layer = get_channel_layer()
     group_name = f"llm_stream_{session_id}"
+    channel_layer = None  # lazy — primary path uses in-process stream_registry
+
+    def _get_channel_layer():
+        nonlocal channel_layer
+        if channel_layer is False:
+            return None
+        if channel_layer is not None:
+            return channel_layer
+        try:
+            channel_layer = get_channel_layer()
+        except Exception as exc:
+            logger.warning("channel_layer init failed: %s", exc)
+            channel_layer = False
+            return None
+        return channel_layer
 
     def _send(event: dict):
         # Primary: in-process asyncio.Queue (no Redis round-trip, no timeout)
-        delivered = send_to_stream(session_id, event)
-        if delivered:
+        if send_to_stream(session_id, event):
             return
-        logger.warning("send_to_stream: no queue for session %s (type=%s) — WS not connected?", session_id, event.get("type"))
-        if channel_layer:
+        logger.warning(
+            "send_to_stream: no queue for session %s (type=%s) — WS not connected?",
+            session_id,
+            event.get("type"),
+        )
+        cl = _get_channel_layer()
+        if cl:
             try:
-                async_to_sync(channel_layer.group_send)(group_name, event)
+                async_to_sync(cl.group_send)(group_name, event)
             except Exception as _e:
                 logger.warning("channel_layer fallback failed: %s", _e)
 
@@ -180,7 +198,7 @@ def run_chat_logic(session_id: str, user_message_id: str, rag_collections: list)
             {"content": m["content"]} for m in all_history if m["role"] in ("user", "assistant", "system")
         ]
         if should_compact(history_for_estimate):
-            compact_history(session_id, channel_layer, group_name)
+            compact_history(session_id)
 
         history = list(
             ChatMessage.objects.filter(session=session)
@@ -204,18 +222,16 @@ def run_chat_logic(session_id: str, user_message_id: str, rag_collections: list)
         input_tokens = 0
         output_tokens = 0
 
-        # ── Stream from Ollama ─────────────────────────────────────────────
-        # Retry up to 3× with backoff — qwen3.5:9b cold-starts in 60-120s
-        # and may disconnect on the first attempt while loading into VRAM.
+        # ── Stream from Ollama (native /api/chat — qwen3.5 puts output in reasoning on /v1)
         import time as _time
 
-        ollama_url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+        ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
         ollama_payload = {
             "model": model_name,
             "messages": [{"role": "system", "content": system_prompt}] + messages,
-            "max_tokens": 2048,
-            "temperature": 0.2,
             "stream": True,
+            "think": False,
+            "options": {"num_predict": 2048, "temperature": 0.2},
         }
 
         for _attempt in range(1, 4):
@@ -227,35 +243,29 @@ def run_chat_logic(session_id: str, user_message_id: str, rag_collections: list)
                         resp.raise_for_status()
                         logger.info("MANAS Ollama HTTP %s — streaming started session=%s", resp.status_code, session_id[:8])
                         for line in resp.iter_lines():
-                            if not line or not line.startswith("data: "):
+                            if not line:
                                 continue
-                            data_str = line[6:]
-                            if data_str.strip() == "[DONE]":
-                                break
                             try:
-                                chunk = json.loads(data_str)
+                                chunk = json.loads(line)
                             except json.JSONDecodeError:
                                 continue
-                            delta = chunk["choices"][0].get("delta", {})
-                            token = delta.get("content", "")
+                            token = chunk.get("message", {}).get("content", "")
                             if token:
                                 if _first_token:
                                     logger.info("MANAS first token received session=%s", session_id[:8])
                                     _first_token = False
                                 full_response += token
                                 _send({"type": "token", "token": token})
-                            usage = chunk.get("usage") or {}
-                            if usage:
-                                input_tokens = usage.get("prompt_tokens", 0)
-                                output_tokens = usage.get("completion_tokens", 0)
-                logger.info("MANAS Ollama done — %d tokens session=%s", len(full_response), session_id[:8])
-                break  # success — exit retry loop
+                            if chunk.get("done"):
+                                break
+                logger.info("MANAS Ollama done — %d chars session=%s", len(full_response), session_id[:8])
+                break
             except (httpx.RemoteProtocolError, httpx.ConnectError) as _retry_err:
                 if _attempt < 3:
                     logger.warning("Ollama attempt %d failed (%s) — retrying in 10s", _attempt, _retry_err)
                     _time.sleep(10)
                 else:
-                    raise  # re-raise on final attempt → caught by outer except
+                    raise
 
         # ── Persist assistant message ──────────────────────────────────────
         assistant_msg = ChatMessage.objects.create(

@@ -10,16 +10,16 @@ class Command(BaseCommand):
     help = "Smoke-test Ollama chat completion endpoint (P2-042)."
 
     def handle(self, *args, **options):
-        url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+        url = f"{settings.OLLAMA_BASE_URL}/api/chat"
         payload = {
             "model": settings.OLLAMA_MODEL,
             "messages": [
                 {"role": "system", "content": "You are a maintenance assistant. Reply in one sentence."},
                 {"role": "user", "content": "What is ISO 4406 hydraulic oil cleanliness code for servo systems?"},
             ],
-            "max_tokens": 128,
-            "temperature": 0.1,
+            "stream": False,
             "think": False,
+            "options": {"num_predict": 128, "temperature": 0.1},
         }
 
         try:
@@ -31,6 +31,9 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"P2-042 FAIL: Ollama unreachable — {exc}"))
             sys.exit(1)
 
-        content = data["choices"][0]["message"]["content"]
+        content = data.get("message", {}).get("content", "")
+        if not content.strip():
+            self.stderr.write(self.style.ERROR("P2-042 FAIL: Ollama returned empty content (check think=false)"))
+            sys.exit(1)
         self.stdout.write(self.style.SUCCESS("P2-042 PASS: Ollama chat completion OK"))
         self.stdout.write(f"Response preview: {content[:200]}...")

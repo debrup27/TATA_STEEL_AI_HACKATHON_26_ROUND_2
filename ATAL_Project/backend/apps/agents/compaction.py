@@ -36,14 +36,13 @@ def should_compact(messages: list[dict]) -> bool:
     return history_token_count(messages) > threshold
 
 
-def compact_history(session_id: str, channel_layer, group_name: str) -> int:
+def compact_history(session_id: str) -> int:
     """
     Summarise old messages, persist summary as a system ChatMessage, delete originals.
-    Sends WS events 'llm.compacting' / 'llm.compacted' to notify the frontend.
+    Notifies the frontend via stream_registry (compacting / compacted events).
     Returns the number of messages replaced.
     """
-    from asgiref.sync import async_to_sync
-
+    from apps.agents.stream_registry import send_to_stream
     from apps.agents.models import ChatMessage
     from django.conf import settings
 
@@ -60,11 +59,7 @@ def compact_history(session_id: str, channel_layer, group_name: str) -> int:
     if not to_compact:
         return 0
 
-    # Notify frontend — compaction starting
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {"type": "llm.compacting"},
-    )
+    send_to_stream(session_id, {"type": "compacting"})
 
     history_text = "\n".join(
         f"{m['role'].upper()}: {m['content']}" for m in to_compact
@@ -83,23 +78,21 @@ def compact_history(session_id: str, channel_layer, group_name: str) -> int:
 
     try:
         resp = httpx.post(
-            f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
+            f"{settings.OLLAMA_BASE_URL}/api/chat",
             json={
                 "model": settings.OLLAMA_MODEL,
                 "messages": [
                     {"role": "system", "content": _SUMMARY_SYSTEM},
                     {"role": "user", "content": history_text},
                 ],
-                "max_tokens": _SUMMARY_MAX_TOKENS,
-                "temperature": 0.1,
                 "stream": False,
                 "think": False,
-                "keep_alive": settings.OLLAMA_KEEP_ALIVE,
+                "options": {"num_predict": _SUMMARY_MAX_TOKENS, "temperature": 0.1},
             },
             timeout=120,
         )
         resp.raise_for_status()
-        summary = resp.json()["choices"][0]["message"]["content"].strip()
+        summary = resp.json().get("message", {}).get("content", "").strip()
     except Exception as exc:
         logger.warning("compaction_summary_failed session=%s error=%s", session_id, exc)
         summary = (
@@ -120,9 +113,6 @@ def compact_history(session_id: str, channel_layer, group_name: str) -> int:
     count = len(to_compact)
     logger.info("compacted session=%s messages=%d", session_id, count)
 
-    async_to_sync(channel_layer.group_send)(
-        group_name,
-        {"type": "llm.compacted", "compacted_count": count},
-    )
+    send_to_stream(session_id, {"type": "compacted", "compacted_count": count})
 
     return count

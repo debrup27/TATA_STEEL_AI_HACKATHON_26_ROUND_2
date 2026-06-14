@@ -112,15 +112,19 @@ DATABASES = {
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
 
 # --- Channels ---
+# socket_timeout belongs on each host entry (not top-level CONFIG) — channels-redis 4.x API.
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [REDIS_URL],
-            # Default socket_timeout is ~60s — too short for LLM inference.
-            # Set 600s so the WS consumer doesn't drop while waiting for Ollama.
-            "socket_timeout": 600,
-            "socket_connect_timeout": 5,
+            "hosts": [
+                {
+                    "address": REDIS_URL,
+                    # Default ~60s is too short when Ollama cold-starts during compaction/WS fallback.
+                    "socket_timeout": 600,
+                    "socket_connect_timeout": 5,
+                }
+            ],
         },
     },
 }

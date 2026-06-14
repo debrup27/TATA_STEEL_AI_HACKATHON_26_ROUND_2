@@ -2,420 +2,435 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { COPY_FEEDBACK_DURATION } from "@/lib/constants";
+import { triggerPageTransition } from "../animations/PageTransition";
 
-type LanguageTab = "Python" | "JavaScript" | "cURL";
-type CapabilityId = "copilot" | "predictive" | "rca" | "digitisation";
+type CapabilityId = "manas" | "sansad" | "rag" | "rul";
 
-interface CodeSnippet {
-  Python: string;
-  JavaScript: string;
-  cURL: string;
+// ─── MANAS panel ────────────────────────────────────────────────────────────
+
+function ManasPanelPreview() {
+  return (
+    <div className="flex flex-col gap-3 h-full overflow-hidden">
+      {/* User bubble */}
+      <div className="flex justify-end">
+        <div className="bg-zinc-900 text-white text-xs rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] leading-relaxed">
+          Hydraulic AGC cylinder pressure dropped to 180 bar during active roll force compensation.
+        </div>
+      </div>
+
+      {/* AI response card */}
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 mb-0.5">
+          <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center shrink-0">
+            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+          </div>
+          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">MANAS</span>
+        </div>
+
+        {/* Fault + confidence row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 flex-1 min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-widest text-red-400 mb-0.5">Probable Fault</p>
+            <p className="text-xs font-bold text-red-700 truncate">Internal cylinder seal failure</p>
+          </div>
+          <div className="flex flex-col items-center bg-red-600 text-white rounded-xl px-3 py-2 shrink-0">
+            <span className="text-[9px] font-black uppercase tracking-widest opacity-80">Risk</span>
+            <span className="text-xs font-black">CRITICAL</span>
+          </div>
+          <div className="flex flex-col items-center bg-zinc-100 rounded-xl px-3 py-2 shrink-0">
+            <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Conf.</span>
+            <span className="text-xs font-black text-zinc-800">87%</span>
+          </div>
+        </div>
+
+        {/* Evidence block */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-3.5 py-2.5">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <svg className="w-3 h-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+            <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Evidence · HAGCC Manual §4.3.2</span>
+          </div>
+          <p className="text-xs text-blue-800 leading-relaxed italic">
+            &ldquo;Operating pressure shall be maintained 220–260 bar. Drop below 200 bar indicates seal or accumulator fault.&rdquo;
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-white border border-zinc-100 rounded-xl px-3.5 py-2.5">
+          <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-1.5">Recommended Actions</p>
+          <div className="flex flex-col gap-1">
+            {[
+              { n: "1", text: "LOTO AGC circuit before inspection", urgent: true },
+              { n: "2", text: "Replace seal kit P/N HYD-2241-AG", urgent: false },
+              { n: "3", text: "Flush and refill to ISO VG 46 spec", urgent: false },
+            ].map((a) => (
+              <div key={a.n} className="flex items-start gap-2">
+                <span className={`text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${a.urgent ? "bg-red-100 text-red-600" : "bg-zinc-100 text-zinc-500"}`}>
+                  {a.n}
+                </span>
+                <span className={`text-xs leading-relaxed ${a.urgent ? "font-bold text-zinc-800" : "text-zinc-600"}`}>{a.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Source chips */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Sources</span>
+          {["HAGCC Manual §4.3.2", "ISO 4406:2021", "HAGCC SOP-07"].map((s) => (
+            <span key={s} className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-600 border border-zinc-200">
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
+
+// ─── SANSAD panel ────────────────────────────────────────────────────────────
+
+function SansadPanelPreview() {
+  const assets = [
+    { id: "SRF",   label: "Slab Reheat",     metric: "1248 °C", status: "ok" },
+    { id: "HHPD",  label: "Hi-P Descaler",   metric: "312 bar", status: "ok" },
+    { id: "FS",    label: "Finishing Stand",  metric: "8420 kN", status: "ok" },
+    { id: "HAGCC", label: "Hyd. AGC Cyl.",   metric: "181 bar", status: "critical" },
+    { id: "APT",   label: "Acid Pickle",      metric: "18.2%",   status: "warning" },
+    { id: "TCMS",  label: "Cold Mill",        metric: "94 kN",   status: "ok" },
+    { id: "CGP",   label: "Galvaniz. Pot",    metric: "460 °C",  status: "ok" },
+    { id: "HPAK",  label: "Air Knife",        metric: "5.8 bar", status: "ok" },
+  ];
+  const statusStyle: Record<string, string> = {
+    ok:       "bg-emerald-500",
+    warning:  "bg-amber-400",
+    critical: "bg-red-500 animate-pulse",
+  };
+  const badgeStyle: Record<string, string> = {
+    ok:       "bg-emerald-50 text-emerald-600 border-emerald-100",
+    warning:  "bg-amber-50 text-amber-600 border-amber-100",
+    critical: "bg-red-50 text-red-600 border-red-100",
+  };
+
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      <div className="grid grid-cols-2 gap-2.5">
+        {assets.map((a) => (
+          <div key={a.id} className="bg-white border border-zinc-100 rounded-xl p-3 flex flex-col gap-1.5 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] font-bold text-zinc-400 uppercase tracking-wider">{a.id}</span>
+              <span className={`w-2 h-2 rounded-full ${statusStyle[a.status]}`} />
+            </div>
+            <span className="font-mono text-sm font-black text-zinc-800 leading-none">{a.metric}</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] text-zinc-400 truncate">{a.label}</span>
+              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider border ${badgeStyle[a.status]}`}>
+                {a.status}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Alert strip */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+          <span className="text-xs font-bold text-red-700">HAGCC pressure 181 bar — below 200 bar threshold</span>
+        </div>
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+          <span className="text-xs font-semibold text-amber-700">APT acid concentration drift +0.4%/h</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── RAG panel ───────────────────────────────────────────────────────────────
+
+function RagPanelPreview() {
+  const results = [
+    {
+      rank: 1, score: 0.97, color: "bg-violet-600",
+      doc: "HAGCC Maintenance Manual", section: "§4.3.2",
+      excerpt: "Operating pressure shall be maintained between 220–260 bar. Drop below 200 bar indicates seal or accumulator fault.",
+    },
+    {
+      rank: 2, score: 0.94, color: "bg-violet-500",
+      doc: "HAGCC SOP-07", section: "Hydraulic System Checks",
+      excerpt: "Inspect accumulator pre-charge at 150 bar ± 5 bar during scheduled outage.",
+    },
+    {
+      rank: 3, score: 0.91, color: "bg-violet-400",
+      doc: "ISO 4406:2021", section: "Fluid Cleanliness",
+      excerpt: "Target cleanliness code ≤ 17/15/12 for servo hydraulic systems.",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 h-full">
+      {/* Query chip */}
+      <div className="flex items-center gap-2 bg-violet-50 border border-violet-100 rounded-xl px-3.5 py-2">
+        <svg className="w-3.5 h-3.5 text-violet-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <span className="text-xs font-bold text-violet-700">&ldquo;HAGCC seal pressure threshold&rdquo;</span>
+        <span className="ml-auto text-[9px] font-black text-violet-400 uppercase tracking-widest">BGE-M3 · BM25</span>
+      </div>
+
+      {/* Result cards */}
+      {results.map((r) => (
+        <div key={r.rank} className="bg-white border border-zinc-100 rounded-xl p-3.5 flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`text-[9px] font-black text-white px-1.5 py-0.5 rounded-md ${r.color}`}>#{r.rank}</span>
+            <span className="text-xs font-bold text-zinc-800 truncate">{r.doc}</span>
+            <span className="text-[9px] font-bold text-zinc-400 shrink-0">{r.section}</span>
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              <div className="w-12 h-1 rounded-full bg-zinc-100 overflow-hidden">
+                <div className={`h-full rounded-full ${r.color}`} style={{ width: `${r.score * 100}%` }} />
+              </div>
+              <span className="text-[9px] font-black text-zinc-500">{r.score}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-zinc-500 leading-relaxed italic">&ldquo;{r.excerpt}&rdquo;</p>
+        </div>
+      ))}
+
+      <div className="flex items-center gap-3 text-[9px] text-zinc-400 font-bold uppercase tracking-widest mt-auto">
+        <span>Reranker: bge-reranker-v2-m3</span>
+        <span className="ml-auto text-emerald-600">Precision ≥ 0.9 ✓</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── RUL panel ───────────────────────────────────────────────────────────────
+
+function RulPanelPreview() {
+  const assets = [
+    { id: "SRF",   rul: 91, conf: 0.88, risk: "low" },
+    { id: "HHPD",  rul: 55, conf: 0.83, risk: "low" },
+    { id: "FS",    rul: 38, conf: 0.79, risk: "medium" },
+    { id: "HAGCC", rul: 14, conf: 0.91, risk: "critical" },
+    { id: "APT",   rul: 27, conf: 0.76, risk: "high" },
+    { id: "TCMS",  rul: 62, conf: 0.85, risk: "low" },
+    { id: "CGP",   rul: 48, conf: 0.81, risk: "medium" },
+    { id: "HPAK",  rul: 73, conf: 0.87, risk: "low" },
+  ];
+  const riskStyle: Record<string, { bar: string; badge: string }> = {
+    low:      { bar: "bg-emerald-400", badge: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+    medium:   { bar: "bg-amber-400",   badge: "bg-amber-50 text-amber-700 border-amber-100" },
+    high:     { bar: "bg-orange-500",  badge: "bg-orange-50 text-orange-700 border-orange-100" },
+    critical: { bar: "bg-red-500",     badge: "bg-red-50 text-red-700 border-red-100" },
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5 h-full">
+      {assets.map((a) => {
+        const s = riskStyle[a.risk];
+        const pct = Math.min(100, (a.rul / 100) * 100);
+        return (
+          <div key={a.id} className="flex items-center gap-3 bg-white border border-zinc-100 rounded-xl px-3.5 py-2.5">
+            <span className="font-mono text-[10px] font-black text-zinc-500 w-10 shrink-0">{a.id}</span>
+            <div className="flex-1 flex flex-col gap-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-zinc-800">{a.rul} days</span>
+                <span className="text-[9px] text-zinc-400">conf {(a.conf * 100).toFixed(0)}%</span>
+              </div>
+              <div className="w-full h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${s.bar}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider border shrink-0 ${s.badge}`}>
+              {a.risk}
+            </span>
+          </div>
+        );
+      })}
+
+      <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2 mt-1">
+        <svg className="w-3.5 h-3.5 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span className="text-xs font-bold text-red-700">HAGCC — order seal kit P/N HYD-2241-AG now · 7-day lead time</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Capability config ────────────────────────────────────────────────────────
 
 interface CapabilityItem {
   id: CapabilityId;
   title: string;
+  panelLabel: string;
   description: string;
+  tag: string;
+  tagColor: string;
   icon: React.ReactNode;
-  snippets: CodeSnippet;
+  panel: React.ReactNode;
 }
 
+const capabilities: CapabilityItem[] = [
+  {
+    id: "manas",
+    title: "MANAS Diagnostic Chat",
+    panelLabel: "MANAS · Fault Diagnosis · HAGCC Asset",
+    description: "Multi-agent LLM reasoning over OEM manuals and SOPs. Source citations enforced on every response.",
+    tag: "AI WIZARD",
+    tagColor: "#f97316",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+    panel: <ManasPanelPreview />,
+  },
+  {
+    id: "sansad",
+    title: "SANSAD Live Telemetry",
+    panelLabel: "SANSAD · Live Telemetry · tick 1847",
+    description: "Real-time WebSocket stream from 8 production assets. Anomaly flags surface within one tick.",
+    tag: "DASHBOARD",
+    tagColor: "#3b82f6",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
+      </svg>
+    ),
+    panel: <SansadPanelPreview />,
+  },
+  {
+    id: "rag",
+    title: "RAG Document Retrieval",
+    panelLabel: "RAG · BGE-M3 + BM25 · top-3 results",
+    description: "BGE-M3 1024-dim + BM25 hybrid search over OEM manuals, SOPs, ISO standards. Reranker precision ≥ 0.9.",
+    tag: "RAG ENGINE",
+    tagColor: "#8b5cf6",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      </svg>
+    ),
+    panel: <RagPanelPreview />,
+  },
+  {
+    id: "rul",
+    title: "RUL Prediction Engine",
+    panelLabel: "ML Engine · RUL forecast · all assets",
+    description: "Remaining Useful Life models on degradation curves. Outputs risk class and spares procurement window.",
+    tag: "ML ENGINE",
+    tagColor: "#10b981",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+    panel: <RulPanelPreview />,
+  },
+];
+
+const bottomCards = [
+  {
+    title: "Self-Hosted",
+    description: "Full stack inside your plant network. No data leaves the facility. Docker Compose single-command deploy.",
+    icon: (
+      <svg className="w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+    chip: "Air-gapped",
+    chipStyle: "text-green-600 bg-green-50 border-green-100",
+  },
+  {
+    title: "Local LLM — Qwen 3.5",
+    description: "qwen3.5:9b via Ollama. No cloud inference, no token billing, no rate limits.",
+    icon: (
+      <svg className="w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+    chip: "On-premise",
+    chipStyle: "text-blue-600 bg-blue-50 border-blue-100",
+    codeSnippet: "ollama run qwen3.5:9b",
+  },
+  {
+    title: "Validated Test Gates",
+    description: "P2 gates: LLM smoke, BGE-M3 1024-dim, Reranker ≥ 0.9, ISO 4406 exact match.",
+    icon: (
+      <svg className="w-5 h-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    chip: "4/4 passing",
+    chipStyle: "text-emerald-600 bg-emerald-50 border-emerald-100",
+  },
+];
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function AtalDeveloperSection() {
-  const [activeCap, setActiveCap] = useState<CapabilityId>("copilot");
-  const [activeTab, setActiveTab] = useState<LanguageTab>("Python");
-  const [copied, setCopied] = useState(false);
-  const [sdkCopied, setSdkCopied] = useState(false);
-
-  const capabilities: CapabilityItem[] = [
-    {
-      id: "copilot",
-      title: "Agent Copilot",
-      description: "Autonomous troubleshooting and operations support.",
-      icon: (
-        <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-        </svg>
-      ),
-      snippets: {
-        Python: `from atal import ATALClient
-from atal.models import AnomalyReport
-
-# Initialize the developer client
-client = ATALClient(api_key="YOUR_API_KEY")
-
-# Start an autonomous troubleshooting session
-session = client.copilot.start_session(
-    asset_id="BF_TAPHOLE_DRILL",
-    symptom="Motor winding temperature exceeded 95°C",
-    telemetry={
-        "vibration_rms": 4.8,
-        "lubrication_pressure_bar": 1.2
-    }
-)
-
-# Fetch structured troubleshooting actions
-print("Status:", session.status)
-print("Root Cause:", session.root_cause)
-for action in session.recommended_actions:
-    print(f"- [{action.priority}] {action.description}")`,
-        JavaScript: `import { ATALClient } from "@atal/sdk";
-
-// Initialize the developer client
-const client = new ATALClient({ apiKey: "YOUR_API_KEY" });
-
-// Start an autonomous troubleshooting session
-const session = await client.copilot.startSession({
-  assetId: "BF_TAPHOLE_DRILL",
-  symptom: "Motor winding temperature exceeded 95°C",
-  telemetry: {
-    vibrationRms: 4.8,
-    lubricationPressureBar: 1.2
-  }
-});
-
-// Fetch structured troubleshooting actions
-console.log(\`Status: \${session.status}\`);
-console.log(\`Root Cause: \${session.rootCause}\`);
-session.recommendedActions.forEach((action) => {
-  console.log(\`- [\${action.priority}] \${action.description}\`);
-});`,
-        cURL: `curl -X POST https://api.atal.ai/v1/copilot/session \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "asset_id": "BF_TAPHOLE_DRILL",
-    "symptom": "Motor winding temperature exceeded 95°C",
-    "telemetry": {
-      "vibration_rms": 4.8,
-      "lubrication_pressure_bar": 1.2
-    }
-  }'
-
-# Response format:
-# {
-#   "session_id": "sess_99a818c7",
-#   "status": "active",
-#   "root_cause": "Bearing lubrication breakdown",
-#   "recommended_actions": [...]
-# }`
-      }
-    },
-    {
-      id: "predictive",
-      title: "Predictive Health",
-      description: "Anomaly detection and RUL forecast across assets.",
-      icon: (
-        <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z" />
-        </svg>
-      ),
-      snippets: {
-        Python: `from atal import ATALClient
-from atal.analytics import ForecastModel
-
-# Initialize the developer client
-client = ATALClient(api_key="YOUR_API_KEY")
-
-# Retrieve remaining useful life (RUL) & anomalies
-health = client.analytics.get_health(
-    asset_id="BF_TAPHOLE_DRILL",
-    include_forecast=True
-)
-
-print(f"RUL Estimate: {health.rul_days} days")
-print(f"Confidence Level: {health.confidence_score * 100}%")
-print(f"Anomaly Risk: {health.anomaly_score}")
-
-# Check degradation trends
-for trend in health.degradation_trends:
-    print(f"Metric: {trend.metric_name} | Rate: {trend.rate_of_change}")`,
-        JavaScript: `import { ATALClient } from "@atal/sdk";
-
-// Initialize the developer client
-const client = new ATALClient({ apiKey: "YOUR_API_KEY" });
-
-// Retrieve health analytics
-const health = await client.analytics.getHealth({
-  assetId: "BF_TAPHOLE_DRILL",
-  includeForecast: true
-});
-
-console.log(\`RUL Estimate: \${health.rulDays} days\`);
-console.log(\`Confidence: \${health.confidenceScore * 100}%\`);
-console.log(\`Anomaly Risk: \${health.anomalyScore}\`);
-
-// Check degradation trends
-health.degradationTrends.forEach((trend) => {
-  console.log(\`Metric: \${trend.metricName} | Rate: \${trend.rateOfChange}\`);
-});`,
-        cURL: `curl -X GET https://api.atal.ai/v1/analytics/health/BF_TAPHOLE_DRILL \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Accept: application/json"
-
-# Response format:
-# {
-#   "asset_id": "BF_TAPHOLE_DRILL",
-#   "rul_days": 14,
-#   "confidence_score": 0.89,
-#   "degradation_trends": [...]
-# }`
-      }
-    },
-    {
-      id: "rca",
-      title: "Root Cause Analysis",
-      description: "Deep diagnostics and fault tree mapping.",
-      icon: (
-        <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      ),
-      snippets: {
-        Python: `from atal import ATALClient
-from atal.rca import DiagnosticEngine
-
-# Initialize the developer client
-client = ATALClient(api_key="YOUR_API_KEY")
-
-# Run root cause analysis (RCA) on telemetry
-rca = client.rca.analyze(
-    event_id="EVT_9921_DRILL",
-    telemetry={"vibration": 4.8, "temp": 98.2},
-    depth="comprehensive"
-)
-
-print(f"Analysis Status: {rca.status}")
-print(f"Main Contributor: {rca.primary_contributor}")
-
-# List all possible failure modes
-for cause in rca.probable_causes:
-    print(f"{cause.name}: {cause.confidence}% confidence")
-    print(f"  Isolation steps: {cause.isolation_steps}")`,
-        JavaScript: `import { ATALClient } from "@atal/sdk";
-
-// Initialize the developer client
-const client = new ATALClient({ apiKey: "YOUR_API_KEY" });
-
-// Perform root cause analysis
-const rca = await client.rca.analyze({
-  eventId: "EVT_9921_DRILL",
-  telemetry: { vibration: 4.8, temp: 98.2 },
-  depth: "comprehensive"
-});
-
-console.log(\`Status: \${rca.status}\`);
-console.log(\`Main Contributor: \${rca.primaryContributor}\`);
-
-// List failure modes
-rca.probableCauses.forEach((cause) => {
-  console.log(\`\${cause.name}: \${cause.confidence}%\`);
-});`,
-        cURL: `curl -X POST https://api.atal.ai/v1/rca/analyze \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "event_id": "EVT_9921_DRILL",
-    "telemetry": {"vibration": 4.8, "temp": 98.2},
-    "depth": "comprehensive"
-  }'`
-      }
-    },
-    {
-      id: "digitisation",
-      title: "Manual Digitisation",
-      description: "Digitize maintenance manuals and search SOPs.",
-      icon: (
-        <svg className="w-5 h-5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-        </svg>
-      ),
-      snippets: {
-        Python: `from atal import ATALClient
-from atal.documents import ProcessingConfig
-
-# Initialize the developer client
-client = ATALClient(api_key="YOUR_API_KEY")
-
-# Upload and digitize equipment technical manuals
-result = client.documents.digitize(
-    file_path="./manuals/bf_taphole_drill.pdf",
-    document_type="manual",
-    enable_ocr=True,
-    extract_tables=True
-)
-
-print(f"Processed {result.pages_parsed} pages successfully.")
-print(f"Identified {len(result.tables_found)} structural tables.")
-print(f"Vector embeddings generated: {result.embeddings_count}")`,
-        JavaScript: `import { ATALClient } from "@atal/sdk";
-import fs from "fs";
-
-// Initialize the developer client
-const client = new ATALClient({ apiKey: "YOUR_API_KEY" });
-
-// Digitize manual document
-const manualStream = fs.createReadStream("./manuals/bf_taphole_drill.pdf");
-const result = await client.documents.digitize({
-  file: manualStream,
-  documentType: "manual",
-  enableOcr: true,
-  extractTables: true
-});
-
-console.log(\`Parsed \${result.pagesParsed} pages.\`);
-console.log(\`Found \${result.tablesFound.length} tables.\`);`,
-        cURL: `curl -X POST https://api.atal.ai/v1/documents/digitize \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -F "file=@./manuals/bf_taphole_drill.pdf" \\
-  -F "document_type=manual" \\
-  -F "enable_ocr=true" \\
-  -F "extract_tables=true"`
-      }
-    }
-  ];
-
-  const currentSnippet = capabilities.find((c) => c.id === activeCap)?.snippets[activeTab] || "";
-
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(currentSnippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), COPY_FEEDBACK_DURATION);
-  };
-
-  const handleCopySdk = () => {
-    navigator.clipboard.writeText("pip install atal-sdk");
-    setSdkCopied(true);
-    setTimeout(() => setSdkCopied(false), COPY_FEEDBACK_DURATION);
-  };
-
-  const syntaxHighlight = (code: string) => {
-    const lines = code.split("\n");
-    return lines.map((line, idx) => {
-      // Basic keyword replacement for high visual styling in light theme
-      const rendered = line
-        .replace(/(".*?")|('.*?')/g, '<span class="text-green-600 font-semibold">$1$2</span>')
-        .replace(/\b(from|import|const|let|await|new|return|for|in|print|console)\b/g, '<span class="text-purple-600 font-bold">$1</span>')
-        .replace(/\b(ATALClient|client|session|health|rca|result|document_type|file_path|asset_id|symptom|telemetry|event_id|include_forecast|enable_ocr|extract_tables|includeForecast|enableOcr|extractTables|ocr|tables)\b/g, '<span class="text-blue-600 font-semibold">$1</span>')
-        .replace(/(#.*|\/\/.*)/g, '<span class="text-zinc-400 italic">$1</span>');
-
-      return (
-        <div key={idx} className="flex leading-6 font-mono text-xs md:text-sm">
-          <span className="w-8 text-zinc-300 text-right select-none pr-4 font-mono">{idx + 1}</span>
-          <span className="text-zinc-700" dangerouslySetInnerHTML={{ __html: rendered }} />
-        </div>
-      );
-    });
-  };
+  const [activeCap, setActiveCap] = useState<CapabilityId>("manas");
+  const current = capabilities.find((c) => c.id === activeCap)!;
 
   return (
     <div className="w-full flex flex-col items-center justify-center p-4 mt-16 border-t border-zinc-100 pt-16">
       {/* Heading */}
       <div className="text-center mb-10 max-w-4xl px-4">
         <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-zinc-950 mb-2 leading-tight font-sans">
-          Build anything with <span className="text-blue-600">ATAL APIs</span>
+          What ATAL does,{" "}
+          <span className="text-blue-600">under the hood</span>
         </h2>
         <p className="text-sm md:text-base text-zinc-500 font-medium select-none">
-          Everything you need to add Asset Intelligence & Troubleshooting to your plant operations.
+          Real pipeline outputs — live telemetry to AI diagnosis to sourced recommendations.
         </p>
       </div>
 
-      {/* Main Grid: Left Panel & Right Panel (Expanded to max-w-6xl) */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full max-w-6xl">
-        
-        {/* Left Panel: Code Integration Widget (7 Columns) */}
-        <div className="lg:col-span-7 flex flex-col justify-between border border-zinc-100/80 rounded-3xl p-6 bg-zinc-50/20 relative min-h-[480px]">
-          <div>
-            {/* Title */}
-            <div className="flex items-center justify-between mb-4 select-none">
-              <h3 className="text-lg font-bold text-zinc-800 font-sans">
-                Add <span className="text-blue-600 font-bold">{capabilities.find(c => c.id === activeCap)?.title}</span> to your app in minutes
-              </h3>
+
+        {/* Left: live UI preview (7 cols) */}
+        <div className="lg:col-span-7 flex flex-col border border-zinc-100 rounded-3xl overflow-hidden bg-white shadow-sm">
+          {/* Browser-style top bar */}
+          <div className="flex items-center justify-between px-4 py-3 bg-zinc-50 border-b border-zinc-100 shrink-0 select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f56]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#ffbd2e]" />
+              <span className="w-2.5 h-2.5 rounded-full bg-[#27c93f]" />
             </div>
-
-            {/* Code Block Container */}
-            <div className="relative bg-zinc-50/70 rounded-2xl overflow-hidden border border-zinc-200/60 shadow-inner flex flex-col justify-between">
-              
-              {/* Header Bar inside Code Block */}
-              <div className="flex items-center justify-between px-4 py-2 bg-zinc-100/80 border-b border-zinc-200/50 select-none">
-                {/* Tabs */}
-                <div className="flex items-center gap-1.5">
-                  {([
-                    { name: "Python", icon: <svg className="w-3.5 h-3.5 text-blue-500" viewBox="0 0 110 110" fill="currentColor"><path d="M52.3 2C30 2 31.8 11.5 31.8 11.5l.1 9.8H53v2.8H21.5C9.8 24 2 32.3 2 44.5c0 12.3 9.4 11.8 9.4 11.8h8.4v-11c0-6.8 5.7-12.7 12.5-12.7h23.5V20.2s-.3-18.2-31.5-18.2zM57.7 108c22.3 0 20.5-9.5 20.5-9.5l-.1-9.8H57v-2.8h31.5c11.7 0 19.5-8.3 19.5-20.5 0-12.3-9.4-11.8-9.4-11.8h-8.4v11c0 6.8-5.7 12.7-12.5 12.7H64.2V89.8s.3 18.2 31.5 18.2z" /></svg> },
-                    { name: "JavaScript", icon: <div className="w-3.5 h-3.5 bg-yellow-400 text-black font-extrabold text-[9px] flex items-center justify-center rounded-sm leading-none">JS</div> },
-                    { name: "cURL", icon: <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M8 9l3 3-3 3m5 0h3" /></svg> }
-                  ] as { name: LanguageTab; icon: React.ReactNode }[]).map((tab) => {
-                    const isActive = activeTab === tab.name;
-                    return (
-                      <button
-                        key={tab.name}
-                        onClick={() => setActiveTab(tab.name)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer ${
-                          isActive ? "text-zinc-800 bg-white shadow-xs border border-zinc-200/30" : "text-zinc-500 hover:text-zinc-800"
-                        }`}
-                      >
-                        {tab.icon}
-                        <span>{tab.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Copy Button */}
-                <button
-                  onClick={handleCopyCode}
-                  className="flex items-center gap-1.5 hover:bg-zinc-200/50 text-zinc-500 hover:text-zinc-800 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-150 select-none cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <svg className="w-3.5 h-3.5 text-green-600 animate-scale-up" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span className="text-green-600 font-bold">Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                      </svg>
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Code Text lines wrapper with NO SCROLL (overflow-hidden) */}
-              <div className="relative h-[250px] overflow-hidden p-5 bg-white select-text">
-                <div className="font-mono overflow-hidden h-full pr-4 pb-12">
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={`${activeCap}-${activeTab}`}
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      transition={{ duration: 0.15 }}
-                    >
-                      {syntaxHighlight(currentSnippet)}
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-
-                {/* Fade out linear gradient overlay */}
-                <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white via-white/80 to-transparent pointer-events-none z-10" />
-              </div>
-
-            </div>
+            <span className="font-mono text-[10px] text-zinc-400 tracking-wide">{current.panelLabel}</span>
+            <button
+              onClick={() => triggerPageTransition(activeCap === "manas" || activeCap === "rag" ? "/manas" : "/sansad")}
+              className="text-[10px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
+            >
+              Open →
+            </button>
           </div>
 
-          {/* Action button at bottom */}
-          <div className="mt-6 flex justify-center">
-            <button className="bg-[#1b253c] hover:bg-blue-600 text-white font-bold text-xs md:text-sm px-8 py-3 rounded-full transition-all duration-300 shadow-md cursor-pointer transform hover:scale-105 active:scale-95">
-              Get your API key & get started
-            </button>
+          {/* Panel content */}
+          <div className="flex-1 p-5 overflow-hidden min-h-[420px] relative">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeCap}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                {current.panel}
+              </motion.div>
+            </AnimatePresence>
+            {/* bottom fade */}
+            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent pointer-events-none" />
           </div>
         </div>
 
-        {/* Right Panel: Capability Cards in a 2x2 Grid Layout */}
+        {/* Right: 2×2 capability cards (5 cols) */}
         <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-4 items-stretch select-none">
           {capabilities.map((item) => {
             const isSelected = activeCap === item.id;
@@ -423,36 +438,45 @@ console.log(\`Found \${result.tablesFound.length} tables.\`);`,
               <div
                 key={item.id}
                 onClick={() => setActiveCap(item.id)}
-                className={`relative flex flex-col justify-between p-5 rounded-3xl cursor-pointer transition-all duration-300 border min-h-[170px] ${
+                className={`relative flex flex-col justify-between p-5 rounded-3xl cursor-pointer transition-all duration-300 border min-h-[170px] overflow-hidden group ${
                   isSelected
                     ? "bg-white border-zinc-950 shadow-md ring-1 ring-zinc-950/5"
-                    : "bg-white border-zinc-100 hover:border-zinc-200/80 hover:bg-zinc-50/30"
-                } group overflow-hidden`}
+                    : "bg-white border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/50"
+                }`}
               >
-                {/* Visual bubble element on top right like reference screenshot */}
                 {isSelected && (
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-blue-300/20 via-orange-300/15 to-transparent rounded-full filter blur-lg pointer-events-none -z-10 animate-pulse" />
+                  <div
+                    className="absolute inset-0 pointer-events-none rounded-3xl"
+                    style={{ background: `radial-gradient(ellipse at top left, ${item.tagColor}18 0%, transparent 70%)` }}
+                  />
                 )}
 
-                {/* Top Row: Icon holder */}
-                <div
-                  className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center transition-transform duration-300 group-hover:scale-105 shadow-xs ${
-                    isSelected ? "bg-zinc-50" : "bg-zinc-50 group-hover:bg-white"
-                  }`}
-                >
-                  {React.cloneElement(item.icon as React.ReactElement<{ className?: string }>, {
-                    className: `w-5 h-5 transition-colors duration-300 ${isSelected ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-600"}`
-                  })}
+                <div className="flex items-start justify-between">
+                  <div
+                    className="w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center shadow-xs"
+                    style={{ backgroundColor: isSelected ? item.tagColor : "#f4f4f5" }}
+                  >
+                    {React.cloneElement(item.icon as React.ReactElement<{ className?: string }>, {
+                      className: `w-5 h-5 ${isSelected ? "text-white" : "text-zinc-400 group-hover:text-zinc-600"}`,
+                    })}
+                  </div>
+                  <span
+                    className="text-[9px] font-black tracking-[0.15em] uppercase px-2 py-1 rounded-md border"
+                    style={
+                      isSelected
+                        ? { color: item.tagColor, backgroundColor: `${item.tagColor}15`, borderColor: `${item.tagColor}30` }
+                        : { color: "#a1a1aa", backgroundColor: "#f4f4f5", borderColor: "#e4e4e7" }
+                    }
+                  >
+                    {item.tag}
+                  </span>
                 </div>
 
-                {/* Bottom Row: Text content */}
                 <div className="mt-4">
-                  <h4 className={`text-sm md:text-base font-bold transition-colors duration-200 ${isSelected ? "text-zinc-950" : "text-zinc-700 group-hover:text-zinc-900"}`}>
+                  <h4 className={`text-sm font-bold ${isSelected ? "text-zinc-950" : "text-zinc-700 group-hover:text-zinc-900"}`}>
                     {item.title}
                   </h4>
-                  <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1">
-                    {item.description}
-                  </p>
+                  <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1">{item.description}</p>
                 </div>
               </div>
             );
@@ -460,64 +484,30 @@ console.log(\`Found \${result.tablesFound.length} tables.\`);`,
         </div>
       </div>
 
-      {/* Bottom Row of 3 Cards (Expanded to max-w-6xl) */}
+      {/* Bottom 3 cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl mt-8 select-none">
-        
-        {/* Card 1: REST API */}
-        <div className="bg-white rounded-3xl p-6 border border-zinc-100 hover:border-zinc-200 hover:shadow-md transition-all duration-300 flex flex-col justify-between min-h-[140px]">
-          <div>
-            <h4 className="text-base font-bold text-zinc-900">REST API</h4>
-            <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1.5">
-              Clean, well-documented endpoints for seamless operations and MES system integrations.
-            </p>
+        {bottomCards.map((card) => (
+          <div
+            key={card.title}
+            className="bg-white rounded-3xl p-6 border border-zinc-100 hover:border-zinc-200 hover:shadow-md transition-all duration-300 flex flex-col justify-between min-h-[140px]"
+          >
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                {card.icon}
+                <span className={`text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-md border ${card.chipStyle}`}>
+                  {card.chip}
+                </span>
+              </div>
+              <h4 className="text-base font-bold text-zinc-900">{card.title}</h4>
+              <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1.5">{card.description}</p>
+            </div>
+            {card.codeSnippet && (
+              <div className="mt-4 bg-zinc-50 border border-zinc-100 rounded-xl px-3.5 py-2">
+                <code className="text-[11px] font-mono text-zinc-600 font-bold select-all">{card.codeSnippet}</code>
+              </div>
+            )}
           </div>
-        </div>
-
-        {/* Card 2: Python SDK */}
-        <div className="bg-white rounded-3xl p-6 border border-zinc-100 hover:border-zinc-200 hover:shadow-md transition-all duration-300 flex flex-col justify-between min-h-[140px]">
-          <div>
-            <h4 className="text-base font-bold text-zinc-900">Python SDK</h4>
-            <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1.5">
-              Integrate in Python environments with a simple package.
-            </p>
-          </div>
-          
-          <div className="mt-4 flex items-center justify-between bg-zinc-50 border border-zinc-100 rounded-xl px-3.5 py-2">
-            <code className="text-[11px] font-mono text-zinc-600 font-bold select-all">
-              pip install atal-sdk
-            </code>
-            <button
-              onClick={handleCopySdk}
-              className="text-zinc-400 hover:text-blue-600 transition-colors duration-150 cursor-pointer"
-              aria-label="Copy SDK Install Command"
-            >
-              {sdkCopied ? (
-                <span className="text-[10px] font-bold text-green-500">Copied!</span>
-              ) : (
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Card 3: Playground */}
-        <div className="bg-white rounded-3xl p-6 border border-zinc-100 hover:border-zinc-200 hover:shadow-md transition-all duration-300 flex flex-col justify-between min-h-[140px]">
-          <div>
-            <h4 className="text-base font-bold text-zinc-900">Playground</h4>
-            <p className="text-xs text-zinc-400 font-medium leading-relaxed mt-1.5">
-              Interact with models and simulate sensor anomalies live in the sandbox.
-            </p>
-          </div>
-          <div className="mt-4 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer self-start flex items-center gap-1 group">
-            <span>Test in browser</span>
-            <svg className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
-        </div>
-
+        ))}
       </div>
     </div>
   );
