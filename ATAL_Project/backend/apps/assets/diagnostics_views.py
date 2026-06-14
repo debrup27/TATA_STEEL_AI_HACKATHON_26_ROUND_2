@@ -4,7 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 
 from apps.assets.models import Asset
-from apps.assets.diagnostics_service import build_diagnostic, list_diagnostics
+from apps.assets.diagnostics_service import build_diagnostic
+from apps.assets.plant_snapshot import build_plant_snapshot
 from apps.agents.diagnostics_insight import (
   generate_rca_overview_insight,
   generate_defect_correlation_insight,
@@ -16,8 +17,8 @@ class DiagnosticsListView(APIView):
 
   def get(self, request):
     factory_id = request.query_params.get("factory_id")
-    data = list_diagnostics(factory_id=factory_id)
-    return Response({"assets": data, "count": len(data)})
+    snap = build_plant_snapshot(factory_id=factory_id)
+    return Response({"assets": snap["assets"], "count": snap["count"]})
 
 
 class DiagnosticsDetailView(APIView):
@@ -72,6 +73,7 @@ class DiagnosticsRcaInsightView(APIView):
         health=int(diag.get("health", 0)),
         rul_days=diag.get("rulDays"),
         root_causes=diag.get("rootCauses", []),
+        sensors=diag.get("sensors", []),
         early_warning=diag.get("earlyWarning"),
       )
     except Exception as exc:
@@ -106,6 +108,7 @@ class DiagnosticsDefectInsightView(APIView):
         stage=diag.get("stage", asset.asset_type),
         probable_fault=diag.get("probableFault", ""),
         process_defects=diag.get("processDefects", []),
+        sensors=diag.get("sensors", []),
         cascade_risk=diag.get("cascadeRisk"),
       )
     except Exception as exc:

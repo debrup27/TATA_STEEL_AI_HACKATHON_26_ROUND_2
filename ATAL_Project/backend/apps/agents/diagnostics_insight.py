@@ -1,100 +1,146 @@
-"""Inline diagnostics insights — 0.8b routes context, MANAS 9B answers in-page (no chat session)."""
+"""Inline diagnostics insights — fast 0.8b with deterministic fallback (always returns text)."""
 from __future__ import annotations
 
-import json
 import logging
+import os
 
 import httpx
 from django.conf import settings
 
-from apps.agents.graph.agents import _call_small_model
+from apps.agents.ollama_warmup import ollama_keep_alive_value
 
 logger = logging.getLogger(__name__)
 
-_ROUTER_SYSTEM = """You are SANSAD's diagnostics router (qwen3.5:0.8b) in the ATAL LangGraph stack.
-Given live asset diagnostics, craft a focused brief for MANAS (9B) to answer inline on the Diagnostics page.
-
-Output ONLY valid JSON:
-{
-  "insight_angle": "One sentence — what the operator needs to understand",
-  "manas_prompt": "2–4 sentences instructing MANAS what to explain. Include asset, fault/defects, sensors, and desired analysis. No preamble."
-}
+_INSIGHT_SYSTEM = """You are MANAS on the SANSAD Diagnostics page (Tata Steel ATAL).
+Write a concise operational insight in 3–5 plain sentences for a plant engineer.
 
 Rules:
-- Steel-plant scope only (SRF, HHPD, FS, HAGCC, APT, TCMS, CGP, HPAK).
-- Do NOT answer yourself — only route to MANAS.
-"""
-
-_MANAS_INLINE_SYSTEM = """You are MANAS, Tata Steel ATAL maintenance engineer.
-The operator is on the SANSAD Diagnostics page — answer inline in 3–6 sentences.
-
-Rules:
-- Be specific: cite sensors, stages, percentages, and causal links from the context.
-- Actionable: what it means, what to verify, urgency if any.
-- No markdown headers, no chat greetings, no mention of sessions or chat IDs.
-- If the asset is in normal operation, say so briefly and note what to keep monitoring.
+- Cite specific sensor names, percentages, stages, and fault labels from the context.
+- Explain what it means, causal link, and what to verify next.
+- No greetings, no markdown headers, no mention of chat or sessions.
+- Always produce at least three sentences of substance.
 """
 
 
-def _parse_router_json(raw: str) -> dict | None:
-    if "{" not in raw:
-        return None
-    start = raw.find("{")
-    end = raw.rfind("}") + 1
-    try:
-        parsed = json.loads(raw[start:end])
-    except json.JSONDecodeError:
-        return None
-    prompt = (parsed.get("manas_prompt") or "").strip()
-    if not prompt:
-        return None
-    return {
-        "insight_angle": (parsed.get("insight_angle") or "Operational insight").strip(),
-        "manas_prompt": prompt,
-    }
+def _ollama_chat(model: str, system: str, user: str, *, max_tokens: int = 360) -> str:
+    if os.environ.get("OLLAMA_MOCK") == "1":
+        return ""
 
-
-def _call_manas_inline(user_prompt: str) -> str:
-    url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+    native = f"{settings.OLLAMA_BASE_URL}/api/chat"
     payload = {
-        "model": settings.OLLAMA_MODEL,
+        "model": model,
         "messages": [
-            {"role": "system", "content": _MANAS_INLINE_SYSTEM},
-            {"role": "user", "content": user_prompt},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        "max_tokens": 450,
-        "temperature": 0.15,
         "stream": False,
-        "think": False,
-        "keep_alive": settings.OLLAMA_KEEP_ALIVE,
+        "keep_alive": ollama_keep_alive_value(),
+        "options": {"num_predict": max_tokens, "temperature": 0.2},
     }
-    with httpx.Client(timeout=120) as client:
-        resp = client.post(url, json=payload, headers={"Content-Type": "application/json"})
+    with httpx.Client(timeout=90) as client:
+        resp = client.post(native, json=payload, headers={"Content-Type": "application/json"})
         resp.raise_for_status()
-    return (resp.json()["choices"][0]["message"].get("content") or "").strip()
+        msg = resp.json().get("message") or {}
+        content = (msg.get("content") or "").strip()
+        if _is_usable_insight(content):
+            return content
+
+    openai_url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+    openai_payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.2,
+        "stream": False,
+    }
+    with httpx.Client(timeout=90) as client:
+        resp = client.post(openai_url, json=openai_payload, headers={"Content-Type": "application/json"})
+        resp.raise_for_status()
+        choice = (resp.json().get("choices") or [{}])[0]
+        return ((choice.get("message") or {}).get("content") or "").strip()
 
 
-def _route_then_answer(context_blob: str, fallback_prompt: str) -> dict:
-    routed = None
-    try:
-        raw = _call_small_model(_ROUTER_SYSTEM, context_blob)
-        routed = _parse_router_json(raw)
-    except Exception as exc:
-        logger.warning("diagnostics router failed: %s", exc)
+def _is_usable_insight(text: str) -> bool:
+    if len(text) < 40:
+        return False
+    head = text[:120].lower()
+    if head.startswith("thinking") or "thinking process" in head:
+        return False
+    return True
 
-    manas_prompt = routed["manas_prompt"] if routed else fallback_prompt
-    angle = routed["insight_angle"] if routed else "Operational insight"
 
-    try:
-        insight = _call_manas_inline(manas_prompt)
-    except Exception as exc:
-        logger.error("inline manas insight failed: %s", exc)
-        raise
+def _sensor_lines(sensors: list[dict]) -> str:
+    if not sensors:
+        return "[no live sensor readings]"
+    return "\n".join(
+        f"- {s.get('label', 'sensor')}: {s.get('value', '—')} ({s.get('status', 'nominal')})"
+        for s in sensors[:3]
+    )
+
+
+def _template_rca_insight(
+    *,
+    asset_name: str,
+    probable_fault: str,
+    root_causes: list[dict],
+    sensors: list[dict],
+) -> str:
+    top = root_causes[0]
+    others = ", ".join(rc.get("factor", "") for rc in root_causes[1:3] if rc.get("factor"))
+    sensor_bit = ""
+    if sensors:
+        parts = [f"{s.get('label')}={s.get('value')}" for s in sensors[:3]]
+        sensor_bit = f" Key live readings: {', '.join(parts)}."
+    chain = f" Secondary factors: {others}." if others else ""
+    return (
+        f"On {asset_name}, {top.get('factor')} is the primary contributor ({int(float(top.get('weight', 0)) * 100)}%) "
+        f"to the current diagnosis: {probable_fault}.{sensor_bit}{chain} "
+        "Prioritise verifying envelope breaches on the top sensor, then confirm whether vibration or pressure trends align with the fault class before scheduling intervention."
+    )
+
+
+def _template_defect_insight(
+    *,
+    asset_name: str,
+    stage: str,
+    probable_fault: str,
+    process_defects: list[dict],
+) -> str:
+    links = "; ".join(
+        f"{d.get('stage')}: {d.get('defect')}"
+        for d in process_defects[:3]
+    )
+    return (
+        f"Cross-stage analysis for {asset_name} ({stage}) links upstream process deviations to the present condition ({probable_fault}). "
+        f"Flagged correlations: {links}. "
+        "These upstream envelope breaches can propagate through the production sequence — monitor the highest-influence upstream stage first and confirm whether local sensors on the target asset are reacting to the same disturbance."
+    )
+
+
+def _generate_insight(user_blob: str, template_fallback: str) -> dict:
+    insight = ""
+    router = "deterministic"
+
+    for model in (settings.OLLAMA_SMALL_MODEL,):
+        try:
+            text = _ollama_chat(model, _INSIGHT_SYSTEM, user_blob)
+            if _is_usable_insight(text):
+                insight = text
+                router = model
+                break
+        except Exception as exc:
+            logger.warning("insight model %s failed: %s", model, exc)
+
+    if not insight:
+        insight = template_fallback
 
     return {
-        "insight_angle": angle,
+        "insight_angle": "Operational insight",
         "insight": insight,
-        "router": "qwen3.5:0.8b → qwen3.5:9b",
+        "router": router,
     }
 
 
@@ -107,29 +153,33 @@ def generate_rca_overview_insight(
     health: int,
     rul_days: int | None,
     root_causes: list[dict],
+    sensors: list[dict] | None = None,
     early_warning: str | None = None,
 ) -> dict:
     if not root_causes:
         raise ValueError("no root causes to analyse")
 
+    sensors = sensors or []
     lines = "\n".join(
         f"- {rc.get('factor')} ({rc.get('weight', 0):.0%}): {rc.get('evidence', '')}"
         for rc in root_causes[:3]
     )
-    context = (
-        f"Task: Root Cause Analysis overview for {asset_name}\n"
-        f"Factory: {factory}\nStage: {stage}\nHealth: {health}%\n"
-        f"RUL: {rul_days or 'unknown'} days\n"
-        f"Diagnosis: {probable_fault or '[none]'}\n"
-        f"Early warning: {early_warning or '[none]'}\n"
-        f"Top causal factors:\n{lines}\n"
-        "MANAS should synthesise how these factors chain together and what to investigate first."
+    user_blob = (
+        f"Asset: {asset_name} ({factory}, {stage})\n"
+        f"Health: {health}% | RUL: {rul_days if rul_days is not None else 'unknown'} days\n"
+        f"Diagnosis: {probable_fault}\n"
+        f"Early warning: {early_warning or 'none'}\n"
+        f"Root causes:\n{lines}\n"
+        f"Live sensors:\n{_sensor_lines(sensors)}\n"
+        "Synthesise how these root causes chain together and what the operator should verify first."
     )
-    fallback = (
-        f"Explain how these root causes relate to the diagnosis on {asset_name}: {lines}. "
-        f"Current fault: {probable_fault}. Prioritise verification steps."
+    template = _template_rca_insight(
+        asset_name=asset_name,
+        probable_fault=probable_fault,
+        root_causes=root_causes,
+        sensors=sensors,
     )
-    return _route_then_answer(context, fallback)
+    return _generate_insight(user_blob, template)
 
 
 def generate_defect_correlation_insight(
@@ -139,25 +189,29 @@ def generate_defect_correlation_insight(
     stage: str,
     probable_fault: str,
     process_defects: list[dict],
+    sensors: list[dict] | None = None,
     cascade_risk: str | None = None,
 ) -> dict:
     if not process_defects:
         raise ValueError("no process defects to analyse")
 
+    sensors = sensors or []
     lines = "\n".join(
-        f"- {d.get('stage')}: {d.get('defect')} ({d.get('link', '')})"
+        f"- {d.get('stage')}: {d.get('defect')} | {d.get('link', '')}"
         for d in process_defects[:4]
     )
-    context = (
-        f"Task: Process defect cross-stage correlation for {asset_name}\n"
-        f"Factory: {factory}\nTarget stage: {stage}\n"
-        f"Current diagnosis: {probable_fault or '[none]'}\n"
+    user_blob = (
+        f"Asset: {asset_name} ({factory}, {stage})\n"
+        f"Diagnosis: {probable_fault}\n"
         f"Cascade risk: {cascade_risk or 'unknown'}\n"
-        f"Linked upstream/local defects:\n{lines}\n"
-        "MANAS should explain how upstream process parameters may contribute to the target asset condition."
+        f"Process defect links:\n{lines}\n"
+        f"Local sensors:\n{_sensor_lines(sensors)}\n"
+        "Explain how upstream process parameters relate to this asset's condition."
     )
-    fallback = (
-        f"Explain how these cross-stage process defects relate to {asset_name} ({stage}): {lines}. "
-        "Describe the production-chain causal link and monitoring priority."
+    template = _template_defect_insight(
+        asset_name=asset_name,
+        stage=stage,
+        probable_fault=probable_fault,
+        process_defects=process_defects,
     )
-    return _route_then_answer(context, fallback)
+    return _generate_insight(user_blob, template)

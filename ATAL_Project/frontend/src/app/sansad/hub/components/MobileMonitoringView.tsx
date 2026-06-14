@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import AnomalyTripControl from "./AnomalyTripControl";
 
 interface MobileMonitoringViewProps {
   exhausterVibration: number;
@@ -17,7 +18,10 @@ export default function MobileMonitoringView({
   strandSpeed,
 }: MobileMonitoringViewProps) {
   return (
-    <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 select-none max-w-lg mx-auto z-10">
+    <div className="flex flex-col gap-4 w-full px-4 pt-20 pb-12 select-none max-w-lg mx-auto z-10">
+      <div className="flex items-center justify-end gap-2">
+        <AnomalyTripControl />
+      </div>
       <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-xs">
         <h1 className="text-3xl font-black text-zinc-950 tracking-tighter uppercase leading-none" style={{ fontFamily: "var(--font-pixeloid)" }}>
           SANSAD<br />MONITORING
@@ -42,7 +46,7 @@ export default function MobileMonitoringView({
           href="/sansad/hub/horizon-foundry"
           className="mt-4 block w-full py-2 bg-zinc-900 text-white text-center rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer"
         >
-          Open Pipeline Editor
+          Open Pipeline Viewer
         </Link>
       </div>
 
@@ -61,7 +65,7 @@ export default function MobileMonitoringView({
           href="/sansad/hub/zephyr-sinter"
           className="mt-4 block w-full py-2 bg-zinc-950 text-white text-center rounded-xl text-[10px] font-bold uppercase tracking-wider cursor-pointer"
         >
-          Open Pipeline Editor
+          Open Pipeline Viewer
         </Link>
       </div>
 

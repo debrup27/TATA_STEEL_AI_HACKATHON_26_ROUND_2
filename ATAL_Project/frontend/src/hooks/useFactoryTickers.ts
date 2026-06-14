@@ -60,8 +60,7 @@ function buildRulTicker(preds: MLPrediction[]): TickerItem[] {
     const rulH = p.prediction_output?.rul_hours;
     const hs = p.prediction_output?.health_score;
     if (rulH != null) {
-      const days = Math.max(1, Math.round(rulH / 24));
-      items.push({ text: `${name}: RUL ${days}d · Health ${Math.round(hs ?? 100)}%`, isSeparator: false });
+      items.push({ text: `${name}: RUL ${Math.round(rulH)}h · Health ${Math.round(hs ?? 100)}%`, isSeparator: false });
     } else if (hs != null) {
       items.push({ text: `${name}: Health ${Math.round(hs)}%`, isSeparator: false });
     } else {

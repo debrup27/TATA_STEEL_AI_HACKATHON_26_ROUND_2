@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiList } from "@/lib/api";
+import { fetchPlantSnapshot } from "@/services/plantSnapshot";
 
 export interface NodeAlert {
   id: string;
@@ -82,6 +83,7 @@ function buildRecommendations(report: MaintenanceReportRow): NodeRecommendation[
 
 /**
  * Fetch asset-specific alerts and maintenance recommendations when a node is expanded.
+ * Diagnosis + risk context come from the unified plant snapshot.
  */
 export function useNodeInsights(assetId: string | null, isExpanded: boolean): NodeInsights {
   const [alerts, setAlerts] = useState<NodeAlert[]>([]);
@@ -97,21 +99,34 @@ export function useNodeInsights(assetId: string | null, isExpanded: boolean): No
     const load = async () => {
       setIsLoading(true);
       try {
-        const [alertData, reports] = await Promise.all([
+        const [alertData, reports, snap] = await Promise.all([
           apiList<NodeAlert>(`/api/v1/alerts/?asset_id=${assetId}&limit=10`).catch(() => [] as NodeAlert[]),
           apiList<MaintenanceReportRow>(`/api/v1/reports/?asset=${assetId}&limit=3`).catch(() => [] as MaintenanceReportRow[]),
+          fetchPlantSnapshot().catch(() => null),
         ]);
         if (cancelled) return;
 
         setAlerts(alertData);
 
+        const live = snap?.assets.find((a) => a.id === assetId);
+        if (live?.probableFault && !live.isNormalOperation) {
+          setDiagnosis(live.probableFault);
+          setRiskLevel(live.health < 40 ? "critical" : live.health < 65 ? "high" : "medium");
+        }
+
         const report = reports[0];
         if (report) {
           setRiskLevel(report.risk_level ?? undefined);
-          setDiagnosis(report.diagnosis ?? undefined);
+          setDiagnosis(report.diagnosis ?? live?.probableFault ?? undefined);
           setRecommendations(buildRecommendations(report));
+        } else if (live && !live.isNormalOperation) {
+          setRecommendations([
+            {
+              step: `Review ${live.probableFault} — health ${live.health}%`,
+              priority: live.health < 50 ? "immediate" : "urgent",
+            },
+          ]);
         } else if (alertData.length > 0) {
-          // Fallback recommendations from active alerts when no report yet
           setRecommendations(
             alertData.slice(0, 3).map((a) => ({
               step: `Investigate ${a.alarm_type ?? "sensor"} alert: ${(a.message ?? "").slice(0, 90)}`,

@@ -15,7 +15,7 @@ describe("systemLogFormat", () => {
       severity: "trip",
     });
     expect(text).toContain("Hysteresis Deviation");
-    expect(text).toContain("Trip limit exceeded");
+    expect(text).toContain("Abnormality limit exceeded");
     expect(text).not.toContain("102.0881");
   });
 

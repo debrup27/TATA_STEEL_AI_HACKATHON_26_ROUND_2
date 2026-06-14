@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import HubShell from "../components/HubShell";
+import { useHubManasNotify } from "../components/HubManasNotify";
 import {
   fetchDiagnostics,
   fetchDiagnosticDetail,
@@ -43,7 +44,24 @@ function PanelCard({ children, className = "" }: { children: React.ReactNode; cl
   );
 }
 
-function InsightPanel({ title, text }: { title: string; text: string }) {
+function InsightPanel({
+  title,
+  text,
+  loading,
+}: {
+  title: string;
+  text?: string;
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3 flex items-center gap-2 text-orange-700">
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+        <p className="text-[10px] font-bold uppercase tracking-wider">Generating MANAS insight…</p>
+      </div>
+    );
+  }
+  if (!text?.trim()) return null;
   return (
     <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3">
       <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
@@ -55,12 +73,13 @@ function InsightPanel({ title, text }: { title: string; text: string }) {
 }
 
 function formatRul(asset: DiagnosticAsset): { value: string; unit: string } {
-  if (asset.rulDays != null && asset.rulDays > 0) return { value: String(asset.rulDays), unit: "days" };
   if (asset.rulHours != null && asset.rulHours > 0) return { value: asset.rulHours.toFixed(0), unit: "hours" };
+  if (asset.rulDays != null && asset.rulDays > 0) return { value: String(Math.round(asset.rulDays * 24)), unit: "hours" };
   return { value: "—", unit: "" };
 }
 
 export default function DiagnosticsPage() {
+  const { runManasCall } = useHubManasNotify();
   const [assets, setAssets] = useState<DiagnosticAsset[]>([]);
   const [activeId, setActiveId] = useState("");
   const [search, setSearch] = useState("");
@@ -147,28 +166,46 @@ export default function DiagnosticsPage() {
     if (!asset) return;
     setRcaLoading(true);
     setRcaInsight(null);
-    try {
-      const res = await fetchRcaOverviewInsight(asset.id);
+    const res = await runManasCall(
+      `RCA insight — ${asset.name}`,
+      () => fetchRcaOverviewInsight(asset.id),
+      {
+        pendingDetail: "Generating root-cause overview…",
+        validate: (r) => Boolean(r.insight?.trim()),
+        emptyDetail: "MANAS returned an empty insight — retry in a moment",
+        successDetail: "Root-cause insight is ready below",
+      },
+    );
+    if (res?.insight?.trim()) {
       setRcaInsight({ angle: res.insight_angle, text: res.insight });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate RCA insight");
-    } finally {
-      setRcaLoading(false);
+      setError(null);
+    } else if (!res) {
+      setError("MANAS returned an empty insight — retry in a moment");
     }
+    setRcaLoading(false);
   };
 
   const askDefectInsight = async () => {
     if (!asset) return;
     setDefectLoading(true);
     setDefectInsight(null);
-    try {
-      const res = await fetchDefectCorrelationInsight(asset.id);
+    const res = await runManasCall(
+      `Defect correlation — ${asset.name}`,
+      () => fetchDefectCorrelationInsight(asset.id),
+      {
+        pendingDetail: "Analyzing defect correlations…",
+        validate: (r) => Boolean(r.insight?.trim()),
+        emptyDetail: "MANAS returned an empty insight — retry in a moment",
+        successDetail: "Defect correlation insight is ready below",
+      },
+    );
+    if (res?.insight?.trim()) {
       setDefectInsight({ angle: res.insight_angle, text: res.insight });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate defect insight");
-    } finally {
-      setDefectLoading(false);
+      setError(null);
+    } else if (!res) {
+      setError("MANAS returned an empty insight — retry in a moment");
     }
+    setDefectLoading(false);
   };
 
   if (loading) {
@@ -373,9 +410,11 @@ export default function DiagnosticsPage() {
                 </div>
               )}
 
-              {rcaInsight && (
+              {rcaLoading ? (
+                <InsightPanel title="MANAS — Operational insight" loading />
+              ) : rcaInsight?.text ? (
                 <InsightPanel title={`MANAS — ${rcaInsight.angle}`} text={rcaInsight.text} />
-              )}
+              ) : null}
             </PanelCard>
 
             {/* Process defects */}
@@ -416,9 +455,11 @@ export default function DiagnosticsPage() {
                 </div>
               )}
 
-              {defectInsight && (
+              {defectLoading ? (
+                <InsightPanel title="MANAS — Operational insight" loading />
+              ) : defectInsight?.text ? (
                 <InsightPanel title={`MANAS — ${defectInsight.angle}`} text={defectInsight.text} />
-              )}
+              ) : null}
             </PanelCard>
           </div>
         </div>

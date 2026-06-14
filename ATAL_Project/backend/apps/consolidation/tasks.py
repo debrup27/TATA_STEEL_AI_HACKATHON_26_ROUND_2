@@ -29,6 +29,37 @@ def _report_summary(decision: dict, asset) -> str:
     return _humanize_report_text(decision.get("diagnosis", ""), asset)
 
 
+def _normalise_spare_strategy(decision: dict, asset) -> dict:
+    from apps.assets.spares_catalog import ensure_asset_spares
+    from apps.assets.models import SparesPart
+
+    ensure_asset_spares(asset)
+    raw = decision.get("spare_strategy")
+    if isinstance(raw, dict) and raw.get("parts"):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        parts = [
+            {
+                "part_name": s.part_name,
+                "qty": 1,
+                "lead_time_days": s.lead_time_days,
+                "in_stock": s.quantity_in_stock > 0,
+            }
+            for s in SparesPart.objects.filter(asset=asset)[:4]
+        ]
+        return {"strategy": raw, "parts": parts}
+    parts = [
+        {
+            "part_name": s.part_name,
+            "qty": 1,
+            "lead_time_days": s.lead_time_days,
+            "in_stock": s.quantity_in_stock > 0,
+        }
+        for s in SparesPart.objects.filter(asset=asset)[:4]
+    ]
+    return {"strategy": "Maintain critical spares per OEM lead times.", "parts": parts}
+
+
 @shared_task(name="apps.consolidation.run", bind=True, time_limit=120)
 def run_consolidation(self, asset_id: str):
     from apps.consolidation.orchestrator import assemble_consolidated_payload
@@ -74,7 +105,8 @@ def run_consolidation(self, asset_id: str):
                 urgency_score=decision.get("urgency_score"),
                 recommendations=decision.get("recommendations", []),
                 immediate_actions=decision.get("immediate_actions", []),
-                spare_strategy={"strategy": decision.get("spare_strategy", "")},
+                long_term_monitoring=decision.get("long_term_monitoring", []),
+                spare_strategy=_normalise_spare_strategy(decision, asset),
                 citations=decision.get("citations", []),
                 report_text=decision.get("report_text", ""),
             )

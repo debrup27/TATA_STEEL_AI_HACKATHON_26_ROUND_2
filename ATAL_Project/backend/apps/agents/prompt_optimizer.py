@@ -52,7 +52,7 @@ def optimize_maintenance_prompt(
         resp = httpx.post(
             f"{settings.OLLAMA_BASE_URL}/api/chat",
             json={
-                "model": settings.OLLAMA_MODEL,
+                "model": settings.OLLAMA_SMALL_MODEL,
                 "messages": [
                     {"role": "system", "content": _OPTIMIZER_SYSTEM},
                     {"role": "user", "content": user_blob},

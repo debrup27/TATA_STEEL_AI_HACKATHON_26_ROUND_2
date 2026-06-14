@@ -35,33 +35,17 @@ class AssetHealthService:
             asset=asset, acknowledged=False
         ).count()
 
+        # Unified RUL — ML + campaign + health + anomaly + sensor stress
+        from apps.assets.rul_calculator import compute_rul
+
         last_pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
         pred_out = last_pred.prediction_output if last_pred else {}
-        rul_hours = _sanitize_rul_hours(pred_out.get("rul_hours"))
         anomaly_score = pred_out.get("anomaly_score")
         fault_classification = pred_out.get("fault_classification")
         ml_source = pred_out.get("source")
 
-        # If consolidated prediction lacks rul_hours, search specifically for rul_predictor output
-        if rul_hours is None:
-            rul_pred = MLPrediction.objects.filter(
-                asset=asset, model__model_type="rul_predictor"
-            ).order_by("-prediction_time").first()
-            if rul_pred and "rul_hours" in rul_pred.prediction_output:
-                rul_hours = _sanitize_rul_hours(rul_pred.prediction_output["rul_hours"])
-            elif rul_pred and "rul_days" in rul_pred.prediction_output:
-                rul_hours = _sanitize_rul_hours(
-                    float(rul_pred.prediction_output["rul_days"]) * 24.0
-                )
-
-        # Heuristic fallback: derive RUL from campaign hours + asset-type degradation ceiling
-        if rul_hours is None:
-            campaign_max_hours = {
-                "SRF": 8000, "HHPD": 6000, "FS": 12000, "HAGCC": 5000,
-                "APT": 4000, "TCMS": 10000, "CGP": 15000, "HPAK": 3000,
-            }
-            max_h = campaign_max_hours.get(asset.asset_type, 8000)
-            rul_hours = round(max(0.0, max_h - campaign_hours), 1)
+        rul_bundle = compute_rul(asset, health_score=health_score)
+        rul_hours = rul_bundle.get("rul_hours")
 
         last_event = MaintenanceEvent.objects.filter(asset=asset).order_by("-completed_date").first()
         last_maintenance = None
@@ -87,6 +71,7 @@ class AssetHealthService:
             "name": asset.name,
             "health_score": health_score,
             "rul_hours": rul_hours,
+            "rul_components": rul_bundle.get("components"),
             "status": status,
             "active_alerts_count": active_alerts_count,
             "anomaly_score": anomaly_score,

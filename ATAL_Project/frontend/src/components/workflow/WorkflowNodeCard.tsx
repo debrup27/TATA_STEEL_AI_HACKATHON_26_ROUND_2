@@ -2,7 +2,7 @@
 
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, AlertTriangle, GripHorizontal, ChevronDown, Activity, Clock, Wrench, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { X, AlertTriangle, GripHorizontal, ChevronDown, Activity, Clock, Wrench, ShieldAlert } from "lucide-react";
 import type { FlowNode } from "./types";
 import WorkflowAddMenu from "./WorkflowAddMenu";
 import {
@@ -23,7 +23,7 @@ interface WorkflowNodeCardProps {
   editTitle: string;
   editSubtitle: string;
   refreshCountdown?: number;
-  isSimulatingAnomaly?: boolean;
+  faultInjected?: boolean;
   setEditTitle: (val: string) => void;
   setEditSubtitle: (val: string) => void;
   onNodeClick: (id: string) => void;
@@ -33,8 +33,6 @@ interface WorkflowNodeCardProps {
   onRenameSave: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
-  onSimulateAnomaly: (id: string) => void;
-  onStopAnomaly?: (id: string) => void;
   onResetTelemetry: (id: string) => void;
   onToggleAddMenu: (id: string) => void;
   onAddNodeAfter: (parentId: string, type: string) => void;
@@ -67,12 +65,10 @@ export default function WorkflowNodeCard({
   isFirstInChain,
   showAddMenu,
   refreshCountdown,
-  isSimulatingAnomaly = false,
+  faultInjected = false,
   onNodeClick,
   onCloseExpand,
   onNodeDragStart,
-  onSimulateAnomaly,
-  onStopAnomaly,
   onResetTelemetry,
   onToggleAddMenu,
   onAddNodeAfter,
@@ -83,14 +79,14 @@ export default function WorkflowNodeCard({
   const cardHeight = isExpanded ? CARD_HEIGHT_EXPANDED : CARD_HEIGHT_COLLAPSED;
 
   const healthScore = node.healthScore ?? 100;
-  const isNodeCritical = node.statusColor === "#ef4444" || healthScore < 40 || isSimulatingAnomaly;
+  const isNodeCritical = node.statusColor === "#ef4444" || healthScore < 40 || faultInjected;
   const isCompleted = node.status === "completed";
   const isRunning = node.status === "running";
   const hasOutput = node.nextNodes.length > 0;
   const showPorts = !isExpanded;
 
   const rulHours = node.rulHours;
-  const rulDays = node.rulDays;
+  const rulUrgent = rulHours != null && rulHours < 48;
   const anomalyScore = node.anomalyScore;
   const faultClass = node.faultClass;
   const activeAlerts = node.activeAlerts ?? 0;
@@ -181,10 +177,10 @@ export default function WorkflowNodeCard({
                   ))}
                 </div>
               )}
-              {rulDays !== undefined && (
+              {rulHours != null && (
                 <div className="flex justify-between items-center text-[10px] font-bold mt-1">
                   <span className="text-zinc-400">RUL</span>
-                  <span className={rulDays < 15 ? "text-red-500" : "text-zinc-500"}>{rulDays}d</span>
+                  <span className={rulUrgent ? "text-red-500" : "text-zinc-500"}>{Math.round(rulHours)}h</span>
                 </div>
               )}
             </div>
@@ -240,10 +236,10 @@ export default function WorkflowNodeCard({
                     </div>
                     {rulHours != null ? (
                       <>
-                        <div className={`text-[22px] font-black tabular-nums leading-none ${rulDays != null && rulDays < 15 ? "text-red-500" : "text-zinc-900"}`}>
-                          {rulDays ?? Math.max(1, Math.round(rulHours / 24))}d
+                        <div className={`text-[22px] font-black tabular-nums leading-none ${rulUrgent ? "text-red-500" : "text-zinc-900"}`}>
+                          {Math.round(rulHours)}h
                         </div>
-                        <div className="text-[9px] font-mono text-zinc-400 mt-1">{Math.round(rulHours)}h remaining</div>
+                        <div className="text-[9px] font-mono text-zinc-400 mt-1">hours remaining</div>
                       </>
                     ) : (
                       <div className="text-[13px] font-bold text-zinc-400 mt-1 leading-tight">Calculating…</div>
@@ -317,32 +313,13 @@ export default function WorkflowNodeCard({
 
               {/* Action buttons */}
               <div className="flex gap-2 pt-2 border-t border-zinc-100 mt-2 shrink-0">
-                {isSimulatingAnomaly ? (
-                  /* Stop anomaly toggle */
-                  <button
-                    type="button"
-                    onClick={() => onStopAnomaly?.(node.id)}
-                    className="panel-button flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Stop Anomaly
-                  </button>
-                ) : isNodeCritical && !isSimulatingAnomaly ? (
+                {isNodeCritical && (
                   <button
                     type="button"
                     onClick={() => onResetTelemetry(node.id)}
                     className="panel-button flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] cursor-pointer"
                   >
                     Reset to Nominal
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onSimulateAnomaly(node.id)}
-                    className="panel-button flex-1 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 font-bold text-[10px] cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Inject Fault
                   </button>
                 )}
                 <button

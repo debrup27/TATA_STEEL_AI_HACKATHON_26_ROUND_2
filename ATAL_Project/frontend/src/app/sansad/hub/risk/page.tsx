@@ -1,33 +1,80 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Link from "next/link";
 import HubShell from "../components/HubShell";
-import { fetchRiskAssets } from "@/services/prediction";
+import { useHubManasNotify } from "../components/HubManasNotify";
+import { fetchRiskAssets, fetchRiskBottleneckInsight } from "@/services/prediction";
+import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
+import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
 import type { RiskAsset } from "@/services/types";
 import type { RiskLevel } from "@/services/sansadOutputs";
 import { riskLevelColor } from "@/services/sansadOutputs";
-import { manasAskPath } from "@/lib/manas-deep-link";
 import { BarChart3, Clock, Package, ShieldAlert, MessageCircle, Loader2 } from "lucide-react";
 
-function displayRiskLevel(a: RiskAsset): RiskLevel {
-  if (a.riskLevel) return a.riskLevel;
-  if (a.urgency === "CRITICAL") return "critical";
-  if (a.urgency === "HIGH") return "high";
-  if (a.urgency === "MEDIUM") return "medium";
-  return "low";
+function displayRiskLevel(a: RiskAsset, health?: number): RiskLevel {
+  let base: RiskLevel = "low";
+  if (a.riskLevel) base = a.riskLevel;
+  else if (a.urgency === "CRITICAL") base = "critical";
+  else if (a.urgency === "HIGH") base = "high";
+  else if (a.urgency === "MEDIUM") base = "medium";
+
+  if (health == null) return base;
+  if (health <= 15) return "critical";
+  if (health <= 30) return base === "critical" ? "critical" : "high";
+  if (health <= 45 && (base === "low" || base === "medium")) return "medium";
+  return base;
+}
+
+function sparesLabel(asset: RiskAsset): string {
+  if (asset.sparesStatus === "full") return "In stock";
+  if (asset.sparesStatus === "partial") return "Partial stock";
+  if (asset.sparesStatus === "none") return "Not available";
+  return asset.sparesAvailable ? "In stock" : "Not available";
+}
+
+function InsightPanel({
+  title,
+  text,
+  loading,
+}: {
+  title: string;
+  text?: string;
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3 flex items-center gap-2 text-orange-700">
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+        <p className="text-[10px] font-bold uppercase tracking-wider">Generating MANAS insight…</p>
+      </div>
+    );
+  }
+  if (!text?.trim()) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3">
+      <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
+      <p className="text-xs text-zinc-800 mt-1.5 leading-relaxed" style={{ fontFamily: "var(--font-questrial)" }}>
+        {text}
+      </p>
+    </div>
+  );
 }
 
 export default function RiskPriorityPage() {
+  const { runManasCall } = useHubManasNotify();
   const [assets, setAssets] = useState<RiskAsset[]>([]);
+  const { byId: diagById } = usePlantSnapshot();
   const [activeId, setActiveId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [insight, setInsight] = useState<{ angle: string; text: string } | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightTargetId, setInsightTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchRiskAssets()
-      .then((rows) => {
+    Promise.all([fetchRiskAssets()])
+      .then(([rows]) => {
         if (cancelled) return;
         setAssets(rows);
         if (rows[0]) setActiveId(rows[0].id);
@@ -43,6 +90,38 @@ export default function RiskPriorityPage() {
 
   const asset = assets.find((a) => a.id === activeId) ?? assets[0];
   const plantBottleneck = assets[0];
+  const liveDiag = diagById.get(asset?.id ?? "");
+  const bottleneckLive = diagById.get(plantBottleneck?.id ?? "");
+
+  const selectAsset = (id: string) => {
+    setActiveId(id);
+    setInsight(null);
+    setInsightTargetId(null);
+    setError(null);
+  };
+
+  const askManasInsight = async (target: RiskAsset) => {
+    setInsightLoading(true);
+    setInsight(null);
+    setInsightTargetId(target.id);
+    setError(null);
+    const res = await runManasCall(
+      `Risk insight — ${target.name}`,
+      () => fetchRiskBottleneckInsight(target.id, target.bottleneckRank ?? 1),
+      {
+        pendingDetail: "Ranking bottleneck and drafting insight…",
+        validate: (r) => Boolean(r.insight?.trim()),
+        emptyDetail: "MANAS returned an empty insight — retry in a moment",
+        successDetail: "Risk insight is ready below",
+      },
+    );
+    if (res?.insight?.trim()) {
+      setInsight({ angle: res.insight_angle, text: res.insight });
+    } else if (!res) {
+      setError("MANAS returned an empty insight — retry in a moment");
+    }
+    setInsightLoading(false);
+  };
 
   if (loading) {
     return (
@@ -55,7 +134,7 @@ export default function RiskPriorityPage() {
     );
   }
 
-  if (error || !asset || !plantBottleneck) {
+  if (error && !asset) {
     return (
       <HubShell title="Risk & Priority" subtitle="Risk classification · urgency · bottleneck">
         <div className="text-center py-24 text-zinc-500 text-sm">{error ?? "No ranked assets available."}</div>
@@ -63,7 +142,17 @@ export default function RiskPriorityPage() {
     );
   }
 
-  const assetLevel = displayRiskLevel(asset);
+  if (!asset || !plantBottleneck) {
+    return (
+      <HubShell title="Risk & Priority" subtitle="Risk classification · urgency · bottleneck">
+        <div className="text-center py-24 text-zinc-500 text-sm">No ranked assets available.</div>
+      </HubShell>
+    );
+  }
+
+  const assetHealth = liveDiag?.health;
+  const assetLevel = displayRiskLevel(asset, assetHealth);
+  const plantLevel = displayRiskLevel(plantBottleneck, bottleneckLive?.health);
 
   return (
     <HubShell
@@ -71,6 +160,12 @@ export default function RiskPriorityPage() {
       subtitle="Risk classification · urgency · bottleneck · spares & lead time"
     >
       <div className="max-w-7xl mx-auto space-y-6">
+        {error ? (
+          <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+            {error}
+          </div>
+        ) : null}
+
         <div className="bg-[#1b253c] text-white rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <p className="text-[10px] font-mono uppercase tracking-widest text-orange-300">Plant Bottleneck #1</p>
@@ -78,8 +173,11 @@ export default function RiskPriorityPage() {
               {plantBottleneck.name}
             </h2>
             <p className="text-sm text-white/70 mt-1">{plantBottleneck.impact}</p>
+            <span className={`inline-block mt-2 text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${riskLevelColor(plantLevel)}`}>
+              {plantLevel} risk{bottleneckLive ? ` · ${bottleneckLive.health}% health` : ""}
+            </span>
           </div>
-          <div className="flex gap-6 shrink-0 items-center">
+          <div className="flex gap-6 shrink-0 items-center flex-wrap">
             <div className="text-center">
               <p className="text-3xl font-black text-[#f97316]">{plantBottleneck.urgencyScore ?? plantBottleneck.score}</p>
               <p className="text-[9px] uppercase font-mono text-white/50">Urgency</p>
@@ -88,20 +186,27 @@ export default function RiskPriorityPage() {
               <p className="text-3xl font-black">{plantBottleneck.bottleneckRank ?? 1}</p>
               <p className="text-[9px] uppercase font-mono text-white/50">Rank</p>
             </div>
-            <Link
-              href={manasAskPath({
-                assetId: plantBottleneck.id,
-                assetName: plantBottleneck.name,
-                prompt: `Why is ${plantBottleneck.name} the plant bottleneck? ${plantBottleneck.recommendation}`,
-                source: "risk",
-              })}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold uppercase border border-white/20 hover:bg-white/10 transition-colors"
+            <button
+              type="button"
+              disabled={insightLoading}
+              onClick={() => void askManasInsight(plantBottleneck)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold uppercase border border-white/20 hover:bg-white/10 transition-colors disabled:opacity-50 cursor-pointer"
             >
-              <MessageCircle className="w-3.5 h-3.5" />
+              {insightLoading && insightTargetId === plantBottleneck.id ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <MessageCircle className="w-3.5 h-3.5" />
+              )}
               Ask MANAS
-            </Link>
+            </button>
           </div>
         </div>
+
+        {insightLoading && insightTargetId === plantBottleneck.id ? (
+          <InsightPanel title="MANAS — Risk insight" loading />
+        ) : insight && insightTargetId === plantBottleneck.id ? (
+          <InsightPanel title={`MANAS — ${insight.angle}`} text={insight.text} />
+        ) : null}
 
         <div className="grid grid-cols-12 gap-5">
           <div className="col-span-12 lg:col-span-5 bg-white border border-zinc-200 rounded-2xl overflow-hidden">
@@ -109,25 +214,31 @@ export default function RiskPriorityPage() {
               <h2 className="text-xs font-black uppercase text-zinc-600">Priority Stack</h2>
             </div>
             <div className="divide-y divide-zinc-100">
-              {assets.map((a, i) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setActiveId(a.id)}
-                  className={`w-full text-left px-5 py-4 flex items-center gap-3 hover:bg-zinc-50 transition-colors cursor-pointer ${
-                    activeId === a.id ? "bg-orange-50/50" : ""
-                  }`}
-                >
-                  <span className="text-lg font-black text-zinc-300 w-6">#{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-zinc-800 truncate">{a.name}</p>
-                    <p className="text-[10px] text-zinc-400">{a.factory ?? "—"}</p>
-                  </div>
-                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${riskLevelColor(displayRiskLevel(a))}`}>
-                    {displayRiskLevel(a)}
-                  </span>
-                </button>
-              ))}
+              {assets.map((a, i) => {
+                const rowHealth = diagById.get(a.id)?.health;
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => selectAsset(a.id)}
+                    className={`w-full text-left px-5 py-4 flex items-center gap-3 hover:bg-zinc-50 transition-colors cursor-pointer ${
+                      activeId === a.id ? "bg-orange-50/50" : ""
+                    }`}
+                  >
+                    <span className="text-lg font-black text-zinc-300 w-6">#{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-zinc-800 truncate">{a.name}</p>
+                      <p className="text-[10px] text-zinc-400">
+                        {a.factory ?? "—"}
+                        {rowHealth != null ? ` · ${rowHealth}% health` : ""}
+                      </p>
+                    </div>
+                    <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${riskLevelColor(displayRiskLevel(a, rowHealth))}`}>
+                      {displayRiskLevel(a, rowHealth)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -139,28 +250,55 @@ export default function RiskPriorityPage() {
                     {assetLevel} risk
                   </span>
                   <h2 className="text-xl font-black text-[#1b253c] mt-2" style={{ fontFamily: "var(--font-questrial)" }}>{asset.name}</h2>
+                  {assetHealth != null ? (
+                    <p className="text-[10px] font-mono text-zinc-500 mt-1">Live health: {assetHealth}%</p>
+                  ) : null}
                 </div>
-                <div className="text-right">
-                  <p className="text-3xl font-black text-[#f97316]">{asset.urgencyScore ?? asset.score}</p>
-                  <p className="text-[9px] uppercase font-mono text-zinc-400">Urgency score</p>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="text-right">
+                    <p className="text-3xl font-black text-[#f97316]">{asset.urgencyScore ?? asset.score}</p>
+                    <p className="text-[9px] uppercase font-mono text-zinc-400">Urgency score</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={insightLoading}
+                    onClick={() => void askManasInsight(asset)}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold uppercase border border-orange-200 text-orange-600 bg-white hover:bg-orange-50 disabled:opacity-50 cursor-pointer"
+                  >
+                    {insightLoading && insightTargetId === asset.id ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <MessageCircle className="w-3 h-3" />
+                    )}
+                    Ask MANAS
+                  </button>
                 </div>
               </div>
               <p className="text-sm text-zinc-600 mt-4">{asset.impact}</p>
+              <AssetLiveSummary asset={liveDiag} />
               <p className="text-sm font-medium text-[#4A582E] mt-3 bg-emerald-50 border border-emerald-100 rounded-xl p-3">{asset.recommendation}</p>
+              <AssetSensorPills asset={liveDiag} className="mt-3" />
+
+              {insightLoading && insightTargetId === asset.id ? (
+                <InsightPanel title="MANAS — Risk insight" loading />
+              ) : insight && insightTargetId === asset.id ? (
+                <InsightPanel title={`MANAS — ${insight.angle}`} text={insight.text} />
+              ) : null}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               {[
-                { icon: ShieldAlert, label: "Process criticality", value: asset.processCriticality ?? "—", unit: "%" },
-                { icon: Clock, label: "Delay severity", value: asset.delaySeverity ?? "—", unit: "%" },
-                { icon: Package, label: "Spares", value: asset.sparesAvailable ? "In stock" : "Not available", unit: "" },
-                { icon: BarChart3, label: "Procurement lead", value: asset.procurementLeadDays ?? 0, unit: "days" },
+                { icon: ShieldAlert, label: "Process criticality", value: asset.processCriticality ?? 0, unit: "%" },
+                { icon: Clock, label: "Delay severity", value: asset.delaySeverity ?? 0, unit: "%" },
+                { icon: Package, label: "Spares", value: sparesLabel(asset), unit: "" },
+                { icon: BarChart3, label: "Procurement lead", value: asset.procurementLeadDays ?? 0, unit: " days" },
               ].map(({ icon: Icon, label, value, unit }) => (
                 <div key={label} className="bg-white border border-zinc-200 rounded-xl p-4">
                   <Icon className="w-4 h-4 text-zinc-400 mb-2" />
                   <p className="text-[10px] uppercase font-bold text-zinc-400">{label}</p>
                   <p className="text-lg font-black text-zinc-800 mt-0.5">
-                    {value}{unit && typeof value === "number" ? unit : ""}
+                    {value}
+                    {unit && typeof value === "number" ? unit : ""}
                   </p>
                 </div>
               ))}

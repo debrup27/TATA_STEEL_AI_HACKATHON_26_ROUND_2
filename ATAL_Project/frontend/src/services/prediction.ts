@@ -18,6 +18,22 @@ export async function fetchRiskAssets(): Promise<RiskAsset[]> {
   return res.ranked_assets.map((r, i) => mapRiskAsset(r, i));
 }
 
+export interface RiskInlineInsight {
+  insight: string;
+  insight_angle: string;
+  router: string;
+}
+
+export async function fetchRiskBottleneckInsight(
+  assetId: string,
+  bottleneckRank?: number,
+): Promise<RiskInlineInsight> {
+  return apiJson(`/api/v1/plant/bottleneck-score/${assetId}/insight/`, {
+    method: "POST",
+    body: JSON.stringify({ bottleneck_rank: bottleneckRank ?? 1 }),
+  });
+}
+
 /** @deprecated Use fetchRiskAssets */
 export function getRiskAssets(): RiskAsset[] {
   return [];

@@ -22,7 +22,7 @@ import { TextShimmerLoader } from "@/components/ai-components/loader";
 import { ScrollButton } from "@/components/ai-components/scroll-button";
 import { ApiError, getAccessToken } from "@/lib/api";
 import { fetchBackendReady } from "@/lib/backend-ready";
-import { isManasRoleId } from "@/lib/manas-roles";
+import { isManasRoleId, manasRoleLabel } from "@/lib/manas-roles";
 import { isBackendSessionId } from "@/lib/session-id";
 import {
   fetchSessions,
@@ -30,7 +30,7 @@ import {
   createSession,
   sendChatMessage,
   compactChatSession,
-  persistSessions,
+  deleteSessionRemote,
 } from "@/services/sessions";
 import { getLibraryDocuments, ragPayloadFromDocs, warmChatStack, optimizeMaintenancePrompt, submitChatMessageFeedback } from "@/services/chat";
 import { parseSlashCommandInput } from "@/lib/manas-slash-commands";
@@ -99,15 +99,17 @@ export default function ManasChatPage() {
   });
 
   // Refs
-  const isLoaded = useRef(true);
   const thinkingSessionIdRef = useRef<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const promptedSessionsRef = useRef<Record<string, boolean>>({});
   const streamSessionRef = useRef<string | null>(null);
+  const deletedSessionIdsRef = useRef<Set<string>>(new Set());
   const chatSimResetRef = useRef<() => void>(() => undefined);
   const chatLoadingRef = useRef(false);
   const ensureSessionLoaded = useCallback((id: string) => {
+    if (deletedSessionIdsRef.current.has(id)) return;
+
     setSessions((prev) => {
       const existing = prev.find((s) => s.id === id);
       if (existing && existing.messages.length > 0) {
@@ -117,7 +119,9 @@ export default function ManasChatPage() {
 
       fetchSessionDetail(id)
         .then((detail) => {
+          if (deletedSessionIdsRef.current.has(id)) return;
           setSessions((p) => {
+            if (deletedSessionIdsRef.current.has(id)) return p;
             const found = p.some((s) => s.id === id);
             if (found) {
               return p.map((s) =>
@@ -141,9 +145,23 @@ export default function ManasChatPage() {
             return [...p, detail];
           });
         })
-        .catch(() => undefined)
+        .catch((err) => {
+          if (err instanceof ApiError && err.status === 404) {
+            deletedSessionIdsRef.current.add(id);
+            setSessions((p) => p.filter((s) => s.id !== id));
+            setActiveSessionId((current) => {
+              if (current === id) {
+                updateManasChatUrl(null, "replace");
+                return null;
+              }
+              return current;
+            });
+          }
+        })
         .finally(() => {
-          setHydratedSessionIds((h) => ({ ...h, [id]: true }));
+          if (!deletedSessionIdsRef.current.has(id)) {
+            setHydratedSessionIds((h) => ({ ...h, [id]: true }));
+          }
         });
       return prev;
     });
@@ -270,6 +288,7 @@ export default function ManasChatPage() {
 
       fetchSessionDetail(targetId)
         .then((detail) => {
+          if (deletedSessionIdsRef.current.has(targetId)) return;
           setSessions((prev) =>
             prev.map((session) => {
               if (session.id !== targetId) return session;
@@ -353,9 +372,26 @@ export default function ManasChatPage() {
     fetchSessions()
       .then((rows) => {
         if (cancelled) return;
-        setSessions(rows);
-        if (urlSessionId) {
-          const row = rows.find((s) => s.id === urlSessionId);
+        const filtered = rows.filter((s) => !deletedSessionIdsRef.current.has(s.id));
+        setSessions((prev) => {
+          const byId = new Map(prev.map((s) => [s.id, s]));
+          return filtered.map((row) => {
+            const local = byId.get(row.id);
+            if (!local) return row;
+            const streaming =
+              chatLoadingRef.current && streamSessionRef.current === row.id;
+            return {
+              ...row,
+              ragDocs: local.ragDocs ?? row.ragDocs,
+              messages:
+                streaming || local.messages.length > row.messages.length
+                  ? local.messages
+                  : row.messages,
+            };
+          });
+        });
+        if (urlSessionId && !deletedSessionIdsRef.current.has(urlSessionId)) {
+          const row = filtered.find((s) => s.id === urlSessionId);
           if (!row || row.messages.length === 0) {
             ensureSessionLoaded(urlSessionId);
           }
@@ -363,11 +399,17 @@ export default function ManasChatPage() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [urlSessionId, ensureSessionLoaded]);
+  }, [ensureSessionLoaded]);
 
-  // Direct link / hard refresh — keep active id and message history in sync with URL
+  // Direct link / hard refresh — keep active id in sync with URL
   useEffect(() => {
-    if (!urlSessionId) return;
+    if (!urlSessionId || deletedSessionIdsRef.current.has(urlSessionId)) {
+      if (urlSessionId && deletedSessionIdsRef.current.has(urlSessionId)) {
+        setActiveSessionId(null);
+        updateManasChatUrl(null, "replace");
+      }
+      return;
+    }
     setActiveSessionId(urlSessionId);
     ensureSessionLoaded(urlSessionId);
   }, [urlSessionId, ensureSessionLoaded]);
@@ -677,17 +719,6 @@ export default function ManasChatPage() {
     setShowRagSelector(true);
   }, [activeSession]);
 
-  // Save sessions to local storage (strip image data to avoid quota)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!isLoaded.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      persistSessions(sessions);
-    }, 500);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [sessions]);
-
   // Auto close Right Panel if context documents are cleared
   useEffect(() => {
     if (!activeSession?.ragDocs || activeSession.ragDocs.length === 0) {
@@ -907,20 +938,52 @@ export default function ManasChatPage() {
     [navigateToChat],
   );
 
-  const handleDeleteSession = useCallback((idToDelete: string) => {
-    import("@/services/sessions").then(({ deleteSessionRemote }) => {
-      deleteSessionRemote(idToDelete).catch(() => undefined);
+  const handleDeleteSession = useCallback(async (idToDelete: string) => {
+    if (!isBackendSessionId(idToDelete)) {
+      setSessions((prev) => prev.filter((s) => s.id !== idToDelete));
+      if (activeSessionId === idToDelete) navigateToChat(null, "replace");
+      return;
+    }
+
+    deletedSessionIdsRef.current.add(idToDelete);
+
+    setHydratedSessionIds((h) => {
+      const next = { ...h };
+      delete next[idToDelete];
+      return next;
     });
 
-    const deletingActive = activeSessionId === idToDelete;
-    const remaining = sessions.filter((s) => s.id !== idToDelete);
-    setSessions(remaining);
+    if (activeSessionId === idToDelete) {
+      chatSim.cancel();
+      streamSessionRef.current = null;
+    }
 
-    if (deletingActive) {
-      const nextId = remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+    let remaining: ChatSession[] = [];
+    setSessions((prev) => {
+      remaining = prev.filter((s) => s.id !== idToDelete);
+      return remaining;
+    });
+
+    if (activeSessionId === idToDelete) {
+      const nextId = remaining.length > 0 ? remaining[0].id : null;
       navigateToChat(nextId, "replace");
     }
-  }, [activeSessionId, navigateToChat, sessions]);
+
+    try {
+      await deleteSessionRemote(idToDelete);
+    } catch {
+      deletedSessionIdsRef.current.delete(idToDelete);
+      setTriggerToast("Could not delete session — try again");
+      setTimeout(() => setTriggerToast(null), 3000);
+      try {
+        const rows = await fetchSessions();
+        const filtered = rows.filter((s) => !deletedSessionIdsRef.current.has(s.id));
+        setSessions(filtered);
+      } catch {
+        // keep optimistic removal
+      }
+    }
+  }, [activeSessionId, chatSim, navigateToChat]);
 
   const handleRemoveDoc = useCallback((name: string) => {
     setSessions((prev) =>
@@ -1041,11 +1104,13 @@ export default function ManasChatPage() {
                           text={
                             chatSim.streamPhase === "rag"
                               ? "Processing document"
-                              : chatSim.streamPhase === "thinking"
-                                ? "Deep reasoning"
-                                : hasContext
-                                  ? "Analyzing maintenance context"
-                                  : "Processing your request"
+                              : chatSim.streamPhase === "role"
+                                ? "Applying role context"
+                                : chatSim.streamPhase === "thinking"
+                                  ? "Deep reasoning"
+                                  : hasContext
+                                    ? "Analyzing maintenance context"
+                                    : "Processing your request"
                           }
                           size="md"
                         />
@@ -1070,6 +1135,23 @@ export default function ManasChatPage() {
                                 : "Processing document"}
                             </StepsItem>
                           )}
+                          {selectedRole && (
+                            <StepsItem
+                              status={
+                                chatSim.streamPhase === "role"
+                                  ? "active"
+                                  : chatSim.streamPhase === "post_rag" ||
+                                      chatSim.streamPhase === "thinking" ||
+                                      chatSim.streamPhase === "answering"
+                                    ? "complete"
+                                    : chatSim.streamPhase === "rag"
+                                      ? "pending"
+                                      : "pending"
+                              }
+                            >
+                              Role advisory ({manasRoleLabel(selectedRole) ?? selectedRole})
+                            </StepsItem>
+                          )}
                           <StepsItem
                             status={
                               chatSim.streamPhase === "post_rag" ||
@@ -1077,7 +1159,8 @@ export default function ManasChatPage() {
                                 ? "active"
                                 : chatSim.streamPhase === "answering"
                                   ? "complete"
-                                  : chatSim.streamPhase === "rag"
+                                  : chatSim.streamPhase === "rag" ||
+                                      chatSim.streamPhase === "role"
                                     ? "pending"
                                     : chatSim.streamPhase === "waiting"
                                       ? "active"

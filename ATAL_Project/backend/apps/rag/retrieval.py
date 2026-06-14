@@ -147,7 +147,8 @@ def retrieve_for_collections(
             continue
         hits = _hybrid_search(coll_name, query, limit=limit_per_collection * 2)
         if titles_lower:
-            hits = [h for h in hits if _title_matches(h, titles_lower)]
+            filtered = [h for h in hits if _title_matches(h, titles_lower)]
+            hits = filtered if filtered else hits
         results += hits[:limit_per_collection]
 
     results.sort(
@@ -155,6 +156,120 @@ def retrieve_for_collections(
         reverse=True,
     )
     return results[:12]
+
+
+def retrieve_by_document_titles(
+    query: str,
+    document_titles: List[str],
+    *,
+    limit: int = 8,
+) -> List[Dict]:
+    """Fallback when Chroma title metadata does not match library display names."""
+    if not document_titles:
+        return []
+
+    from apps.rag.models import Document
+
+    titles_lower = {t.lower().strip() for t in document_titles if t}
+    if not titles_lower:
+        return []
+
+    query_tokens = [t for t in query.lower().split() if len(t) >= 3]
+    output: List[Dict] = []
+
+    for doc in Document.objects.filter(is_ingested=True).order_by("title")[:200]:
+        title_lower = doc.title.lower()
+        if title_lower not in titles_lower and not any(
+            t in title_lower or title_lower in t for t in titles_lower
+        ):
+            continue
+        try:
+            from apps.rag.chunker import chunk_document
+
+            chunks = chunk_document(doc)
+        except Exception:
+            continue
+        for chunk in chunks:
+            content = (chunk.get("content") or "").strip()
+            if not content:
+                continue
+            if query_tokens:
+                lower = content.lower()
+                if not any(tok in lower for tok in query_tokens):
+                    continue
+            output.append({
+                "properties": {
+                    "title": doc.title,
+                    "content": content[:4000],
+                    "source_doc": doc.title,
+                    "document_id": str(doc.id),
+                    "section": chunk.get("section", "") or "",
+                    "doc_type": doc.doc_type,
+                },
+                "source": "library",
+                "distance": 0.2,
+            })
+            if len(output) >= limit:
+                return output
+
+    if not output:
+        for doc in Document.objects.filter(is_ingested=True).order_by("title")[:200]:
+            title_lower = doc.title.lower()
+            if title_lower not in titles_lower and not any(
+                t in title_lower or title_lower in t for t in titles_lower
+            ):
+                continue
+            try:
+                from apps.rag.chunker import chunk_document
+
+                chunks = chunk_document(doc)
+            except Exception:
+                continue
+            for chunk in chunks[:4]:
+                content = (chunk.get("content") or "").strip()
+                if content:
+                    output.append({
+                        "properties": {
+                            "title": doc.title,
+                            "content": content[:4000],
+                            "source_doc": doc.title,
+                            "document_id": str(doc.id),
+                            "section": chunk.get("section", "") or "",
+                            "doc_type": doc.doc_type,
+                        },
+                        "source": "library",
+                        "distance": 0.25,
+                    })
+                    if len(output) >= limit:
+                        return output
+
+    if not output:
+        for doc in Document.objects.filter(is_ingested=True, title__in=document_titles)[:limit]:
+            try:
+                from apps.rag.chunker import chunk_document
+
+                chunks = chunk_document(doc)
+            except Exception:
+                continue
+            for chunk in chunks[:3]:
+                content = (chunk.get("content") or "").strip()
+                if content:
+                    output.append({
+                        "properties": {
+                            "title": doc.title,
+                            "content": content[:4000],
+                            "source_doc": doc.title,
+                            "document_id": str(doc.id),
+                            "section": chunk.get("section", "") or "",
+                            "doc_type": doc.doc_type,
+                        },
+                        "source": "library",
+                        "distance": 0.25,
+                    })
+                    if len(output) >= limit:
+                        return output
+
+    return output[:limit]
 
 
 def retrieve_sop(asset_type: str, query: str, procedure_phase: Optional[str] = None) -> List[Dict]:

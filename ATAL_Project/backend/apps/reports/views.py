@@ -18,6 +18,11 @@ class MaintenanceReportViewSet(viewsets.ReadOnlyModelViewSet):
         report_type = self.request.query_params.get("report_type")
         if report_type:
             qs = qs.filter(report_type=report_type)
+        # Hide empty legacy consolidation outputs from intelligence feed
+        qs = qs.exclude(
+            report_type=MaintenanceReport.ReportType.MAINTENANCE,
+            title__startswith="Maintenance Report —",
+        ).exclude(report_text="", immediate_actions=[])
         return qs
 
     def get_serializer_class(self):

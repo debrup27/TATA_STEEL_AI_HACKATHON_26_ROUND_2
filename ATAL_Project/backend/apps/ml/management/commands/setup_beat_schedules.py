@@ -161,10 +161,25 @@ class Command(BaseCommand):
             },
         )
 
+        # ── Maintenance plan regeneration every 3 hours ───────────────────────
+        plan_regen_interval, _ = IntervalSchedule.objects.get_or_create(
+            every=3, period=IntervalSchedule.HOURS
+        )
+        PeriodicTask.objects.update_or_create(
+            name="maintenance-plans-regenerate",
+            defaults={
+                "interval": plan_regen_interval,
+                "task": "apps.maintenance.regenerate_all_plans",
+                "kwargs": '{"trigger": "scheduled"}',
+                "enabled": False,
+                "description": "Disabled — intelligence reports regenerate on anomaly only",
+            },
+        )
+
         self.stdout.write(self.style.SUCCESS(
             "[setup_beat_schedules] Periodic tasks seeded: "
             "weekly-ml-retrain, weekly-synthetic-dataset-refresh, "
             "telemetry-ws-broadcast(10s), synthetic-telemetry-live(10s), model-drift-check, "
             "weekly-feedback-training-export, ml-inference-all-assets(5m), "
-            "consolidation-critical-assets, ollama-keepalive"
+            "consolidation-critical-assets, maintenance-plans-regenerate(disabled), ollama-keepalive"
         ))

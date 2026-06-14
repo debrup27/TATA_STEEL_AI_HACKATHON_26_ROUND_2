@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 import NodeWorkflow from "@/components/NodeWorkflow";
+import AnomalyTripControl from "../components/AnomalyTripControl";
 
 export default function ZephyrSinterPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -30,17 +31,20 @@ export default function ZephyrSinterPage() {
 
 
       {isMobile ? (
-        <div className="flex flex-col gap-6 w-full px-6 pt-24 pb-12 select-none max-w-lg mx-auto z-10">
+        <div className="flex flex-col gap-4 w-full px-4 pt-20 pb-12 select-none max-w-lg mx-auto z-10">
+          <div className="flex justify-end">
+            <AnomalyTripControl />
+          </div>
           <div className="bg-white border border-zinc-200 p-6 rounded-2xl shadow-xs">
             <h1 className="text-3xl font-black text-zinc-950 tracking-tighter uppercase leading-none" style={{ fontFamily: "var(--font-pixeloid)" }}>
               SANSAD<br />MONITORING
             </h1>
             <p className="text-[9px] text-[#f97316] mt-3 font-bold uppercase tracking-[0.2em]">
-              Zephyr Sinter // Pipeline Editor
+              Zephyr Sinter // Pipeline Viewer
             </p>
           </div>
           <div className="bg-white border border-zinc-200 p-6 rounded-2xl">
-            <p className="text-sm text-zinc-600">Please open this page on a desktop viewport to edit the pipeline.</p>
+            <p className="text-sm text-zinc-600">Please open this page on a desktop viewport to view the pipeline.</p>
             <Link href="/sansad/hub" className="mt-4 block text-center py-2 bg-[#1b253c] text-white rounded-xl text-[10px] font-bold uppercase tracking-wider">
               Back to Console
             </Link>
@@ -75,9 +79,9 @@ export default function ZephyrSinterPage() {
           </div>
 
           {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 min-h-0">
-            <div className="w-full flex items-center justify-between mb-4 border-b border-zinc-200 pb-4 select-none">
-              {/* Left Side: Back Button */}
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] min-h-0">
+            <div className="w-full shrink-0 border-b border-zinc-200 select-none">
+              <div className="w-full flex items-center justify-between px-8 py-3">
               <div className="w-1/4 flex justify-start">
                 <Link href="/sansad/hub" className="flex items-center select-none">
                   <div 
@@ -96,15 +100,17 @@ export default function ZephyrSinterPage() {
                   Asset Troubleshooting Pipeline — Zephyr Sinter
                 </h2>
                 <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest block mt-1">
-                  Active Sandbox // Editing Factory Pipeline Node Path
+                  Active Sandbox // Viewing Factory Pipeline Node Path
                 </span>
               </div>
 
-              {/* Right Side: Spacer */}
-              <div className="w-1/4" />
+              <div className="w-1/4 flex justify-end overflow-visible">
+                <AnomalyTripControl />
+              </div>
+              </div>
             </div>
             
-            <div className="w-full h-full flex-grow flex flex-col min-h-0">
+            <div className="w-full flex-1 flex flex-col min-h-0 px-8 py-4">
               <NodeWorkflow initialFactory="zephyr" hidePills={true} />
             </div>
           </div>

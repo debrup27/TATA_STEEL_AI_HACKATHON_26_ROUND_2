@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 MODEL_ARTIFACT_ROOT = getattr(settings, "MODEL_ARTIFACT_ROOT", Path("/tmp/atal_models"))
 
-# Plant-realistic RUL ceiling — values above this are treated as model scale errors.
-MAX_SANE_RUL_HOURS = 17_520  # ~2 years
+# Simulation RUL ceiling — values above this are treated as model scale errors.
+MAX_SANE_RUL_HOURS = 300.0
 
 # Minimum samples required to compute meaningful stats; below this inference won't run
 MIN_SAMPLES_FOR_INFERENCE = 10
@@ -160,8 +160,8 @@ def _enrich_output(result: dict, model_type: str) -> None:
             )
             rul = None
         result["rul_hours"] = rul
-        # health: 0h→0%, 2000h→100%, capped at 100
-        result["health_score"] = min(100.0, max(0.0, (rul / 2000.0) * 100.0)) if rul else 50.0
+        # health: 0h→0%, 300h→100%, capped at 100 (simulation scale)
+        result["health_score"] = min(100.0, max(0.0, (rul / MAX_SANE_RUL_HOURS) * 100.0)) if rul else 50.0
     elif model_type == "anomaly_detector":
         # IsolationForest.predict returns +1 (normal) or -1 (anomaly)
         # anomaly_score: 0=healthy, 1=anomalous

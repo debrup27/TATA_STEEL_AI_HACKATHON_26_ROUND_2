@@ -38,6 +38,7 @@ export interface RiskAsset {
   urgency: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   impact: string;
   sparesAvailable: boolean;
+  sparesStatus?: "full" | "partial" | "none";
   downtimeHours: number;
   recommendation: string;
   factory?: string;

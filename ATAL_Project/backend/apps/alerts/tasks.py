@@ -41,7 +41,7 @@ def evaluate_thresholds(asset_id: str):
             # Trip threshold
             trip = r["sensor_def__trip_threshold"]
             if trip is not None and avg >= trip:
-                _create_alarm(asset, r, avg, trip, "trip", "Trip threshold breached")
+                _create_alarm(asset, r, avg, trip, "trip", "Abnormality threshold breached")
                 continue
 
             # Alert threshold

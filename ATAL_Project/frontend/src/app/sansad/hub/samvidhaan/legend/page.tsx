@@ -7,6 +7,7 @@ import ClickSpark from "@/animations/ClickSpark";
 import { fetchGlossary, type GlossaryEntry } from "@/services/glossary";
 import { manasAskPath } from "@/lib/manas-deep-link";
 import { MessageCircle } from "lucide-react";
+import AnomalyTripControl from "../../components/AnomalyTripControl";
 
 export default function LegendPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -69,17 +70,21 @@ export default function LegendPage() {
         </div>
       ) : (
         <div className="w-screen h-screen flex flex-col bg-[#FAF9F5]">
-          <div className="h-16 border-b border-zinc-200 flex items-center px-10 gap-4 shrink-0">
-            <Link href="/sansad/hub/samvidhaan" className="flex items-center gap-2 text-[10px] font-bold uppercase text-zinc-500 hover:text-orange-500">
+          <div className="shrink-0 border-b border-zinc-200 bg-[#FAF9F5]">
+          <div className="h-14 flex items-center px-10 gap-4">
+            <Link href="/sansad/hub/samvidhaan" className="flex items-center gap-2 text-[10px] font-bold uppercase text-zinc-500 hover:text-orange-500 shrink-0">
               <ArrowLeft className="w-4 h-4" /> Back
             </Link>
-            <div className="flex-1 text-center">
-              <h1 className="text-xl font-black uppercase text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
+            <div className="flex-1 text-center min-w-0">
+              <h1 className="text-xl font-black uppercase text-[#1b253c] truncate" style={{ fontFamily: "var(--font-questrial)" }}>
                 Samvidhaan Legend
               </h1>
-              <p className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest">Abbreviations · ISO terms · role meanings</p>
+              <p className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest truncate">Abbreviations · ISO terms · role meanings</p>
             </div>
-            <div className="w-20" />
+            <div className="ml-auto shrink-0 min-w-0 overflow-visible">
+              <AnomalyTripControl />
+            </div>
+          </div>
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col px-10 py-6 gap-4 max-w-6xl mx-auto w-full">

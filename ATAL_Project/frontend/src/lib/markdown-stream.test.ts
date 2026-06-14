@@ -1,6 +1,7 @@
 import {
   normalizeTechnicalMarkdown,
   protectChemicalSubscripts,
+  repairCollapsedMarkdownTables,
 } from "@/lib/markdown-stream";
 
 describe("normalizeTechnicalMarkdown", () => {
@@ -101,5 +102,14 @@ describe("normalizeTechnicalMarkdown", () => {
 
   it("wraps caret exponents", () => {
     expect(normalizeTechnicalMarkdown("order 10^6 samples")).toContain("$10^{6}$");
+  });
+});
+
+describe("repairCollapsedMarkdownTables", () => {
+  it("splits glued table separator rows", () => {
+    const input = "| Asset | Type ||---|---|| SRF | furnace |";
+    const out = repairCollapsedMarkdownTables(input);
+    expect(out).toContain("|\n|---");
+    expect(out).toContain("|\n| SRF");
   });
 });

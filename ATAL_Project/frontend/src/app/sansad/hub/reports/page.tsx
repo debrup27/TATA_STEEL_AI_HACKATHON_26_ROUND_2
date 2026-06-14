@@ -5,8 +5,10 @@ import HubShell from "../components/HubShell";
 import { fetchReports } from "@/services/reports";
 import { riskLevelColor } from "@/services/sansadOutputs";
 import type { MaintenanceReport } from "@/services/sansadOutputs";
+import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
+import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
 import { FileText, Bell, BookOpen, Users, Search, Loader2 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import HubMarkdown from "../components/HubMarkdown";
 
 const TYPE_META: Record<MaintenanceReport["type"], { label: string; icon: typeof FileText }> = {
   maintenance: { label: "Maintenance Report", icon: FileText },
@@ -15,10 +17,11 @@ const TYPE_META: Record<MaintenanceReport["type"], { label: string; icon: typeof
   digital_log: { label: "Digital Log", icon: BookOpen },
 };
 
-type ReportRow = MaintenanceReport;
+type ReportRow = MaintenanceReport & { assetId?: string };
 
 export default function IntelligenceReportsPage() {
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const { byId: diagById } = usePlantSnapshot();
   const [activeId, setActiveId] = useState("");
   const [filter, setFilter] = useState<MaintenanceReport["type"] | "all">("all");
   const [search, setSearch] = useState("");
@@ -36,6 +39,7 @@ export default function IntelligenceReportsPage() {
           type: r.type,
           title: r.title,
           asset: r.asset,
+          assetId: r.assetId,
           factory: r.factory,
           date: r.date,
           author: r.author,
@@ -66,6 +70,7 @@ export default function IntelligenceReportsPage() {
   }, [filter, search, reports]);
 
   const active = filtered.find((r) => r.id === activeId) ?? filtered[0];
+  const liveAsset = active?.assetId ? diagById.get(active.assetId) : undefined;
 
   if (loading) {
     return (
@@ -172,9 +177,11 @@ export default function IntelligenceReportsPage() {
                     </span>
                   </div>
                   <p className="text-sm text-zinc-600 mt-3 bg-zinc-50 rounded-xl p-3 border border-zinc-100">{active.summary}</p>
+                  <AssetLiveSummary asset={liveAsset} />
+                  <AssetSensorPills asset={liveAsset} className="mt-3" />
                 </div>
-                <div className="flex-1 overflow-y-auto px-6 py-4 prose prose-zinc prose-sm max-w-none">
-                  <ReactMarkdown>{active.body}</ReactMarkdown>
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                  <HubMarkdown>{active.body}</HubMarkdown>
                 </div>
                 <div className="px-6 py-3 border-t border-zinc-100 bg-zinc-50/50 shrink-0 flex justify-between items-center">
                   <span className="text-[10px] text-zinc-400 uppercase font-mono">Audience: {active.audience}</span>

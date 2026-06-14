@@ -37,13 +37,15 @@ export function formatAlertLogText(alert: {
   const msg = alert.message?.trim();
   if (msg) {
     const thresholdMatch = msg.match(
-      /^(Trip|Alert) threshold breached:\s*([a-z0-9_]+)\s*=\s*([\d.]+)\s*(.*)$/i,
+      /^(Trip|Alert|Abnormality) threshold breached:\s*([a-z0-9_]+)\s*=\s*([\d.]+)\s*(.*)$/i,
     );
     if (thresholdMatch) {
       const [, kind, sensor, value, unit] = thresholdMatch;
       const sensorLabel = humanizeSensorName(sensor);
       const limitLabel =
-        kind.toLowerCase() === "trip" ? "Trip limit exceeded" : "Warning threshold exceeded";
+        kind.toLowerCase() === "trip" || kind.toLowerCase() === "abnormality"
+          ? "Abnormality limit exceeded"
+          : "Warning threshold exceeded";
       const unitLabel = unit.trim();
       return `${sensorLabel} — ${limitLabel} (${roundReading(value)}${unitLabel ? ` ${unitLabel}` : ""})`;
     }
@@ -64,7 +66,7 @@ export function formatAlertLogText(alert: {
     ? humanizeSensorName(alert.alarm_type.replace(/_(trip|alert|warning)$/i, ""))
     : "Sensor";
   const sev = (alert.severity ?? "alert").toLowerCase();
-  if (sev === "trip") return `${sensorLabel} — Trip limit exceeded`;
+  if (sev === "trip") return `${sensorLabel} — Abnormality limit exceeded`;
   if (sev === "alert" || sev === "warning") return `${sensorLabel} — Warning threshold exceeded`;
   return `${sensorLabel} — Condition requires attention`;
 }
@@ -109,7 +111,7 @@ export function formatReportLogText(report: {
 
 export function formatAlertSeverity(severity?: string): string {
   const s = (severity ?? "INFO").toUpperCase();
-  if (s === "TRIP") return "CRITICAL";
+  if (s === "TRIP") return "ABNORMALITY";
   if (s === "ALERT") return "WARNING";
   return s;
 }

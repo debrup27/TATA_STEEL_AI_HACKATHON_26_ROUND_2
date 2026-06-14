@@ -8,8 +8,9 @@ import ClickSpark from "@/animations/ClickSpark";
 import LogoLoop from "@/animations/LogoLoop";
 import NodeWorkflow from "@/components/NodeWorkflow";
 import BottomSplitCard from "./components/BottomSplitCard";
+import AnomalyTripControl from "../components/AnomalyTripControl";
 import { useNotificationFeed } from "@/hooks/useNotificationFeed";
-import { fetchDiagnostics } from "@/services/diagnostics";
+import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import { fetchPlantKpis } from "@/services/reports";
 import type { DiagnosticAsset } from "@/services/sansadOutputs";
 
@@ -26,16 +27,17 @@ export default function SamvidhaanPage() {
   const [f1Asset, setF1Asset] = useState<DiagnosticAsset | null>(null);
   const [f2Asset, setF2Asset] = useState<DiagnosticAsset | null>(null);
   const [plantKpis, setPlantKpis] = useState<{ avgRulH?: number; health?: number }>({});
+  const { assets: snapAssets } = usePlantSnapshot();
 
   const [activeFactoryModal, setActiveFactoryModal] = useState<"f1" | "f2" | null>(null);
 
   useEffect(() => {
-    fetchDiagnostics()
-      .then((assets) => {
-        setF1Asset(assets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? assets[0] ?? null);
-        setF2Asset(assets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? assets[1] ?? null);
-      })
-      .catch(() => undefined);
+    if (!snapAssets.length) return;
+    setF1Asset(snapAssets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? snapAssets[0] ?? null);
+    setF2Asset(snapAssets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? snapAssets[1] ?? null);
+  }, [snapAssets]);
+
+  useEffect(() => {
     fetchPlantKpis()
       .then((k) => {
         setPlantKpis({
@@ -303,7 +305,8 @@ export default function SamvidhaanPage() {
         <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5]">
 
           {/* Header */}
-          <div className="relative shrink-0 flex items-center px-8 py-4 border-b border-zinc-200/80 bg-[#FAF9F5] z-30">
+          <div className="relative shrink-0 border-b border-zinc-200/80 bg-[#FAF9F5] z-30 overflow-visible">
+            <div className="flex items-center px-8 py-3 gap-3">
             <Link href="/sansad/hub">
               <div className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center gap-0 hover:gap-2 transition-all duration-300 overflow-hidden group/btn cursor-pointer font-bold animate-pulse-slow"
                 style={{ fontFamily: "var(--font-pixeloid)" }}>
@@ -312,13 +315,18 @@ export default function SamvidhaanPage() {
               </div>
             </Link>
 
-            <div className="absolute left-1/2 -translate-x-1/2 text-center">
+            <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
               <h1 className="text-2xl font-black uppercase text-zinc-950 tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
                 SANSAD SAMVIDHAAN
               </h1>
               <span className="text-[9px] font-mono text-zinc-400 uppercase tracking-widest block mt-0.5">
                 Operations Oversight
               </span>
+            </div>
+
+            <div className="ml-auto shrink-0">
+              <AnomalyTripControl />
+            </div>
             </div>
           </div>
 
@@ -451,8 +459,10 @@ export default function SamvidhaanPage() {
                   <div className="flex flex-col bg-rose-50 rounded-xl px-4 py-2.5 border border-rose-100">
                     <span className="text-[9px] font-mono font-semibold text-rose-400 uppercase tracking-widest mb-1">Bearing RUL ⚠</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-rose-600 leading-none">{f1Asset?.rulDays ?? "—"}</span>
-                      <span className="text-[13px] font-mono font-bold text-rose-400 mb-0.5">days</span>
+                      <span className="text-[32px] font-mono font-extrabold text-rose-600 leading-none">
+                        {f1Asset?.rulHours != null ? Math.round(f1Asset.rulHours) : f1Asset?.rulDays != null ? Math.round(f1Asset.rulDays * 24) : "—"}
+                      </span>
+                      <span className="text-[13px] font-mono font-bold text-rose-400 mb-0.5">hours</span>
                     </div>
                   </div>
                   <div className="flex flex-col bg-emerald-50 rounded-xl px-4 py-2.5 border border-emerald-100">
@@ -534,8 +544,10 @@ export default function SamvidhaanPage() {
                   <div className="flex flex-col bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-100">
                     <span className="text-[9px] font-mono font-semibold text-amber-500 uppercase tracking-widest mb-1">Waste Fan RUL</span>
                     <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-amber-600 leading-none">{f2Asset?.rulDays ?? "—"}</span>
-                      <span className="text-[13px] font-mono font-bold text-amber-400 mb-0.5">days</span>
+                      <span className="text-[32px] font-mono font-extrabold text-amber-600 leading-none">
+                        {f2Asset?.rulHours != null ? Math.round(f2Asset.rulHours) : f2Asset?.rulDays != null ? Math.round(f2Asset.rulDays * 24) : "—"}
+                      </span>
+                      <span className="text-[13px] font-mono font-bold text-amber-400 mb-0.5">hours</span>
                     </div>
                   </div>
                   <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
@@ -777,7 +789,7 @@ export default function SamvidhaanPage() {
             <BottomSplitCard
               href="/sansad/hub/samvidhaan/graphs"
               title="Graphs"
-              description="Predictive lifecycle tracking, exhauster vibration spectral graphs, and degradation trendlines."
+              description="Simple maintenance boards — health bars, hours left, and plain-English actions per factory."
               logos={sectionTickers}
             />
             <BottomSplitCard

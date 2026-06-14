@@ -15,6 +15,7 @@ import { apiList } from "@/lib/api";
 import { SEARCH_DEBOUNCE_MS } from "@/lib/constants";
 import { getLogSeverity } from "@/lib/logSeverity";
 import { SystemLogControls } from "../components/SystemLogControls";
+import AnomalyTripControl from "../components/AnomalyTripControl";
 import type { LogEntry } from "@/services/types";
 
 const LogEntryCard = React.memo(function LogEntryCard({ 
@@ -201,8 +202,9 @@ export default function LogsConsolePage() {
           </div>
 
           {/* Centered partitioned area spanning exactly 84vw */}
-          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] p-12 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="w-full flex items-center justify-between mb-6 border-b border-zinc-200 pb-4 select-none">
+          <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] min-h-0">
+            <div className="shrink-0 border-b border-zinc-200 select-none">
+            <div className="w-full flex items-center justify-between px-8 py-3">
               {/* Left Side: Back Button */}
               <div className="w-1/4 flex justify-start">
                 <Link href="/sansad/hub" className="flex items-center select-none">
@@ -226,10 +228,14 @@ export default function LogsConsolePage() {
                 </span>
               </div>
 
-              {/* Right Side: Spacer */}
-              <div className="w-1/4" />
+              {/* Right Side: abnormality controls */}
+              <div className="w-1/4 flex justify-end overflow-visible">
+                <AnomalyTripControl />
+              </div>
+            </div>
             </div>
 
+            <div className="flex-1 min-h-0 overflow-y-auto px-8 py-4 scrollbar-none [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar-track]:hidden [&::-webkit-scrollbar-thumb]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Split layout */}
             <div className="flex-1 flex gap-8 min-h-0">
               
@@ -395,6 +401,8 @@ export default function LogsConsolePage() {
                 </div>
 
               </div>
+
+            </div>
 
             </div>
 

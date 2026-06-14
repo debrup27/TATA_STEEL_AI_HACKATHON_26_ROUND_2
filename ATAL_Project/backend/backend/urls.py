@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/v1/rag/", include("apps.rag.urls")),
     path("api/v1/chat/", include("apps.agents.urls")),
     path("api/v1/plant/", include("apps.consolidation.plant_urls")),
+    path("api/v1/samvidhaan/", include("apps.assets.urls.samvidhaan")),
     path("api/v1/", include("apps.feedback.urls")),
     path("api/v1/simulate/", include("apps.assets.urls.simulate")),
 ]

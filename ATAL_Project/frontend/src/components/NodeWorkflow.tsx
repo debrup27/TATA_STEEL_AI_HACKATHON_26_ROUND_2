@@ -6,13 +6,13 @@ import { SPRING_DEFAULT } from "@/lib/constants";
 import type { FlowNode } from "./workflow/types";
 import {
   fetchFactoryWorkflowNodes,
-  fetchFactorySnapshot,
-  applySnapshotToNodes,
+  applyPlantSnapshotToNodes,
   mergeNodePositions,
   mergeNodeTelemetry,
   applyWsCellsToNodes,
   type FactoryWorkflowKey,
 } from "@/services/factoryWorkflow";
+import { fetchPlantSnapshot } from "@/services/plantSnapshot";
 import { connectWebSocket } from "@/lib/ws";
 import { apiJson } from "@/lib/api";
 
@@ -73,7 +73,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   }, [activeFactory]);
 
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
-  const [simulatingAnomalyIds, setSimulatingAnomalyIds] = useState<Set<string>>(new Set());
+  const [faultInjectedIds, setFaultInjectedIds] = useState<Set<string>>(new Set());
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editSubtitle, setEditSubtitle] = useState("");
@@ -171,29 +171,17 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     return () => clearInterval(tick);
   }, [activeFactory]);
 
-  // Refresh sensor readings + health every 10s via snapshot + full node merge
+  // Refresh health + sensors every 10s via unified plant snapshot
   useEffect(() => {
     const refreshTelemetry = () => {
       setRefreshCountdown(10);
       const fid = factoryIdRef.current;
-      fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey)
-        .then((loaded) => {
-          setFactoryNodes((prev) => ({
-            ...prev,
-            [activeFactory]: mergeNodePositions(
-              mergeNodeTelemetry(prev[activeFactory], loaded),
-              loaded,
-            ),
-          }));
-        })
-        .catch(() => undefined);
-
       if (!fid) return;
-      fetchFactorySnapshot(fid)
-        .then((snapshot) => {
+      fetchPlantSnapshot(fid)
+        .then((snap) => {
           setFactoryNodes((prev) => ({
             ...prev,
-            [activeFactory]: applySnapshotToNodes(prev[activeFactory], snapshot),
+            [activeFactory]: applyPlantSnapshotToNodes(prev[activeFactory], snap),
           }));
         })
         .catch(() => undefined);
@@ -214,7 +202,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
               .filter((a) => a.fault_injected && factoryNodeIds.has(a.asset_id))
               .map((a) => a.asset_id),
           );
-          setSimulatingAnomalyIds(activeFaults);
+          setFaultInjectedIds(activeFaults);
         })
         .catch(() => undefined);
     };
@@ -538,46 +526,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     setShowAddMenuId(null);
   }, [activeFactory, setNodes]);
 
-  // ----------------------------------------------------
-  // Interactive Anomaly Simulation & Reset handlers
-  // ----------------------------------------------------
-  const handleSimulateAnomaly = useCallback((nodeId: string) => {
-    setSimulatingAnomalyIds((prev) => new Set([...prev, nodeId]));
-    apiJson(`/api/v1/simulate/${nodeId}/`, {
-      method: "POST",
-      body: JSON.stringify({ action: "inject_fault", fault_type: "bearing_wear" }),
-    })
-      .then(() => {
-        // Reload backend state after celery batch has time to run
-        setTimeout(() => {
-          fetchFactoryWorkflowNodes(activeFactory as FactoryWorkflowKey)
-            .then((loaded) => {
-              setFactoryNodes((prev) => ({
-                ...prev,
-                [activeFactory]: mergeNodePositions(
-                  mergeNodeTelemetry(prev[activeFactory], loaded),
-                  loaded,
-                ),
-              }));
-            })
-            .catch(() => undefined);
-        }, 4000);
-      })
-      .catch(() => {
-        setSimulatingAnomalyIds((prev) => {
-          const next = new Set(prev);
-          next.delete(nodeId);
-          return next;
-        });
-      });
-  }, [activeFactory]);
-
-  const handleStopAnomaly = useCallback((nodeId: string) => {
-    setSimulatingAnomalyIds((prev) => {
-      const next = new Set(prev);
-      next.delete(nodeId);
-      return next;
-    });
+  const handleResetTelemetry = useCallback((nodeId: string) => {
     apiJson(`/api/v1/simulate/${nodeId}/`, {
       method: "POST",
       body: JSON.stringify({ action: "reset" }),
@@ -591,13 +540,14 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
             loaded,
           ),
         }));
+        setFaultInjectedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
       })
       .catch(() => undefined);
   }, [activeFactory]);
-
-  const handleResetTelemetry = useCallback((nodeId: string) => {
-    handleStopAnomaly(nodeId);
-  }, [handleStopAnomaly]);
 
   const handleNodeClick = useCallback((nodeId: string) => {
     if (hasDragged.current) return;
@@ -762,9 +712,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
                 onRenameSave={handleSaveRename}
                 onDuplicate={handleDuplicateNode}
                 onDelete={handleDeleteNode}
-                onSimulateAnomaly={handleSimulateAnomaly}
-                onStopAnomaly={handleStopAnomaly}
-                isSimulatingAnomaly={simulatingAnomalyIds.has(node.id)}
+                faultInjected={faultInjectedIds.has(node.id)}
                 onResetTelemetry={handleResetTelemetry}
                 onToggleAddMenu={handleToggleAddMenu}
                 onAddNodeAfter={handleAddNodeAfter}

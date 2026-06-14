@@ -1,67 +1,93 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import HubShell from "../components/HubShell";
-import { fetchActionPlans, triggerConsolidationAsync, fetchConsolidationResult } from "@/services/actionPlans";
+import { useHubManasNotify } from "../components/HubManasNotify";
+import {
+  fetchActionPlans,
+  fetchPlanRegenerationStatus,
+  triggerQuickPlanRegenerate,
+  type PlanRegenerationStatus,
+} from "@/services/actionPlans";
 import type { MaintenanceActionPlan } from "@/services/sansadOutputs";
 import { riskLevelColor } from "@/services/sansadOutputs";
+import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
+import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
+import HubMarkdown from "../components/HubMarkdown";
 import { CheckCircle2, ClipboardList, Eye, Wrench, Loader2, RefreshCw } from "lucide-react";
 
 export default function MaintenanceActionsPage() {
+  const { runManasCall } = useHubManasNotify();
   const [plans, setPlans] = useState<MaintenanceActionPlan[]>([]);
   const [planId, setPlanId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
+  const [regen, setRegen] = useState<PlanRegenerationStatus | null>(null);
+  const { byId: diagById } = usePlantSnapshot();
 
-  const loadPlans = () => {
-    setLoading(true);
-    return fetchActionPlans()
-      .then((rows) => {
-        setPlans(rows);
-        if (rows[0] && !planId) setPlanId(rows[0].id);
-        setError(null);
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load action plans"))
-      .finally(() => setLoading(false));
-  };
+  const loadPlans = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const { plans: rows, regeneration } = await fetchActionPlans();
+      setPlans(rows);
+      setRegen(regeneration);
+      if (rows[0] && !planId) setPlanId(rows[0].id);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load action plans");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [planId]);
 
   useEffect(() => {
     void loadPlans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadPlans]);
+
+  useEffect(() => {
+    const poll = setInterval(() => {
+      void fetchPlanRegenerationStatus()
+        .then(setRegen)
+        .catch(() => undefined);
+      if (regen?.active && regen.trigger !== "manual") {
+        void loadPlans(true);
+      }
+    }, 4000);
+    return () => clearInterval(poll);
+  }, [regen?.active, regen?.trigger, loadPlans]);
 
   const plan = plans.find((p) => p.id === planId) ?? plans[0];
   const assetId = plan?.assetId;
+  const liveAsset = assetId ? diagById.get(assetId) : undefined;
 
   const handleGenerate = async () => {
-    if (!assetId) return;
+    if (!assetId || !plan) return;
     setGenerating(true);
-    setGenStatus("Starting consolidation…");
-    try {
-      const { task_id } = await triggerConsolidationAsync(assetId);
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const result = await fetchConsolidationResult(task_id) as { status?: string; error?: string };
-        if (result.status === "SUCCESS" || result.status === "success") {
-          setGenStatus("Plan generated — refreshing…");
-          await loadPlans();
-          setGenStatus(null);
-          return;
+    setGenStatus("Generating short maintenance plan…");
+    setError(null);
+    const ok = await runManasCall(
+      `Maintenance plan — ${plan.asset}`,
+      async () => {
+        const result = await triggerQuickPlanRegenerate(assetId);
+        if (result.status !== "complete") {
+          throw new Error(result.error ?? "Plan generation failed");
         }
-        if (result.status === "FAILURE" || result.status === "failure") {
-          setGenStatus(result.error ?? "Consolidation failed");
-          return;
-        }
-        setGenStatus(`Orchestrating… (${i + 1}/30)`);
-      }
-      setGenStatus("Timed out — check backend logs");
-    } catch (e) {
-      setGenStatus(e instanceof Error ? e.message : "Consolidation trigger failed");
-    } finally {
-      setGenerating(false);
+        await loadPlans(true);
+        return result;
+      },
+      {
+        pendingDetail: "MANAS is regenerating the maintenance plan…",
+        successDetail: "Plan updated — review the refreshed actions below",
+      },
+    );
+    if (ok) {
+      setGenStatus(null);
+    } else {
+      setGenStatus("Plan generation failed");
     }
+    setGenerating(false);
   };
 
   if (loading && !plans.length) {
@@ -86,10 +112,22 @@ export default function MaintenanceActionsPage() {
   if (!plan) {
     return (
       <HubShell title="Maintenance Actions" subtitle="No plans available">
-        <div className="text-center py-24 text-zinc-500 text-sm">No maintenance action plans found for degraded assets.</div>
+        <div className="text-center py-24 text-zinc-500 text-sm">No maintenance action plans found.</div>
       </HubShell>
     );
   }
+
+  const regenBanner = regen?.active && regen.trigger !== "manual" ? (
+    <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-center gap-3 text-orange-800">
+      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+      <div className="text-xs">
+        <p className="font-bold uppercase tracking-wider">Regenerating intelligence reports</p>
+        <p className="font-mono mt-0.5 text-orange-700/80">
+          {regen.trigger || "scheduled"} — {regen.completed}/{regen.total} items
+        </p>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <HubShell
@@ -97,6 +135,11 @@ export default function MaintenanceActionsPage() {
       subtitle="Repair steps · immediate actions · plans · monitoring · spares"
     >
       <div className="max-w-7xl mx-auto space-y-6">
+        {regenBanner}
+        {error ? (
+          <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</div>
+        ) : null}
+
         {plans.length > 1 && (
           <div className="flex gap-2 flex-wrap">
             {plans.map((p) => (
@@ -124,11 +167,15 @@ export default function MaintenanceActionsPage() {
                 {plan.asset}
               </h2>
               <p className="text-xs text-zinc-500">{plan.factory}</p>
+              <AssetLiveSummary asset={liveAsset} />
+              <AssetSensorPills asset={liveAsset} className="mt-3" />
             </div>
-            <div className="flex flex-col items-end gap-2 max-w-md">
-              <p className="text-sm text-zinc-600 bg-zinc-50 border border-zinc-100 rounded-xl p-3 italic">
-                {plan.optimizedPlanSummary || "No optimized plan summary yet."}
-              </p>
+            <div className="flex flex-col items-end gap-2 max-w-md w-full">
+              <div className="text-sm text-zinc-600 bg-zinc-50 border border-zinc-100 rounded-xl p-3 w-full max-h-64 overflow-y-auto">
+                <HubMarkdown className="text-xs not-italic">
+                  {plan.optimizedPlanSummary || "No optimized plan summary yet."}
+                </HubMarkdown>
+              </div>
               {assetId && (
                 <button
                   type="button"
@@ -137,7 +184,7 @@ export default function MaintenanceActionsPage() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-[#1b253c] text-white hover:bg-orange-500 disabled:opacity-50 cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
-                  {generating ? "Generating…" : "Generate plan"}
+                  {generating ? "Generating…" : "Regenerate plan"}
                 </button>
               )}
               {genStatus && <p className="text-[10px] font-mono text-zinc-400">{genStatus}</p>}
@@ -152,16 +199,12 @@ export default function MaintenanceActionsPage() {
               <h2 className="text-sm font-black uppercase text-[#1b253c]">Immediate Actions</h2>
             </div>
             <ul className="space-y-2">
-              {plan.immediateActions.length === 0 ? (
-                <li className="text-sm text-zinc-400">No immediate actions in latest report.</li>
-              ) : (
-                plan.immediateActions.map((action, i) => (
-                  <li key={action} className="flex gap-2 text-sm text-zinc-700">
-                    <span className="text-orange-500 font-bold shrink-0">{i + 1}.</span>
-                    {action}
-                  </li>
-                ))
-              )}
+              {plan.immediateActions.map((action, i) => (
+                <li key={`${action}-${i}`} className="flex gap-2 text-sm text-zinc-700">
+                  <span className="text-orange-500 font-bold shrink-0">{i + 1}.</span>
+                  {action}
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -172,7 +215,7 @@ export default function MaintenanceActionsPage() {
             </div>
             <div className="space-y-3">
               {plan.steps.length === 0 ? (
-                <p className="text-sm text-zinc-400">Run consolidation to populate repair steps.</p>
+                <p className="text-sm text-zinc-400">Regenerate plan to populate repair steps.</p>
               ) : (
                 plan.steps.map((step) => (
                   <div key={step.order} className="flex gap-4 p-3 rounded-xl border border-zinc-100 bg-zinc-50/50">
@@ -196,11 +239,15 @@ export default function MaintenanceActionsPage() {
               <h2 className="text-sm font-black uppercase text-[#1b253c]">Long-Term Monitoring</h2>
             </div>
             <ul className="space-y-2">
-              {plan.longTermMonitoring.map((m) => (
-                <li key={m} className="text-sm text-zinc-600 flex gap-2">
-                  <span className="text-violet-400">•</span>{m}
-                </li>
-              ))}
+              {plan.longTermMonitoring.length === 0 ? (
+                <li className="text-sm text-zinc-400">No monitoring guidance yet.</li>
+              ) : (
+                plan.longTermMonitoring.map((m) => (
+                  <li key={m} className="text-sm text-zinc-600 flex gap-2">
+                    <span className="text-violet-400">•</span>{m}
+                  </li>
+                ))
+              )}
             </ul>
           </div>
 
@@ -209,32 +256,36 @@ export default function MaintenanceActionsPage() {
               <ClipboardList className="w-5 h-5 text-sky-600" />
               <h2 className="text-sm font-black uppercase text-[#1b253c]">Spare Procurement Strategy</h2>
             </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[10px] uppercase text-zinc-400 border-b border-zinc-100">
-                  <th className="text-left py-2">Part</th>
-                  <th className="text-center py-2">Qty</th>
-                  <th className="text-center py-2">Lead</th>
-                  <th className="text-right py-2">Stock</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plan.spares.map((s) => (
-                  <tr key={s.part} className="border-b border-zinc-50">
-                    <td className="py-2.5 font-medium text-zinc-800">{s.part}</td>
-                    <td className="text-center py-2.5">{s.qty}</td>
-                    <td className="text-center py-2.5 font-mono text-xs">{s.leadDays}d</td>
-                    <td className="text-right py-2.5">
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                        s.inStock ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                      }`}>
-                        {s.inStock ? "Yes" : "Order"}
-                      </span>
-                    </td>
+            {plan.spares.length === 0 ? (
+              <p className="text-sm text-zinc-400">No spare parts catalogued — run seed_spares or regenerate plan.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[10px] uppercase text-zinc-400 border-b border-zinc-100">
+                    <th className="text-left py-2">Part</th>
+                    <th className="text-center py-2">Qty</th>
+                    <th className="text-center py-2">Lead</th>
+                    <th className="text-right py-2">Stock</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {plan.spares.map((s) => (
+                    <tr key={s.part} className="border-b border-zinc-50">
+                      <td className="py-2.5 font-medium text-zinc-800">{s.part}</td>
+                      <td className="text-center py-2.5">{s.qty}</td>
+                      <td className="text-center py-2.5 font-mono text-xs">{s.leadDays}d</td>
+                      <td className="text-right py-2.5">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                          s.inStock ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+                        }`}>
+                          {s.inStock ? "Yes" : "Order"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

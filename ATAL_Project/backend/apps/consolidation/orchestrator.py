@@ -97,6 +97,8 @@ def assemble_consolidated_payload(asset_id: str) -> dict:
     }
 
     # Spares
+    from apps.assets.spares_catalog import ensure_asset_spares
+    ensure_asset_spares(asset)
     spares = SparesPart.objects.filter(asset=asset)
     spares_data = {
         "parts": [

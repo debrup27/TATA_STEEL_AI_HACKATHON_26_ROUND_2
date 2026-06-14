@@ -38,6 +38,16 @@ def _format_contributing_sensor(entry) -> str:
     return str(entry)
 
 
+def _humanize_alert_message(message: str | None, severity: str | None = None) -> str:
+    text = (message or "").strip()
+    text = re.sub(r"\bTRIP\b", "Abnormality", text, flags=re.IGNORECASE)
+    text = re.sub(r"\btrip\s+limit\b", "abnormality limit", text, flags=re.IGNORECASE)
+    text = re.sub(r"\btrip\s+threshold\b", "abnormality threshold", text, flags=re.IGNORECASE)
+    if (severity or "").lower() == "trip" and not text.lower().startswith("abnormality"):
+        text = f"Abnormality — {text}"
+    return text
+
+
 def _sanitize_rul_hours(rul_hours) -> float | None:
     if rul_hours is None:
         return None
@@ -195,6 +205,35 @@ def _prioritize_sensors(sensors: list[dict], limit: int = 3) -> list[dict]:
     return ranked[:limit]
 
 
+def _clean_fault_hint(text: str, fault_idx: int) -> str:
+    raw = (text or "").strip()
+    lower = raw.lower()
+    junk = (
+        "provide consolidated",
+        "asset_id",
+        "sensor_readings",
+        "ml_predictions",
+        "maintenance_history",
+        "active_alarms",
+    )
+    if not raw or any(j in lower for j in junk):
+        return _FAULT_LABELS.get(fault_idx, "Active equipment fault")
+    return raw[:300]
+
+
+def _twin_simulation_flags(asset: Asset) -> dict:
+    from apps.twins.models import AssetTwinState
+
+    twin = AssetTwinState.objects.filter(asset=asset).first()
+    state = twin.state if twin else {}
+    fault_injected = bool(state.get("_fault_injected", False))
+    fault_type = state.get("_fault_type")
+    return {
+        "faultInjected": fault_injected,
+        "simulationFaultType": fault_type,
+    }
+
+
 def build_diagnostic(asset: Asset) -> dict:
     health = AssetHealthService.compute(asset)
     last_pred = (
@@ -229,11 +268,11 @@ def build_diagnostic(asset: Asset) -> dict:
     has_report_dx = bool(report and report.diagnosis)
 
     if has_report_dx:
-        probable_fault = report.diagnosis[:300]
+        fault_label_hint = _clean_fault_hint(report.diagnosis, fault_idx)
     elif has_ml_fault and fault_idx in _FAULT_LABELS:
-        probable_fault = _FAULT_LABELS[fault_idx]
+        fault_label_hint = _FAULT_LABELS[fault_idx]
     else:
-        probable_fault = ""
+        fault_label_hint = ""
 
     confidence = 0.0
     if pred_out.get("fault_confidence") is not None:
@@ -254,7 +293,7 @@ def build_diagnostic(asset: Asset) -> dict:
     )
     early_warning = None
     if critical_alarm and critical_alarm.severity in ("critical", "trip", "high"):
-        early_warning = critical_alarm.message
+        early_warning = _humanize_alert_message(critical_alarm.message, critical_alarm.severity)
     elif health.get("anomaly_score") and float(health["anomaly_score"]) > 0.75:
         early_warning = (
             f"Anomaly score {float(health['anomaly_score']):.2f} — "
@@ -265,13 +304,29 @@ def build_diagnostic(asset: Asset) -> dict:
             f"Health score {health['health_score']:.0f}% — schedule intervention before unplanned outage."
         )
 
+    sim = _twin_simulation_flags(asset)
+    fault_injected = sim["faultInjected"]
+
     active_fault = _is_active_fault(
         fault_idx,
-        probable_fault,
+        fault_label_hint,
         early_warning,
         float(health.get("health_score", 100)),
         health.get("anomaly_score"),
     )
+
+    if fault_injected:
+        active_fault = True
+        if not fault_label_hint:
+            ft = sim.get("simulationFaultType") or "general"
+            fault_label_hint = _FAULT_LABELS.get(1, "Bearing degradation — elevated vibration and temperature signature")
+        if confidence < 0.55:
+            confidence = 0.72
+        if not early_warning:
+            early_warning = (
+                f"Abnormality generator active on {asset.name} "
+                f"({sim.get('simulationFaultType') or 'general'})"
+            )
 
     if not active_fault:
         root_causes = []
@@ -338,6 +393,32 @@ def build_diagnostic(asset: Asset) -> dict:
     except ValueError:
         pass
 
+    trip_active = fault_injected or (
+        critical_alarm is not None and critical_alarm.severity == "trip"
+    )
+
+    if active_fault:
+        from apps.agents.fault_diagnosis import generate_probable_fault_narrative
+
+        probable_fault = generate_probable_fault_narrative(
+            asset_id=str(asset.id),
+            asset_name=asset.name,
+            stage=_stage_label(asset.asset_type),
+            fault_label_hint=fault_label_hint or _FAULT_LABELS.get(fault_idx, "Active equipment fault"),
+            fault_class=fault_idx if not fault_injected else max(fault_idx, 1),
+            confidence=confidence,
+            health=int(round(health.get("health_score", 100))),
+            rul_days=rul_days,
+            anomaly_score=health.get("anomaly_score"),
+            sensors=sensors,
+            root_causes=root_causes,
+            early_warning=early_warning,
+            simulation_fault_type=sim.get("simulationFaultType"),
+            pred_output=pred_out,
+        )
+    else:
+        probable_fault = _FAULT_LABELS[0]
+
     return {
         "id": str(asset.id),
         "name": asset.name,
@@ -348,8 +429,12 @@ def build_diagnostic(asset: Asset) -> dict:
         "rulHours": round(rul_hours, 1) if rul_hours is not None else None,
         "probableFault": probable_fault,
         "faultConfidence": round(min(0.99, confidence), 2),
-        "faultClass": fault_idx,
+        "faultClass": fault_idx if not fault_injected else max(fault_idx, 1),
         "isNormalOperation": not active_fault,
+        "anomalyActive": active_fault,
+        "tripActive": trip_active,
+        "faultInjected": fault_injected,
+        "simulationFaultType": sim.get("simulationFaultType"),
         "rootCauses": root_causes,
         "earlyWarning": early_warning,
         "processDefects": process_defects,

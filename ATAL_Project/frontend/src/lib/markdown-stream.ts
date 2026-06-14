@@ -85,6 +85,18 @@ const UNICODE_SUB_FORMULA = /((?:[A-Z][a-z]?)+)([₀₁₂₃₄₅₆₇₈₉]
 /** $FeCl$ with subscript digits outside the math delimiters. */
 const SPLIT_MATH_SUB = /\$([^$\n]+)\$\s*_?(\d{1,2})\b/g;
 
+/** Un-glue markdown table rows compacted onto one line (common LLM / API flattening). */
+export function repairCollapsedMarkdownTables(text: string): string {
+  if (!text || !text.includes("|")) return text;
+  let out = text;
+  // "| cell ||---|" or "| cell || next row |"
+  out = out.replace(/\|\s*\|(?=-)/g, "|\n|");
+  out = out.replace(/\|\s*\|(?=\|)/g, "|\n|");
+  // "events | |---" missing newline before separator
+  out = out.replace(/\|\s+\|(-{3,})/g, "|\n|$1");
+  return out;
+}
+
 /** Full pipeline for MANAS assistant text (chemistry, ISO codes, broken LLM markup). */
 export function normalizeTechnicalMarkdown(text: string): string {
   if (!text) return text;

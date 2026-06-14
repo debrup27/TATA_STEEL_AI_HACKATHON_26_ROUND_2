@@ -6,8 +6,9 @@ import { ArrowUpRight } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import UserPill from "@/components/UserPill";
+import AnomalyTripControl from "./components/AnomalyTripControl";
 import { HUB_TICK_INTERVAL } from "@/services/telemetry";
-import { fetchDiagnostics } from "@/services/diagnostics";
+import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import { useMockTelemetryLogs } from "@/hooks";
 import { useFactoryTickers } from "@/hooks/useFactoryTickers";
 import { useNotificationFeed } from "@/hooks/useNotificationFeed";
@@ -53,6 +54,8 @@ export default function SansadMonitoringPage() {
   const handleSelectLog = useCallback((log: LogEntry) => setActiveLogForModal(log), []);
   const systemLogContainerRef = useRef<HTMLDivElement>(null);
 
+  const { assets: snapAssets } = usePlantSnapshot();
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
     handleResize();
@@ -61,29 +64,21 @@ export default function SansadMonitoringPage() {
   }, []);
 
   useEffect(() => {
-    const loadMetrics = () => {
-      fetchDiagnostics()
-        .then((assets) => {
-          const f1 = assets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? assets[0];
-          const f2 = assets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? assets[1];
-          if (f1) {
-            setExhausterHealth(f1.health);
-            const vib = f1.sensors.find((s) => s.label.toLowerCase().includes("vib"));
-            if (vib) setExhausterVibration(parseFloat(vib.value) || 0);
-          }
-          if (f2) {
-            const feo = f2.sensors.find((s) => s.label.toLowerCase().includes("feo"));
-            const speed = f2.sensors.find((s) => s.label.toLowerCase().includes("strand") || s.label.toLowerCase().includes("speed"));
-            if (feo) setSinterFeO(parseFloat(feo.value) || 0);
-            if (speed) setStrandSpeed(parseFloat(speed.value) || 0);
-          }
-        })
-        .catch(() => undefined);
-    };
-    loadMetrics();
-    const interval = setInterval(loadMetrics, HUB_TICK_INTERVAL);
-    return () => clearInterval(interval);
-  }, []);
+    if (!snapAssets.length) return;
+    const f1 = snapAssets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? snapAssets[0];
+    const f2 = snapAssets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? snapAssets[1];
+    if (f1) {
+      setExhausterHealth(f1.health);
+      const vib = f1.sensors.find((s) => s.label.toLowerCase().includes("vib"));
+      if (vib) setExhausterVibration(parseFloat(vib.value) || 0);
+    }
+    if (f2) {
+      const feo = f2.sensors.find((s) => s.label.toLowerCase().includes("feo"));
+      const speed = f2.sensors.find((s) => s.label.toLowerCase().includes("strand") || s.label.toLowerCase().includes("speed"));
+      if (feo) setSinterFeO(parseFloat(feo.value) || 0);
+      if (speed) setStrandSpeed(parseFloat(speed.value) || 0);
+    }
+  }, [snapAssets]);
 
   useEffect(() => {
     if (!isLogStreamLive || !systemLogContainerRef.current) return;
@@ -113,8 +108,16 @@ export default function SansadMonitoringPage() {
 
           <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5]">
             <div className="w-full h-full flex flex-col">
-              <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-10 bg-[#FAF9F5] z-30 select-none flex-shrink-0">
-                <div className="absolute left-1/2 -translate-x-1/2">
+              <div className="shrink-0 border-b border-zinc-200 bg-[#FAF9F5] z-30 select-none relative overflow-visible">
+              <div className="min-h-14 flex items-center justify-between px-4 py-2 relative gap-2">
+                <Link
+                  href="/"
+                  className="rounded-full p-1.5 bg-white inline-flex items-center justify-center overflow-hidden shadow-sm cursor-pointer w-[40px] h-[40px] transition-transform duration-500 hover:rotate-360 shrink-0"
+                  title="Home"
+                >
+                  <img src="/short_form_logo.webp" alt="ATAL Logo" className="w-full h-full object-cover block" />
+                </Link>
+                <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
                   <span
                     className="text-2xl font-black uppercase tracking-tight text-[#1b253c] inline-block"
                     style={{ fontFamily: "var(--font-pixeloid)" }}
@@ -122,17 +125,11 @@ export default function SansadMonitoringPage() {
                     SANSAD
                   </span>
                 </div>
-                <Link
-                  href="/"
-                  className="rounded-full p-1.5 bg-white inline-flex items-center justify-center overflow-hidden shadow-sm cursor-pointer w-[40px] h-[40px] transition-transform duration-500 hover:rotate-360"
-                  title="Home"
-                >
-                  <img src="/short_form_logo.webp" alt="ATAL Logo" className="w-full h-full object-cover block" />
-                </Link>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                  <AnomalyTripControl />
                   <Link
                     href="/manas/chat"
-                    className="group/link text-[10px] font-mono font-bold uppercase hover:text-[#f97316] text-[#1b253c] tracking-widest flex items-center gap-1 select-none"
+                    className="group/link text-[10px] font-mono font-bold uppercase hover:text-[#f97316] text-[#1b253c] tracking-widest flex items-center gap-1 select-none whitespace-nowrap"
                   >
                     Manas Chat <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/link:rotate-45" />
                   </Link>
@@ -141,6 +138,7 @@ export default function SansadMonitoringPage() {
                     className="w-full h-full"
                   />
                 </div>
+              </div>
               </div>
 
               <div className="flex-1 flex overflow-hidden">

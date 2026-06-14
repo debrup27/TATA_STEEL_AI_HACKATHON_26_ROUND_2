@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { connectWebSocket } from "@/lib/ws";
 import type { Citation } from "@/services/types";
 
-export type StreamPhase = "idle" | "waiting" | "rag" | "post_rag" | "thinking" | "answering";
+export type StreamPhase = "idle" | "waiting" | "rag" | "role" | "post_rag" | "thinking" | "answering";
 
 export interface UseChatStreamOptions {
   sessionId: string | null;
@@ -87,6 +87,7 @@ export function useChatStream({
         if (data.type === "phase" && typeof data.phase === "string") {
           const phase = data.phase as string;
           if (phase === "rag") setStreamPhase("rag");
+          else if (phase === "role") setStreamPhase("role");
           else if (phase === "rag_done") setStreamPhase("post_rag");
           else if (phase === "thinking") {
             setStreamPhase("thinking");

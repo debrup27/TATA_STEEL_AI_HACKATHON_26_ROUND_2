@@ -1,7 +1,8 @@
-/** MANAS chat personas — tailors system prompt per selected role (Technician / Supervisor only). */
+/** MANAS chat personas — 0.8b role workers brief 9b; admin gets both lenses. */
 export const MANAS_ROLES = [
   { id: "technician", label: "Technician" },
   { id: "supervisor", label: "Supervisor" },
+  { id: "admin", label: "Admin (both)" },
 ] as const;
 
 export type ManasRoleId = (typeof MANAS_ROLES)[number]["id"];

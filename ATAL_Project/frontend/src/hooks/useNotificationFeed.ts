@@ -23,9 +23,8 @@ export function buildTickersFromFeed(feed: NotificationFeed | null): TickerItem[
     items.push(SEP);
   }
   for (const p of feed.predictions?.slice(0, 4) ?? []) {
-    const days = p.rul_hours != null ? Math.max(1, Math.round(p.rul_hours / 24)) : null;
-    const text = days != null
-      ? `${p.asset_name ?? "Asset"}: RUL ${days}d`
+    const text = p.rul_hours != null
+      ? `${p.asset_name ?? "Asset"}: RUL ${Math.round(p.rul_hours)}h`
       : `${p.asset_name ?? "Asset"}: health ${Math.round(p.health_score ?? 0)}%`;
     items.push({ text, isSeparator: false });
     items.push(SEP);

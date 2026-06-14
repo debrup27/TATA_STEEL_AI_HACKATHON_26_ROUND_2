@@ -57,6 +57,7 @@ export interface BackendRankedAsset {
   process_criticality?: number;
   delay_severity?: number;
   spares_available?: boolean;
+  spares_status?: "full" | "partial" | "none";
   procurement_lead_days?: number;
   impact?: string;
   recommendation?: string;
@@ -79,6 +80,10 @@ export interface BackendDiagnosticAsset {
   sensors: { label: string; value: string; status: "nominal" | "warning" | "critical" }[];
   isNormalOperation?: boolean;
   faultClass?: number;
+  anomalyActive?: boolean;
+  tripActive?: boolean;
+  faultInjected?: boolean;
+  simulationFaultType?: string | null;
 }
 
 export interface BackendActionPlan {
@@ -193,7 +198,8 @@ export function mapRiskAsset(r: BackendRankedAsset, index = 0): RiskAsset {
     score,
     urgency,
     impact: r.impact ?? `Factory: ${r.factory}. Health score ${Math.round(r.health_score)}%.`,
-    sparesAvailable: r.spares_available ?? true,
+    sparesAvailable: r.spares_available ?? (r.spares_status ? r.spares_status !== "none" : false),
+    sparesStatus: (r.spares_status ?? (r.spares_available ? "full" : "none")) as "full" | "partial" | "none",
     downtimeHours: Math.max(2, Math.round((r.delay_severity ?? (100 - r.health_score)) / 10)),
     recommendation: r.recommendation ?? "Monitor and plan maintenance during next outage window.",
     factory: r.factory,
@@ -201,7 +207,7 @@ export function mapRiskAsset(r: BackendRankedAsset, index = 0): RiskAsset {
     urgencyScore: score,
     bottleneckRank: r.bottleneck_rank ?? index + 1,
     processCriticality: r.process_criticality ?? 50,
-    delaySeverity: r.delay_severity ?? Math.round(100 - r.health_score),
+    delaySeverity: r.delay_severity ?? 0,
     procurementLeadDays: r.procurement_lead_days ?? 0,
   };
 }
@@ -243,10 +249,16 @@ export function mapDiagnosticAsset(d: BackendDiagnosticAsset) {
       status: s.status ?? "nominal",
     })),
     isNormalOperation: Boolean(d.isNormalOperation),
+    anomalyActive: Boolean(d.anomalyActive),
+    tripActive: Boolean(d.tripActive),
+    faultInjected: Boolean(d.faultInjected),
+    simulationFaultType: d.simulationFaultType ?? null,
   };
 }
 
-export function mapActionPlan(p: BackendActionPlan) {
+export function mapActionPlan(
+  p: BackendActionPlan,
+): import("@/services/sansadOutputs").MaintenanceActionPlan {
   return {
     id: p.id,
     asset: p.asset,
@@ -258,8 +270,8 @@ export function mapActionPlan(p: BackendActionPlan) {
     spares: p.spares ?? [],
     optimizedPlanSummary: p.optimizedPlanSummary ?? "",
     assetId: p.assetId,
-    workOrderId: p.workOrderId,
-    reportId: p.reportId,
+    workOrderId: p.workOrderId ?? undefined,
+    reportId: p.reportId ?? undefined,
   };
 }
 
@@ -409,6 +421,7 @@ export function mapReportListItem(r: BackendReport & { asset_name?: string }): {
   title: string;
   summary: string;
   audience: "engineer" | "supervisor" | "operations";
+  assetId: string;
 } {
   const type = (r.report_type ?? "maintenance") as "maintenance" | "abnormal_alert" | "decision_summary" | "digital_log";
   const title = r.title || r.diagnosis?.slice(0, 80) || "Maintenance Report";
@@ -427,5 +440,6 @@ export function mapReportListItem(r: BackendReport & { asset_name?: string }): {
     title,
     summary: r.diagnosis?.slice(0, 200) ?? body.slice(0, 200),
     audience: type === "decision_summary" ? "supervisor" : "engineer",
+    assetId: r.asset,
   };
 }

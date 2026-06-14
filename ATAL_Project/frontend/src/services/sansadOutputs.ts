@@ -20,6 +20,10 @@ export interface DiagnosticAsset {
   processDefects: { stage: string; defect: string; link: string }[];
   sensors: { label: string; value: string; status: "nominal" | "warning" | "critical" }[];
   isNormalOperation?: boolean;
+  anomalyActive?: boolean;
+  tripActive?: boolean;
+  faultInjected?: boolean;
+  simulationFaultType?: string | null;
 }
 
 export interface RiskPriorityAsset {
@@ -32,6 +36,7 @@ export interface RiskPriorityAsset {
   processCriticality: number;
   delaySeverity: number;
   sparesAvailable: boolean;
+  sparesStatus?: "full" | "partial" | "none";
   procurementLeadDays: number;
   impact: string;
   recommendation: string;

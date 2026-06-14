@@ -2,6 +2,13 @@ import { apiList, apiJson } from "@/lib/api";
 import type { BackendAssetHealth, BackendFactory } from "@/lib/mappers";
 import type { FlowNode, SensorReading } from "@/components/workflow/types";
 import { NODE_LAYOUT_STEP } from "@/components/workflow/layout";
+import {
+  fetchPlantSnapshot,
+  snapshotHealthStatus,
+  snapshotSensorsToFlow,
+  type PlantSnapshot,
+} from "@/services/plantSnapshot";
+import type { DiagnosticAsset } from "@/services/sansadOutputs";
 
 export type FactoryWorkflowKey = "horizon" | "zephyr";
 
@@ -204,8 +211,7 @@ interface SnapshotResponse {
 }
 
 /**
- * Fetch only the latest sensor values for all assets in a factory — single
- * request used by the 10s live-data poll (much cheaper than full node reload).
+ * @deprecated Use applyPlantSnapshotToNodes — telemetry snapshot is superseded by plant/snapshot.
  */
 export async function fetchFactorySnapshot(
   factoryId: string,
@@ -219,6 +225,50 @@ export async function fetchFactorySnapshot(
     result[assetId] = buildSensors([], readings);
   }
   return result;
+}
+
+/** Apply unified plant snapshot health + sensors onto workflow nodes. */
+export function applyPlantSnapshotToNodes(
+  nodes: FlowNode[],
+  snap: PlantSnapshot,
+): FlowNode[] {
+  const byId = new Map(snap.assets.map((a) => [a.id, a]));
+  return nodes.map((node) => {
+    const diag = byId.get(node.id);
+    if (!diag) return node;
+    const score = diag.health;
+    const status = snapshotHealthStatus(diag);
+    const rulHours = diag.rulHours ?? undefined;
+    const rulDays =
+      diag.rulDays ??
+      (rulHours != null ? Math.max(1, Math.round(rulHours / 24)) : node.rulDays);
+    return {
+      ...node,
+      sensors: snapshotSensorsToFlow(diag.sensors),
+      healthScore: score,
+      rulHours,
+      rulDays,
+      faultClass: diag.probableFault || node.faultClass,
+      statusColor: healthToColor(score, status),
+      status: healthToFlowStatus(score, status),
+    };
+  });
+}
+
+export function diagToNodePatch(diag: DiagnosticAsset): Partial<FlowNode> {
+  const status = snapshotHealthStatus(diag);
+  const rulHours = diag.rulHours ?? undefined;
+  return {
+    sensors: snapshotSensorsToFlow(diag.sensors),
+    healthScore: diag.health,
+    rulHours,
+    rulDays:
+      diag.rulDays ??
+      (rulHours != null ? Math.max(1, Math.round(rulHours / 24)) : undefined),
+    faultClass: diag.probableFault,
+    statusColor: healthToColor(diag.health, status),
+    status: healthToFlowStatus(diag.health, status),
+  };
 }
 
 export function mergeNodePositions(prev: FlowNode[], next: FlowNode[]): FlowNode[] {
@@ -321,9 +371,12 @@ export async function fetchFactoryWorkflowNodes(
     throw new Error(`Factory ${FACTORY_CODES[factoryKey]} not found`);
   }
 
-  const assets = await apiList<BackendAsset>(
-    `/api/v1/assets/?factory_id=${factory.id}`,
-  );
+  const [assets, plantSnap] = await Promise.all([
+    apiList<BackendAsset>(`/api/v1/assets/?factory_id=${factory.id}`),
+    fetchPlantSnapshot(factory.id),
+  ]);
+
+  const diagById = new Map(plantSnap.assets.map((d) => [d.id, d]));
 
   const order = ASSET_ORDER[factoryKey];
   const layout = ASSET_LAYOUT[factoryKey];
@@ -338,14 +391,17 @@ export async function fetchFactoryWorkflowNodes(
   for (let i = 0; i < sorted.length; i++) {
     const asset = sorted[i];
     const nextAsset = sorted[i + 1];
-
-    const [health, telemetry, sensorDefs] = await Promise.all([
-      apiJson<BackendAssetHealth>(`/api/v1/assets/${asset.id}/health/`).catch(() => undefined),
-      apiJson<{ readings: TelemetryReading[] }>(
-        `/api/v1/telemetry/${asset.id}/?limit=50&order=desc`,
-      ).catch(() => ({ readings: [] })),
-      apiList<BackendSensorDef>(`/api/v1/sensors/?asset=${asset.id}`).catch(() => []),
-    ]);
+    const diag = diagById.get(asset.id);
+    const health: BackendAssetHealth = diag
+      ? {
+          asset_id: asset.id,
+          health_score: diag.health,
+          rul_hours: diag.rulHours ?? null,
+          status: snapshotHealthStatus(diag),
+          fault_classification: diag.probableFault || undefined,
+        }
+      : { asset_id: asset.id, health_score: 100, rul_hours: null, status: "healthy" };
+    const sensors = diag ? snapshotSensorsToFlow(diag.sensors) : [];
 
     const position = layout[asset.asset_type] ?? {
       x: i * NODE_LAYOUT_STEP,
@@ -356,7 +412,7 @@ export async function fetchFactoryWorkflowNodes(
       assetToNode(
         asset,
         health,
-        buildSensors(sensorDefs, telemetry.readings ?? []),
+        sensors,
         nextAsset?.id ?? null,
         position,
       ),

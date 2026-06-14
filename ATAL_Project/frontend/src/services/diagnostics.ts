@@ -1,11 +1,11 @@
 import { apiJson } from "@/lib/api";
 import type { DiagnosticAsset } from "@/services/sansadOutputs";
 import { mapDiagnosticAsset, type BackendDiagnosticAsset } from "@/lib/mappers";
+import { fetchPlantSnapshot } from "@/services/plantSnapshot";
 
 export async function fetchDiagnostics(factoryId?: string): Promise<DiagnosticAsset[]> {
-  const q = factoryId ? `?factory_id=${encodeURIComponent(factoryId)}` : "";
-  const res = await apiJson<{ assets: BackendDiagnosticAsset[] }>(`/api/v1/diagnostics/${q}`);
-  return (res.assets ?? []).map(mapDiagnosticAsset);
+  const snap = await fetchPlantSnapshot(factoryId);
+  return snap.assets;
 }
 
 export async function fetchDiagnosticDetail(assetId: string): Promise<DiagnosticAsset> {

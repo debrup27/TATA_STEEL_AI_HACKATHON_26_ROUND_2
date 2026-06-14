@@ -3,11 +3,12 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
-import { normalizeTechnicalMarkdown } from "@/lib/markdown-stream";
+import { normalizeTechnicalMarkdown, repairCollapsedMarkdownTables } from "@/lib/markdown-stream";
 
 interface MarkdownProps {
   children: string;
@@ -71,11 +72,11 @@ function Markdown({ children, className = "", components }: MarkdownProps) {
   return (
     <div className={`leading-relaxed [&_.katex]:text-[1.05em] ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
         components={merged}
       >
-        {normalizeTechnicalMarkdown(children)}
+        {repairCollapsedMarkdownTables(normalizeTechnicalMarkdown(children))}
       </ReactMarkdown>
     </div>
   );

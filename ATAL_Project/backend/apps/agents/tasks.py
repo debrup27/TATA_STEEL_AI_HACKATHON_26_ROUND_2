@@ -19,18 +19,22 @@ logger = logging.getLogger(__name__)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _doc_title_from_chunk(props: dict) -> str:
+def _doc_title_from_chunk(props: dict, fallback_titles: list[str] | None = None) -> str:
     """Resolve a human-readable source label for citations."""
     for key in ("title", "standard_code", "source_doc"):
         val = (props.get(key) or "").strip()
-        if val:
+        if val and val.lower() not in ("reference document", "uploaded documents"):
             return val
+    if fallback_titles:
+        for t in fallback_titles:
+            if t and t.strip():
+                return t.strip()
     content = (props.get("content") or "").strip()
     if content:
         first = content.split("\n", 1)[0].strip()
         if 10 <= len(first) <= 140:
             return first
-    return "Reference Document"
+    return "Loaded document"
 
 
 def _custom_docs_to_raw(custom_documents: list | None, custom_rag_context: str) -> list[dict]:
@@ -93,8 +97,15 @@ def _custom_docs_to_raw(custom_documents: list | None, custom_rag_context: str) 
     return raw
 
 
-def _citation_from_chunk(props: dict, d: dict, *, index: int, excerpt: str) -> dict:
-    doc_title = _doc_title_from_chunk(props)
+def _citation_from_chunk(
+    props: dict,
+    d: dict,
+    *,
+    index: int,
+    excerpt: str,
+    fallback_titles: list[str] | None = None,
+) -> dict:
+    doc_title = _doc_title_from_chunk(props, fallback_titles)
     section = props.get("section", "") or ""
     score = d.get("reranker_score") or d.get("rrf_score", 0) or (1.0 - d.get("distance", 1.0))
     source = "upload" if props.get("doc_type") == "upload" or d.get("source") == "upload" else "library"
@@ -152,91 +163,105 @@ def _sansad_context_addendum(session) -> str:
         return ""
     return "\n\n[SANSAD plant context]\n" + "\n".join(lines)
 
-# System prompt — grounded in hackathon problem statement §4/§5/§6
+# System prompts — document mode is minimal; general mode has no capability essay
 # ---------------------------------------------------------------------------
-_MANAS_SYSTEM_PROMPT = """\
-You are MANAS (Maintenance Agentic Neural Advisory System), an intelligent Maintenance Wizard \
-deployed at Tata Steel's industrial plant. You are the primary decision-support interface for \
-maintenance engineers.
+_MANAS_DOCUMENT_PROMPT = """\
+You are MANAS. The user selected maintenance documents. Answer ONLY from the numbered excerpts below.
 
-## Your Capabilities
-- Fault diagnosis from sensor data, delay logs, error messages, and failure analysis reports
-- Root Cause Analysis (RCA) of failures and abnormal conditions
-- Interpretation of Remaining Useful Life (RUL) predictions and degradation trajectories
-- Early warning assessment for potential catastrophic failures
-- Risk classification: low | medium | high | critical
-- Urgency and bottleneck prioritisation based on: process criticality, delay severity, \
-spares availability, and procurement lead time
-- Step-by-step maintenance and repair recommendations (include LOTO/safety precautions where applicable)
-- Spare parts procurement strategy with part names, quantities, and timing
-- Cross-stage defect association across the production sequence: \
-SRF → HHPD → FS → HAGCC → APT → TCMS → CGP → HPAK
+FORBIDDEN:
+- Describing MANAS, your capabilities, "operational logic", diagnostic pipeline, or how you work
+- Headers like "Operational Scope", "Diagnostic Logic", "Limitations of Current Context", "How shall we proceed"
+- Listing all plant assets (SRF, HHPD, FS, …) unless an excerpt names them
+- More than one sentence apologising for missing numeric thresholds
 
-## Assets in Scope
-Slab Reheating Furnace (SRF), High-Pressure Descaler (HHPD), Finishing Stands (FS), \
-Hydraulic AGC Cylinders (HAGCC), Acid Pickling Tanks (APT), Tandem Cold Mill Stands (TCMS), \
-Continuous Galvanizing Pot (CGP), High-Pressure Air Knives (HPAK).
+REQUIRED:
+- Open with a direct answer to the user's question using a fact from the excerpts
+- Inline citations: [1], [2] glued to the sentence — e.g. "Roll changes maintain surface quality [1]."
+- NEVER write "1 Reference Document", "specification 1", or put [n] on its own line
+- Summarise what the document says (purpose, procedure, checks) even when numbers are absent
+- 80–220 words unless the user explicitly asked for exhaustive detail
 
-## Source Citation Rules (MANDATORY)
-- Use [n] citation markers ONLY when numbered retrieved sources appear in the Retrieved Context section below.
-- If Retrieved Context says no documents were selected or lists no numbered sources, do NOT use [n] markers at all.
-- When sources are present, they are numbered [1], [2], [3], etc.
-- When a sentence or claim uses retrieved documentation, append the matching source number in \
-square brackets immediately after that sentence or clause, e.g. \
-"Cylinder pressure must not exceed 210 bar [1]."
-- Use ONLY source numbers that appear in the retrieved context. Do not invent citations.
-- Every numeric threshold or standard value MUST appear verbatim in a cited source.
-- If a threshold is NOT in the retrieved context, state: \
-"Threshold not found in available documentation — consult the original standard directly."
-- Never fabricate sensor ranges, alarm setpoints, maintenance intervals, or chemical limits.
-- Do NOT add a separate "Sources" list at the end — citations are inline [n] markers only.
+GOOD (user: "explain this document in detail"):
+"The Finishing Stand SOP covers when and why to change work rolls and backup rolls — to keep surface quality and dimensional tolerances within product specification [1]. It describes the change procedure and the wear/quality triggers that justify a roll swap [1]."
 
-## Response Structure
-For diagnostic responses:
-1. **Probable Fault** — state the fault and confidence level
-2. **Evidence** — cite specific retrieved content with [n] markers (only when sources were retrieved)
-3. **Root Cause** — ranked causal factors
-4. **Risk Level** — low/medium/high/critical + justification
-5. **Recommended Actions** — numbered steps with safety notes (LOTO where applicable)
+BAD (never output this):
+"To explain my capabilities I must first clarify that thresholds are not available…" followed by a MANAS capability list.
 
-For general greetings and questions without retrieved sources: answer concisely and never use [n] citation markers.
+## Excerpts
+{rag_context}
+"""
 
-## Conversation Style (MANDATORY)
-- Do NOT open with "Hello! I am MANAS" or repeat your full name/acronym on every reply. Greet briefly only if the user greeted first and this is the opening exchange.
-- NEVER dump a capabilities overview, asset list, or "how I operate" essay unless the user explicitly asks what you can do.
-- If the user asks for diagnosis or "in-detail" analysis but provides no fault data, sensor readings, error codes, or asset ID: ask up to 3 focused questions (asset/stage, symptoms, alarms/logs). If Retrieved Context contains loaded documents, briefly state what those documents cover and one concrete way they apply — do not write multi-paragraph filler.
-- When Retrieved Context has numbered sources, answer from those excerpts first; do not explain MANAS instead of using the documents.
-- Stay direct: no throat-clearing, no "However, to fulfill your request…" preambles.
+_MANAS_GENERAL_PROMPT = """\
+You are MANAS, Tata Steel's maintenance diagnostics assistant (SRF, HHPD, FS, HAGCC, APT, TCMS, CGP, HPAK).
+
+- Answer the user's question directly and concisely.
+- Do NOT introduce yourself or list capabilities unless they explicitly ask what you can do.
+- No [n] citations unless numbered excerpts appear below.
+- Do not invent numeric thresholds or standard values.
 
 ## Retrieved Context
 {rag_context}
-
-Base your answer strictly on the retrieved context and conversation history. \
-If context is insufficient, say so and specify what additional documentation would be needed.\
 """
 
-_ROLE_ADDENDA: dict[str, str] = {
-    "technician": (
-        "The user is a **field maintenance technician**. Prioritise hands-on repair steps, "
-        "tooling, LOTO/safety checks, and observable symptoms. Keep language concise and "
-        "shop-floor practical; avoid executive summaries."
-    ),
-    "supervisor": (
-        "The user is a **maintenance supervisor**. Balance technical detail with crew "
-        "coordination, shift planning, escalation criteria, and downtime impact. Highlight "
-        "what to delegate vs. what needs specialist support."
-    ),
-}
+
+def _wants_capabilities_overview(text: str) -> bool:
+    lower = (text or "").lower()
+    triggers = (
+        "what can you do",
+        "your capabilities",
+        "explain yourself",
+        "how do you work",
+        "operational logic",
+        "what are you",
+        "who are you",
+    )
+    return any(t in lower for t in triggers)
 
 
-def _role_system_addendum(role: str | None) -> str:
-    if not role or not str(role).strip():
-        return ""
-    key = str(role).strip().lower().replace(" ", "_").replace("-", "_")
-    text = _ROLE_ADDENDA.get(key)
-    if not text:
-        return ""
-    return f"\n\n## Active User Role\n{text}"
+_MANAS_CAPABILITIES_PROMPT = """\
+You are MANAS, Tata Steel's maintenance diagnostics assistant.
+
+The user asked about your capabilities. Give a concise bullet list (max 8 bullets):
+diagnosis, RCA, RUL interpretation, risk triage, repair steps with LOTO, spares strategy, \
+cross-stage defect tracing (SRF→HAGCC→…), and document-grounded answers when they load manuals/SOPs.
+
+Do not fabricate thresholds. Keep under 150 words.
+
+## Retrieved Context
+{rag_context}
+"""
+
+
+def _build_manas_system_prompt(
+    *,
+    rag_context: str,
+    citations: list,
+    user_content: str,
+    role_advisory: str = "",
+    session,
+) -> str:
+    if citations:
+        prompt = _MANAS_DOCUMENT_PROMPT.replace("{rag_context}", rag_context)
+    elif _wants_capabilities_overview(user_content):
+        prompt = _MANAS_CAPABILITIES_PROMPT.replace("{rag_context}", rag_context)
+    else:
+        prompt = _MANAS_GENERAL_PROMPT.replace("{rag_context}", rag_context)
+
+    if role_advisory:
+        prompt += (
+            "\n\n## Role Advisory (from 0.8b workers — tailor your answer)\n"
+            f"{role_advisory}\n"
+            "Follow the role lenses above; do not describe MANAS or list all plant assets."
+        )
+    if not citations:
+        prompt += _sansad_context_addendum(session)
+        try:
+            from apps.agents.preference_profile import get_preference_patch
+
+            prompt += get_preference_patch(session.user)
+        except Exception:
+            pass
+    return prompt
 
 
 class _CancelledStream(Exception):
@@ -259,7 +284,7 @@ def run_chat_logic(
     Returns {"status": "ok", "message_id": str} on success or {"status": "error", "error": str}.
     """
     from apps.agents.models import ChatSession, ChatMessage
-    from apps.rag.retrieval import retrieve_for_collections
+    from apps.rag.retrieval import retrieve_for_collections, retrieve_by_document_titles
     from apps.agents.compaction import should_compact, compact_history
     from apps.agents.ollama_warmup import ollama_keep_alive_value
     from django.conf import settings
@@ -330,31 +355,58 @@ def run_chat_logic(
             if is_cancelled(session_id):
                 raise _CancelledStream()
 
+        if titles:
+            try:
+                raw_docs += retrieve_by_document_titles(user_content, titles)
+            except Exception as _e:
+                logger.warning("retrieve_by_document_titles failed: %s", _e)
+
         if rag_collections or titles:
             try:
-                raw_docs += retrieve_for_collections(
+                chroma_hits = retrieve_for_collections(
                     user_content,
                     rag_collections,
                     asset_id=str(session.asset_id) if session.asset_id else None,
                     document_titles=titles or None,
                 )
+                seen = {
+                    (h.get("properties", {}).get("content", "")[:200],)
+                    for h in raw_docs
+                }
+                for hit in chroma_hits:
+                    key = (hit.get("properties", {}).get("content", "")[:200],)
+                    if key not in seen:
+                        raw_docs.append(hit)
+                        seen.add(key)
             except Exception as _e:
                 logger.warning("retrieve_for_collections failed: %s", _e)
 
         raw_docs += _custom_docs_to_raw(custom_documents, custom_text)
 
+        if not raw_docs and titles:
+            try:
+                raw_docs += retrieve_by_document_titles("", titles, limit=8)
+            except Exception as _e:
+                logger.warning("retrieve_by_document_titles fallback failed: %s", _e)
+
         if not raw_docs:
-            rag_context = (
-                "[No reference documents selected for this message. "
-                "Answer from conversation history and general maintenance reasoning only. "
-                "Do not use [n] citation markers. "
-                "Do not invent numeric thresholds or standard values. "
-                "Do not introduce yourself or list capabilities — be concise.]"
-            )
+            if has_rag_request:
+                rag_context = (
+                    "[User selected reference documents but no matching excerpts were retrieved. "
+                    "Say which documents were requested, ask one clarifying question about asset or symptom, "
+                    "and do not fabricate document content or [n] citations.]"
+                )
+            else:
+                rag_context = (
+                    "[No reference documents selected for this message. "
+                    "Answer from conversation history and general maintenance reasoning only. "
+                    "Do not use [n] citation markers. "
+                    "Do not invent numeric thresholds or standard values.]"
+                )
             snippets: list[str] = []
             citations: list[dict] = []
         else:
-            top_k = 4 if deep_thinking else 6
+            top_k = 8 if (titles or custom_documents) else (4 if deep_thinking else 6)
             if settings.RAG_USE_RERANKER:
                 from apps.rag.reranker import rerank
                 try:
@@ -378,7 +430,7 @@ def run_chat_logic(
                 content = props.get("content", "")
                 if not content:
                     continue
-                doc_title = _doc_title_from_chunk(props)
+                doc_title = _doc_title_from_chunk(props, titles or None)
                 section = props.get("section", "") or ""
                 cite_key = (doc_title, section)
                 if cite_key in seen_citations:
@@ -389,12 +441,22 @@ def run_chat_logic(
                 if section and section not in ("", "upload"):
                     header += f" — {section}"
                 snippets.append(f"{header}\n{content}")
-                citations.append(_citation_from_chunk(props, d, index=cite_index, excerpt=content))
+                citations.append(
+                    _citation_from_chunk(
+                        props, d, index=cite_index, excerpt=content, fallback_titles=titles or None,
+                    )
+                )
 
-            rag_context = "\n---\n".join(snippets) or (
-                "[Documents are loaded but no excerpts matched this query. "
-                "Say what is missing (asset, symptom, or question focus) in 2–4 sentences. "
-                "Do not list MANAS capabilities or give a generic overview.]"
+            focus = user_content.strip()[:300]
+            body = "\n---\n".join(snippets)
+            rag_context = (
+                f"User question: {focus}\n\n{body}"
+                if body
+                else (
+                    "[Documents are loaded but no excerpts matched this query. "
+                    "Summarise what topics the loaded documents cover and ask one focused follow-up. "
+                    "Do not describe MANAS capabilities.]"
+                )
             )
 
         if has_rag_request:
@@ -426,21 +488,32 @@ def run_chat_logic(
 
         messages = []
         for m in history:
-            if m.role == "system":
-                messages.append({"role": "system", "content": m.content})
-            elif m.role in ("user", "assistant"):
+            # Compaction/status system rows are UI-only — do not feed back to the LLM
+            if m.role in ("user", "assistant"):
                 messages.append({"role": m.role, "content": m.content})
         messages.append({"role": "user", "content": user_content})
 
-        system_prompt = _MANAS_SYSTEM_PROMPT.format(rag_context=rag_context)
-        system_prompt += _role_system_addendum(user_role)
-        system_prompt += _sansad_context_addendum(session)
-        try:
-            from apps.agents.preference_profile import get_preference_patch
+        role_advisory = ""
+        from apps.agents.chat_role_graph import resolve_manas_roles, run_role_advisory
 
-            system_prompt += get_preference_patch(session.user)
-        except Exception as _pref_err:
-            logger.warning("preference patch skipped: %s", _pref_err)
+        manas_roles = resolve_manas_roles(user_role, session.user)
+        if manas_roles:
+            _send({"type": "phase", "phase": "role"})
+            if is_cancelled(session_id):
+                raise _CancelledStream()
+            rag_snippet = rag_context[:1200] if citations else ""
+            try:
+                role_advisory = run_role_advisory(user_content, manas_roles, rag_snippet)
+            except Exception as exc:
+                logger.warning("role_advisory_graph failed: %s", exc)
+
+        system_prompt = _build_manas_system_prompt(
+            rag_context=rag_context,
+            citations=citations,
+            user_content=user_content,
+            role_advisory=role_advisory,
+            session=session,
+        )
 
         if is_cancelled(session_id):
             raise _CancelledStream()
@@ -455,7 +528,8 @@ def run_chat_logic(
         import time as _time
 
         ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
-        predict_budget = 1536 if deep_thinking else 2048
+        predict_budget = 1536 if deep_thinking else (1200 if citations else 2048)
+        rag_temperature = 0.1 if citations else 0.2
         if deep_thinking:
             _send({"type": "phase", "phase": "thinking"})
         ollama_payload = {
@@ -464,7 +538,7 @@ def run_chat_logic(
             "stream": True,
             "think": bool(deep_thinking),
             "keep_alive": ollama_keep_alive_value(),
-            "options": {"num_predict": predict_budget, "temperature": 0.2},
+            "options": {"num_predict": predict_budget, "temperature": rag_temperature},
         }
 
         for _attempt in range(1, 4):
