@@ -99,6 +99,8 @@ class LLMStreamConsumer:
             return {"type": "started"}
         if t == "token":
             return {"type": "token", "token": event.get("token", "")}
+        if t == "think_token":
+            return {"type": "think_token", "token": event.get("token", "")}
         if t == "done":
             return {
                 "type": "done",

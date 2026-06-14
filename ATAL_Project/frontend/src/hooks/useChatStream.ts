@@ -7,6 +7,7 @@ import type { Citation } from "@/services/types";
 export interface UseChatStreamOptions {
   sessionId: string | null;
   onToken?: (token: string) => void;
+  onThinkToken?: (token: string) => void;
   onDone?: (payload?: Record<string, unknown>) => void;
   onError?: () => void;
   onCompacting?: () => void;
@@ -17,6 +18,7 @@ export interface UseChatStreamOptions {
 export function useChatStream({
   sessionId,
   onToken,
+  onThinkToken,
   onDone,
   onError,
   onCompacting,
@@ -24,10 +26,13 @@ export function useChatStream({
   timeoutMs = 240_000,
 }: UseChatStreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [awaitingFirstToken, setAwaitingFirstToken] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const wsReadyRef = useRef<Promise<void> | null>(null);
   const wsReadyResolveRef = useRef<(() => void) | null>(null);
   const onTokenRef = useRef(onToken);
+  const onThinkTokenRef = useRef(onThinkToken);
   const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
   const onCompactingRef = useRef(onCompacting);
@@ -36,11 +41,12 @@ export function useChatStream({
 
   useEffect(() => {
     onTokenRef.current = onToken;
+    onThinkTokenRef.current = onThinkToken;
     onDoneRef.current = onDone;
     onErrorRef.current = onError;
     onCompactingRef.current = onCompacting;
     onCompactedRef.current = onCompacted;
-  }, [onToken, onDone, onError, onCompacting, onCompacted]);
+  }, [onToken, onThinkToken, onDone, onError, onCompacting, onCompacted]);
 
   const clearStreamTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -65,11 +71,20 @@ export function useChatStream({
           clearStreamTimeout();
           timeoutRef.current = setTimeout(() => {
             setIsStreaming(false);
+            setAwaitingFirstToken(false);
             onDoneRef.current?.({ error: "No response from model — it may still be loading. Try again in a moment." });
           }, timeoutMs);
         }
+        if (data.type === "think_token" && typeof data.token === "string") {
+          clearStreamTimeout();
+          setAwaitingFirstToken(false);
+          setIsThinking(true);
+          onThinkTokenRef.current?.(data.token);
+        }
         if (data.type === "token" && typeof data.token === "string") {
           clearStreamTimeout(); // got a token — cancel timeout
+          setAwaitingFirstToken(false);
+          setIsThinking(false);
           setIsStreaming(true);
           onTokenRef.current?.(data.token);
         }
@@ -84,6 +99,8 @@ export function useChatStream({
         if (data.type === "done") {
           clearStreamTimeout();
           setIsStreaming(false);
+          setAwaitingFirstToken(false);
+          setIsThinking(false);
           onDoneRef.current?.(data as Record<string, unknown>);
         }
       },
@@ -104,11 +121,14 @@ export function useChatStream({
 
   const start = useCallback(() => {
     setIsStreaming(true);
+    setAwaitingFirstToken(true);
+    setIsThinking(false);
     // Global fallback: if neither "started" nor any WS event arrives in timeoutMs,
     // the Celery worker is probably not running.
     clearStreamTimeout();
     timeoutRef.current = setTimeout(() => {
       setIsStreaming(false);
+      setAwaitingFirstToken(false);
       onDoneRef.current?.({ error: "No response — backend worker may be offline. Check Celery is running." });
     }, timeoutMs);
   }, [timeoutMs, clearStreamTimeout]);
@@ -116,6 +136,8 @@ export function useChatStream({
   const reset = useCallback(() => {
     clearStreamTimeout();
     setIsStreaming(false);
+    setAwaitingFirstToken(false);
+    setIsThinking(false);
   }, [clearStreamTimeout]);
 
   const waitUntilReady = useCallback(async () => {
@@ -136,11 +158,12 @@ export function useChatStream({
 
   return {
     isStreaming,
+    isThinking,
     start,
     reset,
     waitUntilReady,
     isLoading: isStreaming,
-    showProcessing: isStreaming,
+    showProcessing: awaitingFirstToken,
     currentStep: 0,
   };
 }

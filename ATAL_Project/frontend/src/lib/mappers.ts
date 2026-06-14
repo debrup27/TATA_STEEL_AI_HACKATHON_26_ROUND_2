@@ -81,12 +81,14 @@ export interface BackendChatSession {
   created_at?: string;
   last_active?: string;
   metadata?: Record<string, unknown>;
+  last_message?: { role: string; content: string };
 }
 
 export interface BackendChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  reasoning?: string;
   citations?: unknown[];
   created_at?: string;
 }
@@ -198,19 +200,27 @@ export function mapChatSession(
   messages: BackendChatMessage[] = [],
 ): ChatSession {
   const ts = s.last_active ?? s.created_at ?? new Date().toISOString();
+  const mappedMessages = messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      role: m.role as Message["role"],
+      content: m.content,
+      reasoning: m.reasoning?.trim() || undefined,
+      citations: Array.isArray(m.citations)
+        ? (m.citations as Citation[])
+        : undefined,
+    }));
+  const lastMessagePreview =
+    mappedMessages.length > 0
+      ? mappedMessages[mappedMessages.length - 1].content
+      : s.last_message?.content;
+
   return {
     id: s.id,
     title: (s.metadata?.title as string) ?? `Session ${s.id.slice(0, 8)}`,
     createdAt: new Date(ts).toLocaleString(),
-    messages: messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        role: m.role as Message["role"],
-        content: m.content,
-        citations: Array.isArray(m.citations)
-          ? (m.citations as Citation[])
-          : undefined,
-      })),
+    messages: mappedMessages,
+    lastMessagePreview,
   };
 }
 

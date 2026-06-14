@@ -17,7 +17,7 @@ import {
   SourceContent,
   SourceTrigger
 } from "./ai-components/source";
-import { useTelemetryCells, useMockChatSimulation, useUser } from "@/hooks";
+import { useTelemetryCells, useMockChatSimulation } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
 import { fetchManasPredictions, type RulPredictionData } from "@/services/prediction";
 import { SPRING_DEFAULT, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
@@ -56,8 +56,6 @@ interface RightPanelItem {
 
 export default function AtalDisplayModal() {
   const [activeTab, setActiveTab] = useState<"atal_sansad" | "atal_manas">("atal_sansad");
-  const { user } = useUser();
-
   const cells = useTelemetryCells();
   const [predictions, setPredictions] = useState<RulPredictionData[]>([]);
 
@@ -194,15 +192,15 @@ export default function AtalDisplayModal() {
         </div>
 
         {/* Modal Main Grid splits Left / Right */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-stretch">
-          
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+
           {/* Left Panel: (8 Columns) - Displays page visual layout */}
-          <div className="md:col-span-7 flex flex-col items-center justify-center relative min-h-[350px]">
+          <div className="md:col-span-7 flex flex-col items-center justify-center relative h-[380px]">
             {activeTab === "atal_sansad" ? (
-              <div className="w-full h-full flex flex-col items-center justify-center border border-zinc-100 rounded-2xl p-6 bg-zinc-50/40 relative">
+              <div className="w-full h-full flex flex-col items-center justify-center border border-zinc-100 rounded-2xl p-6 bg-zinc-50/40 relative overflow-hidden">
                 <SansadGrid
-                  className="p-8 bg-[#FAF6EE]/50 border border-black/15 rounded-3xl w-full max-w-sm aspect-square shadow-sm"
-                  cellSizeClass="w-5 h-5 sm:w-6 sm:h-6"
+                  className="p-4 bg-[#FAF6EE]/50 border border-black/15 rounded-3xl w-full max-w-xs shadow-sm"
+                  cellSizeClass="w-4 h-4 sm:w-5 sm:h-5"
                 />
               </div>
             ) : (
@@ -303,7 +301,7 @@ export default function AtalDisplayModal() {
           </div>
 
           {/* Right Panel: Side Status list / Alert list (5 Columns) */}
-          <div className="md:col-span-5 flex flex-col justify-between p-1">
+          <div className="md:col-span-5 flex flex-col p-1 h-[380px] overflow-y-auto [&::-webkit-scrollbar]:hidden">
             {activeTab === "atal_sansad" ? (
               <div>
                 {/* Header inside Panel */}
@@ -311,11 +309,12 @@ export default function AtalDisplayModal() {
                   <h3 className="text-lg font-bold text-zinc-800 select-none">
                     Telemetry Indicators
                   </h3>
-                  <button 
+                  <button
                     onClick={() => triggerPageTransition("/sansad")}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none"
+                    className="text-[11px] font-bold text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer select-none flex items-center gap-1 group/vd"
                   >
                     View details
+                    <span className="group-hover/vd:translate-x-0.5 transition-transform inline-block">→</span>
                   </button>
                 </div>
 
@@ -359,11 +358,12 @@ export default function AtalDisplayModal() {
                   <h3 className="text-lg font-bold text-zinc-800 select-none">
                     Asset Health
                   </h3>
-                  <button 
+                  <button
                     onClick={() => triggerPageTransition("/manas")}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none"
+                    className="text-[11px] font-bold text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer select-none flex items-center gap-1 group/va"
                   >
                     View all
+                    <span className="group-hover/va:translate-x-0.5 transition-transform inline-block">→</span>
                   </button>
                 </div>
 
@@ -413,30 +413,9 @@ export default function AtalDisplayModal() {
               </div>
             )}
 
-            {/* Footer inside Right Panel */}
-            <div className="flex justify-between items-center mt-8 pt-4 border-t border-zinc-100">
-              <span className="text-xs font-bold text-zinc-500 select-none">
-                {activeTab === "atal_sansad" ? "Pipeline Operations?" : "Diagnostic Chat?"}
-              </span>
-              <button 
-                onClick={() => triggerPageTransition(user ? (activeTab === "atal_sansad" ? "/sansad/hub" : "/manas/chat") : "/login")}
-                className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none"
-              >
-                {activeTab === "atal_sansad" ? "Launch Control" : "Try Manas Now"}
-              </button>
-            </div>
-
           </div>
         </div>
       </div>
-
-      {/* Button below card */}
-      <button 
-        onClick={() => triggerPageTransition(user ? (activeTab === "atal_sansad" ? "/sansad/hub" : "/manas/chat") : "/login")}
-        className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95"
-      >
-        {activeTab === "atal_sansad" ? "Initialize Sansad Copilot" : "Initialize Manas Copilot"}
-      </button>
     </div>
   );
 }

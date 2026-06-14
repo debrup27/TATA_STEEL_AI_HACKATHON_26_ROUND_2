@@ -44,6 +44,7 @@ def compact_history(session_id: str) -> int:
     """
     from apps.agents.stream_registry import send_to_stream
     from apps.agents.models import ChatMessage
+    from apps.agents.ollama_warmup import ollama_keep_alive_value
     from django.conf import settings
 
     messages = list(
@@ -87,6 +88,7 @@ def compact_history(session_id: str) -> int:
                 ],
                 "stream": False,
                 "think": False,
+                "keep_alive": ollama_keep_alive_value(),
                 "options": {"num_predict": _SUMMARY_MAX_TOKENS, "temperature": 0.1},
             },
             timeout=120,

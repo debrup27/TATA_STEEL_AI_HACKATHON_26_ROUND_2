@@ -48,6 +48,7 @@ class ChatMessage(models.Model):
     session = models.ForeignKey(ChatSession, on_delete=models.CASCADE, related_name="messages")
     role = models.CharField(max_length=10, choices=Role.choices)
     content = models.TextField()
+    reasoning = models.TextField(blank=True, default="")
     citations = models.JSONField(default=list)
     shap_context = models.JSONField(null=True, blank=True)
     model_used = models.CharField(max_length=100, blank=True)

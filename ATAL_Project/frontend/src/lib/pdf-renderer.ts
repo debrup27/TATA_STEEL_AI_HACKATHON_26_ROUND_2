@@ -30,3 +30,28 @@ export async function getPagesFromPdf(file: File): Promise<string[]> {
 
   return urls;
 }
+
+/** Extract selectable text from a PDF for RAG (not page images). */
+export async function extractTextFromPdf(file: File): Promise<string> {
+  ensureWorker();
+
+  const { getDocument } = await import("pdfjs-dist");
+  const data = await file.arrayBuffer();
+  const pdf = await getDocument({ data }).promise;
+  const parts: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const text = content.items
+      .map((item) => ("str" in item ? item.str : ""))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) {
+      parts.push(`[Page ${i}]\n${text}`);
+    }
+  }
+
+  return parts.join("\n\n");
+}

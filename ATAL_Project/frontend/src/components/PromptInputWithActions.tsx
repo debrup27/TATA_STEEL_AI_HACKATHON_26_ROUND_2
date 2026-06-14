@@ -7,28 +7,13 @@ import {
   PromptInputTextarea,
 } from "@/components/ai-components/prompt-input"
 import { SystemMessage } from "@/components/ai-components/system-message"
-import {
-  FileUpload,
-  FileUploadContent,
-  FileUploadTrigger,
-} from "@/components/ai-components/file-upload"
 import { Button } from "@/components/ui/button"
-import { ArrowUp, Brain, Globe, Mic, Paperclip, Plus, Sparkles, X } from "lucide-react"
+import { ArrowUp, Brain, ChevronRight, Lightbulb, Mic, Plus, Sparkles, UserRound, X } from "lucide-react"
 import type React from "react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { getPagesFromPdf } from "@/lib/pdf-renderer"
-import { fileToBase64, formatBytes } from "@/lib/utils"
 import { TOAST_DURATION, DURATION_SLOW } from "@/lib/constants"
-
-const MAX_FILES = 5
-
-interface UploadedFile {
-  id: string
-  file: File
-  status: "loading" | "loaded"
-  pages: string[]
-}
+import { MANAS_ROLES, manasRoleTag } from "@/lib/manas-roles"
 
 interface Toast {
   id: string
@@ -49,8 +34,9 @@ function PromptInputWithActions({
   contextCount = 0,
   onContextClick,
   onClearContext,
-  onUploadContextDoc,
   onConciergeClick,
+  selectedRole = null,
+  onRoleChange,
   contextEnabled = true,
   alertsEnabled = true,
   onDisableAlerts,
@@ -58,31 +44,25 @@ function PromptInputWithActions({
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
-  onSendMessage: (message: string, files: { name: string; type: string; pages: string[] }[]) => void
+  onSendMessage: (message: string) => void
   isLoading: boolean
   className?: string
   hasContext?: boolean
   contextCount?: number
   onContextClick?: () => void
   onClearContext?: () => void
-  onUploadContextDoc?: (file: { name: string; size: string; type: string; pages: string[]; isCustom: boolean }) => void
   onConciergeClick?: () => void
+  selectedRole?: string | null
+  onRoleChange?: (role: string | null) => void
   contextEnabled?: boolean
   alertsEnabled?: boolean
   onDisableAlerts?: () => void
   triggerToast?: string | null
 }) {
   const [prompt, setPrompt] = useState("")
-  const [files, setFiles] = useState<UploadedFile[]>([])
-  const [expandedFile, setExpandedFile] = useState<UploadedFile | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
-  useEffect(() => {
-    if (!hasContext) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFiles([])
-    }
-  }, [hasContext])
+  const [rolesOpen, setRolesOpen] = useState(false)
 
   const toastTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
@@ -112,399 +92,294 @@ function PromptInputWithActions({
     }
   }, [triggerToast, addToast, alertsEnabled])
 
-  const handleFilesAdded = useCallback(async (newFiles: File[]) => {
-    const remaining = MAX_FILES - (contextCount || 0) - files.length
-    if (remaining <= 0) {
-      addToast(`Maximum ${MAX_FILES} context documents allowed`)
-      return
-    }
-
-    const toAdd = newFiles.slice(0, remaining)
-    if (newFiles.length > remaining) {
-      addToast(`Only ${remaining} more document${remaining !== 1 ? "s" : ""} allowed`)
-    }
-
-    const uploads: UploadedFile[] = toAdd.map((file) => ({
-      id: genId(),
-      file,
-      status: "loading" as const,
-      pages: [],
-    }))
-
-    setFiles((prev) => [...prev, ...uploads])
-
-    for (const uf of uploads) {
-      addToast(`${uf.file.name} uploading...`)
-      try {
-        const pages = uf.file.type === "application/pdf"
-          ? await getPagesFromPdf(uf.file)
-          : [await fileToBase64(uf.file)]
-
-        // Push directly to RAG conversation context
-        onUploadContextDoc?.({
-          name: uf.file.name,
-          size: formatBytes(uf.file.size),
-          type: uf.file.type,
-          pages: pages,
-          isCustom: true,
-        });
-
-        // Remove from local loading queue
-        setFiles((prev) => prev.filter((f) => f.id !== uf.id))
-        addToast(`${uf.file.name} added to context`)
-      } catch {
-        setFiles((prev) => prev.filter((f) => f.id !== uf.id))
-        addToast(`Failed to process ${uf.file.name}`)
-      }
-    }
-  }, [files.length, addToast, onUploadContextDoc, contextCount])
-
-  const handleRemoveFile = useCallback((id: string, fileName: string) => {
-    setFiles((prev) => prev.filter((f) => f.id !== id))
-    addToast(`${fileName} removed`)
-    setExpandedFile((prev) => (prev?.id === id ? null : prev))
-  }, [addToast])
-
-  const isAnyFileLoading = files.some((f) => f.status === "loading")
-  const canSubmit = (prompt.trim() || files.length > 0) && !isAnyFileLoading && !isLoading
+  const canSubmit = prompt.trim().length > 0 && !isLoading
 
   const handleSubmit = () => {
-    if (!prompt.trim() && files.length === 0) return
-    if (isAnyFileLoading || isLoading) return
-
-    const attached = files.map((f) => ({
-      name: f.file.name,
-      type: f.file.type,
-      pages: f.pages,
-    }))
-    onSendMessage(prompt.trim(), attached)
+    if (!prompt.trim() || isLoading) return
+    onSendMessage(prompt.trim())
     setPrompt("")
-    setFiles([])
   }
 
-  const loadedCount = files.filter((f) => f.status === "loaded").length
-
   return (
-    <FileUpload
-      onFilesAdded={handleFilesAdded}
-      accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp"
-    >
-      <div className={className}>
-        {/* System Alerts */}
-        <div className="fixed top-4 right-4 z-[1002] flex flex-col gap-2 pointer-events-none">
-          <AnimatePresence>
-            {toasts.map((t) => (
-              <motion.div
-                key={t.id}
-                initial={{ opacity: 0, y: -8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.96 }}
-                transition={{ duration: DURATION_SLOW, ease: "easeOut" }}
-                className="pointer-events-auto max-w-[360px]"
-              >
-                <SystemMessage variant="action" fill>
-                  <div className="flex flex-col gap-1 relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearTimeout(toastTimers.current[t.id]);
-                        delete toastTimers.current[t.id];
-                        setToasts((prev) => prev.filter((x) => x.id !== t.id));
-                      }}
-                      className="absolute top-0 right-0 p-0.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 transition-colors cursor-pointer pointer-events-auto"
-                      aria-label="Dismiss alert"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                    <span className="pr-5">{t.message}</span>
-                    <button
-                      type="button"
-                      onClick={() => onDisableAlerts?.()}
-                      className="text-[10px] font-bold underline hover:text-[#f97316]/80 text-left cursor-pointer pointer-events-auto"
-                    >
-                      Disable Alerts
-                    </button>
-                  </div>
-                </SystemMessage>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-
-        {/* Expanded View Modal */}
-        {expandedFile && expandedFile.pages.length > 0 && (
-          <div
-            className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 md:p-6"
-            onClick={() => setExpandedFile(null)}
-          >
-            <div
-              className="bg-white rounded-2xl md:rounded-3xl shadow-2xl flex flex-col overflow-hidden max-w-7xl max-h-[92vh] w-max h-max"
-              onClick={(e) => e.stopPropagation()}
+    <div className={className}>
+      <div className="fixed top-4 right-4 z-[1002] flex flex-col gap-2 pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((t) => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.96 }}
+              transition={{ duration: DURATION_SLOW, ease: "easeOut" }}
+              className="pointer-events-auto max-w-[360px]"
             >
-              <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-zinc-200 shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <p className="text-sm font-semibold text-zinc-700 truncate">{expandedFile.file.name}</p>
-                  {expandedFile.file.type === "application/pdf" && (
-                    <span className="text-xs text-zinc-400 shrink-0">{expandedFile.pages.length} page{expandedFile.pages.length !== 1 ? "s" : ""}</span>
-                  )}
+              <SystemMessage variant="action" fill>
+                <div className="flex flex-col gap-1 relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearTimeout(toastTimers.current[t.id]);
+                      delete toastTimers.current[t.id];
+                      setToasts((prev) => prev.filter((x) => x.id !== t.id));
+                    }}
+                    className="absolute top-0 right-0 p-0.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200/60 transition-colors cursor-pointer pointer-events-auto"
+                    aria-label="Dismiss alert"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                  <span className="pr-5">{t.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => onDisableAlerts?.()}
+                    className="text-[10px] font-bold underline hover:text-[#f97316]/80 text-left cursor-pointer pointer-events-auto"
+                  >
+                    Disable Alerts
+                  </button>
                 </div>
-                <button
-                  onClick={() => setExpandedFile(null)}
-                  className="size-8 rounded-full flex items-center justify-center hover:bg-red-100 transition-colors cursor-pointer shrink-0 text-zinc-500 hover:text-red-600"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="overflow-y-auto bg-zinc-100 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400">
-                {expandedFile.pages.length === 1 && expandedFile.file.type !== "application/pdf" ? (
-                  <div className="flex items-center justify-center p-4 min-h-[300px] max-h-[82vh]">
-                    <img
-                      src={expandedFile.pages[0]}
-                      alt={expandedFile.file.name ?? "Image"}
-                      className="max-w-full max-h-full rounded-lg shadow-md object-contain"
-                      draggable={false}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4 py-6 px-4">
-                    {expandedFile.pages.map((src, i) => (
-                      <img
-                        key={i}
-                        src={src}
-                        alt={`${expandedFile.file.name} - page ${i + 1}`}
-                        className="w-full max-w-3xl rounded-lg shadow-md"
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+              </SystemMessage>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-        <PromptInput
-          isLoading={isLoading}
-          value={prompt}
-          onValueChange={setPrompt}
-          onSubmit={handleSubmit}
-          className="border-black/10 bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-[inset_0_0_0_1.5px_#ffffff,0_1px_2px_rgba(0,0,0,0.05)]"
-        >
-          <div className="flex flex-col">
-            {files.length > 0 && (
-              <div className="mx-3 mt-3 flex items-end gap-3 flex-wrap">
-                {files.map((uf) => (
-                  <div key={uf.id} className="relative group">
-                    <div
-                      className="relative w-[140px] h-[130px] rounded-xl overflow-hidden cursor-pointer shadow-xs"
-                      onClick={() => uf.status === "loaded" && uf.pages[0] && setExpandedFile(uf)}
-                    >
-                      {uf.status === "loading" ? (
-                        <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-50 border border-zinc-200/80 rounded-xl">
-                          <div className="size-6 border-2 border-zinc-300 border-t-zinc-600 rounded-full animate-spin" />
-                          <span className="text-[10px] font-semibold text-zinc-400">Loading</span>
-                        </div>
-                      ) : (
-                        <>
-                          <img
-                            src={uf.pages[0]}
-                            alt={uf.file.name}
-                            className="w-full h-full object-cover"
-                            draggable={false}
-                          />
-                          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none" />
-                          <p className="absolute bottom-1.5 left-2 right-2 text-[10px] font-semibold text-white truncate opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-                            {uf.file.name}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                    <div
-                      className="absolute -top-2 -right-2 size-5 rounded-full bg-white border border-zinc-200 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shadow-sm hover:bg-red-100 hover:border-red-300"
-                      onClick={(e) => { e.stopPropagation(); handleRemoveFile(uf.id, uf.file.name) }}
-                    >
-                      <X size={11} className="text-zinc-500 group-hover:text-red-600" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <PromptInputTextarea
-              placeholder="Ask anything"
-              className="min-h-[44px] pt-3 pl-4 text-base leading-[1.3] sm:text-base md:text-base"
-            />
+      <PromptInput
+        isLoading={isLoading}
+        value={prompt}
+        onValueChange={setPrompt}
+        onSubmit={handleSubmit}
+        className="border-black/10 bg-popover relative z-10 w-full rounded-3xl border p-0 pt-1 shadow-[inset_0_0_0_1.5px_#ffffff,0_1px_2px_rgba(0,0,0,0.05)]"
+      >
+        <div className="flex flex-col">
+          <PromptInputTextarea
+            placeholder="Ask anything"
+            className="min-h-[44px] pt-3 pl-4 text-base leading-[1.3] sm:text-base md:text-base"
+          />
 
-            <PromptInputActions className="mt-5 flex w-full items-center justify-between gap-2 px-3 pb-3">
-              <div className="flex items-center gap-2">
-                <PromptInputAction tooltip="Attach files">
-                  <FileUploadTrigger asChild>
-                    <button
-                      className="size-9 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center transition-all duration-200 cursor-pointer disabled:cursor-not-allowed"
-                      type="button"
-                      disabled={files.some((f) => f.status === "loading")}
-                    >
-                      {files.some((f) => f.status === "loading") ? (
-                        <div className="size-4 border-2 border-zinc-300 border-t-zinc-600 rounded-full animate-spin" />
-                      ) : (
-                        <Paperclip size={18} />
-                      )}
-                    </button>
-                  </FileUploadTrigger>
+          <PromptInputActions className="mt-5 flex w-full items-center justify-between gap-2 px-3 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <PromptInputAction tooltip="Add">
+                  <button
+                    className={`size-9 rounded-full border flex items-center justify-center transition-all duration-200 cursor-pointer ${
+                      menuOpen
+                        ? "border-orange-500 text-orange-600 bg-orange-50/30"
+                        : "border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20"
+                    }`}
+                    onClick={() => {
+                      setMenuOpen((v) => {
+                        if (v) setRolesOpen(false);
+                        return !v;
+                      });
+                    }}
+                    type="button"
+                  >
+                    <span className="block transition-transform duration-200" style={{ transform: menuOpen ? "rotate(45deg)" : "rotate(0deg)" }}>
+                      <Plus size={18} />
+                    </span>
+                  </button>
                 </PromptInputAction>
 
-                <div className="relative">
-                  <PromptInputAction tooltip="Add">
-                    <button
-                      className={`size-9 rounded-full border flex items-center justify-center transition-all duration-200 cursor-pointer ${
-                        menuOpen
-                          ? "border-orange-500 text-orange-600 bg-orange-50/30"
-                          : "border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20"
-                      }`}
-                      onClick={() => setMenuOpen((v) => !v)}
-                      type="button"
-                    >
-                      <span className="block transition-transform duration-200" style={{ transform: menuOpen ? "rotate(45deg)" : "rotate(0deg)" }}>
-                        <Plus size={18} />
-                      </span>
-                    </button>
-                  </PromptInputAction>
-
-                  <AnimatePresence>
-                    {menuOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.92, y: 8 }}
-                          transition={{ duration: 0.15, ease: "easeOut" }}
-                          className="absolute bottom-full left-0 mb-2 z-50 bg-white/95 backdrop-blur-md border border-[#1b253c]/10 rounded-2xl shadow-[0_8px_32px_rgba(27,37,60,0.1),inset_0_0_0_1px_rgba(255,255,255,0.8)] p-1.5 flex flex-col gap-0.5 min-w-[210px] origin-bottom-left"
+                <AnimatePresence>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => { setMenuOpen(false); setRolesOpen(false); }} />
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.92, y: 8 }}
+                        transition={{ duration: 0.15, ease: "easeOut" }}
+                        className="absolute bottom-full left-0 mb-2 z-50 bg-white/95 backdrop-blur-md border border-[#1b253c]/10 rounded-2xl shadow-[0_8px_32px_rgba(27,37,60,0.1),inset_0_0_0_1px_rgba(255,255,255,0.8)] p-1.5 flex flex-col gap-0.5 min-w-[210px] origin-bottom-left"
+                      >
+                        <button
+                          className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer ${deepThinking ? "text-orange-700 bg-orange-500/10 hover:bg-orange-500/15" : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"}`}
+                          onClick={() => {
+                            const nextVal = !deepThinking;
+                            onDeepThinkingChange(nextVal);
+                            addToast(nextVal ? "Deep Thinking enabled" : "Deep Thinking disabled");
+                            setMenuOpen(false);
+                          }}
+                          type="button"
                         >
+                          <Brain size={15} className={`shrink-0 ${deepThinking ? "text-orange-600 animate-pulse" : "text-[#1b253c]/50"}`} />
+                          Deep Thinking
+                        </button>
+
+                        {contextEnabled && (
                           <button
-                            className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer ${deepThinking ? "text-orange-700 bg-orange-500/10 hover:bg-orange-500/15" : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"}`}
+                            className="group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"
                             onClick={() => {
-                              const nextVal = !deepThinking;
-                              onDeepThinkingChange(nextVal);
-                              addToast(nextVal ? "Deep Thinking enabled" : "Deep Thinking disabled");
+                              onConciergeClick?.();
                               setMenuOpen(false);
+                              setRolesOpen(false);
                             }}
                             type="button"
                           >
-                            <Brain size={15} className={`shrink-0 ${deepThinking ? "text-orange-600 animate-pulse" : "text-[#1b253c]/50"}`} />
-                            Deep Thinking
-                            {deepThinking && (
-                              <span className="ml-auto size-1.5 rounded-full bg-orange-500 group-hover:hidden animate-pulse" />
-                            )}
-                            {deepThinking && (
-                              <span className="ml-auto hidden group-hover:flex items-center justify-center size-4 rounded-full bg-orange-100 text-orange-600">
-                                <X size={10} strokeWidth={2.5} />
-                              </span>
-                            )}
+                            <Sparkles size={15} className="shrink-0 text-[#1b253c]/50" />
+                            Concierge Context
                           </button>
-                          
-                          {contextEnabled && (
-                            <button
-                              className="group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"
-                              onClick={() => {
-                                onConciergeClick?.();
-                                setMenuOpen(false);
-                              }}
-                              type="button"
-                            >
-                              <Sparkles size={15} className="shrink-0 text-[#1b253c]/50" />
-                              Concierge Context
-                            </button>
-                          )}
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
+                        )}
 
-                {files.length > 0 && (
-                  <span className="text-[11px] font-semibold text-zinc-400 select-none">
-                    {loadedCount}/{MAX_FILES}
-                  </span>
-                )}
+                        <div className="relative">
+                          <button
+                            className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer w-full ${
+                              selectedRole
+                                ? "text-violet-700 bg-violet-500/10 hover:bg-violet-500/15"
+                                : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"
+                            }`}
+                            onClick={() => setRolesOpen((v) => !v)}
+                            type="button"
+                          >
+                            <UserRound size={15} className={`shrink-0 ${selectedRole ? "text-violet-600" : "text-[#1b253c]/50"}`} />
+                            <span className="flex-1 text-left">Roles</span>
+                            <ChevronRight
+                              size={14}
+                              className={`shrink-0 text-zinc-400 transition-transform ${rolesOpen ? "rotate-90" : ""}`}
+                            />
+                          </button>
 
-                <PromptInputAction tooltip="Search">
-                  <button className="h-9 px-4 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer text-sm font-semibold">
-                    <Globe size={18} />
-                    Search
-                  </button>
-                </PromptInputAction>
-
-                {deepThinking && (
-                  <DeepThinkingPill onDismiss={() => {
-                    onDeepThinkingChange(false);
-                    addToast("Deep Thinking disabled");
-                  }} />
-                )}
-
-                {hasContext && (
-                  <ContextPill
-                    count={contextCount}
-                    onClick={onContextClick || (() => {})}
-                    onDismiss={onClearContext || (() => {})}
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <PromptInputAction tooltip="Voice input">
-                  <button className="size-9 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center transition-all duration-200 cursor-pointer">
-                    <Mic size={18} />
-                  </button>
-                </PromptInputAction>
-
-                <Button
-                  size="icon"
-                  disabled={!canSubmit}
-                  onClick={handleSubmit}
-                  className="size-9 rounded-full hover:!bg-orange-500 transition-all duration-300"
-                >
-                  {!isLoading ? (
-                    <ArrowUp size={18} />
-                  ) : (
-                    <span className="size-3 rounded-xs bg-white" />
+                          <AnimatePresence>
+                            {rolesOpen && (
+                              <motion.div
+                                initial={{ opacity: 0, x: -4 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: -4 }}
+                                transition={{ duration: 0.12 }}
+                                className="absolute left-full top-0 ml-1.5 z-50 bg-white/95 backdrop-blur-md border border-[#1b253c]/10 rounded-2xl shadow-[0_8px_32px_rgba(27,37,60,0.1)] p-1.5 flex flex-col gap-0.5 min-w-[200px]"
+                              >
+                                {MANAS_ROLES.map((role) => (
+                                  <button
+                                    key={role.id}
+                                    type="button"
+                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                                      selectedRole === role.id
+                                        ? "bg-violet-500/10 text-violet-700"
+                                        : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65"
+                                    }`}
+                                    onClick={() => {
+                                      onRoleChange?.(role.id);
+                                      addToast(`Role set — ${manasRoleTag(role.id)}`);
+                                      setMenuOpen(false);
+                                      setRolesOpen(false);
+                                    }}
+                                  >
+                                    <span className="font-mono text-[10px] text-zinc-400 shrink-0">role:</span>
+                                    {role.label}
+                                  </button>
+                                ))}
+                                {selectedRole && (
+                                  <button
+                                    type="button"
+                                    className="mt-0.5 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide text-zinc-500 hover:bg-zinc-100 cursor-pointer text-left"
+                                    onClick={() => {
+                                      onRoleChange?.(null);
+                                      addToast("Role cleared");
+                                      setMenuOpen(false);
+                                      setRolesOpen(false);
+                                    }}
+                                  >
+                                    Clear role
+                                  </button>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </motion.div>
+                    </>
                   )}
-                </Button>
+                </AnimatePresence>
               </div>
-            </PromptInputActions>
-          </div>
-        </PromptInput>
 
-        <FileUploadContent>
-          <div className="flex min-h-[200px] w-full items-center justify-center backdrop-blur-sm">
-            <div className="bg-white/90 m-4 w-full max-w-md rounded-lg border p-8 shadow-lg">
-              <div className="mb-4 flex justify-center">
-                <svg
-                  className="text-zinc-400 size-8"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+              <PromptInputAction tooltip="Advice (coming soon)">
+                <button
+                  className="h-9 px-4 rounded-full border border-[#1b253c]/15 text-[#1b253c]/55 hover:border-amber-200 hover:text-amber-700 hover:bg-amber-50/30 flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer text-sm font-semibold"
+                  type="button"
+                  onClick={() => addToast("Advice mode — coming soon")}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                  />
-                </svg>
-              </div>
-              <h3 className="mb-2 text-center text-base font-medium text-zinc-800">
-                Drop files to upload
-              </h3>
-              <p className="text-center text-sm text-zinc-500">
-                Release to add files to your message
-              </p>
+                  <Lightbulb size={18} />
+                  Advice
+                </button>
+              </PromptInputAction>
+
+              {selectedRole && manasRoleTag(selectedRole) && (
+                <RolePill
+                  label={manasRoleTag(selectedRole)!}
+                  onDismiss={() => {
+                    onRoleChange?.(null);
+                    addToast("Role cleared");
+                  }}
+                />
+              )}
+
+              {deepThinking && (
+                <DeepThinkingPill onDismiss={() => {
+                  onDeepThinkingChange(false);
+                  addToast("Deep Thinking disabled");
+                }} />
+              )}
+
+              {hasContext && (
+                <ContextPill
+                  count={contextCount}
+                  onClick={onContextClick || (() => {})}
+                  onDismiss={onClearContext || (() => {})}
+                />
+              )}
             </div>
-          </div>
-        </FileUploadContent>
-      </div>
-    </FileUpload>
+            <div className="flex items-center gap-2">
+              <PromptInputAction tooltip="Voice input">
+                <button className="size-9 rounded-full border border-[#1b253c]/20 text-[#1b253c] hover:border-orange-200 hover:text-orange-600 hover:bg-orange-50/20 flex items-center justify-center transition-all duration-200 cursor-pointer" type="button">
+                  <Mic size={18} />
+                </button>
+              </PromptInputAction>
+
+              <Button
+                size="icon"
+                disabled={!canSubmit}
+                onClick={handleSubmit}
+                className="size-9 rounded-full hover:!bg-orange-500 transition-all duration-300"
+              >
+                {!isLoading ? (
+                  <ArrowUp size={18} />
+                ) : (
+                  <span className="size-3 rounded-xs bg-white" />
+                )}
+              </Button>
+            </div>
+          </PromptInputActions>
+        </div>
+      </PromptInput>
+    </div>
   )
 }
 
 export { PromptInputWithActions }
+
+function RolePill({ label, onDismiss }: { label: string; onDismiss: () => void }) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <motion.button
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-violet-200/70 bg-violet-50/90 text-[11px] font-bold text-violet-700 cursor-pointer overflow-hidden transition-all duration-200 shadow-3xs font-mono"
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      onClick={onDismiss}
+      animate={{ paddingRight: hovered ? 10 : 12 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      type="button"
+    >
+      <UserRound size={12} className="shrink-0 text-violet-500" />
+      <span>{label}</span>
+      <motion.span
+        className="flex items-center justify-center overflow-hidden"
+        animate={{ width: hovered ? 16 : 0, opacity: hovered ? 1 : 0, marginLeft: hovered ? 4 : 0 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+      >
+        <X size={11.5} className="text-violet-600 shrink-0" strokeWidth={2.5} />
+      </motion.span>
+    </motion.button>
+  )
+}
 
 function DeepThinkingPill({ onDismiss }: { onDismiss: () => void }) {
   const [hovered, setHovered] = useState(false)

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Brain } from "lucide-react";
 import { Markdown } from "@/components/ai-components/markdown";
@@ -29,6 +29,10 @@ const ReasoningContext = React.createContext<{
 function Reasoning({ children, isStreaming = false }: ReasoningProps) {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((v) => !v);
+
+  useEffect(() => {
+    if (isStreaming) setOpen(true);
+  }, [isStreaming]);
 
   return (
     <ReasoningContext.Provider value={{ open, toggle, isStreaming }}>

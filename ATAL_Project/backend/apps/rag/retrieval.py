@@ -89,6 +89,74 @@ def _hybrid_search(
     return reciprocal_rank_fusion(vector_hits, bm25_hits, limit=limit)
 
 
+_COLLECTION_KEYS = {
+    "sop": "SOP",
+    "iso": "ISOStandard",
+    "safety": "SafetyCode",
+    "manual": "EquipmentManual",
+    "maintenance_log": "MaintenanceLog",
+    "model_explanation": "ModelExplanation",
+}
+
+
+def _title_matches(hit: Dict, titles_lower: set[str]) -> bool:
+    if not titles_lower:
+        return True
+    props = hit.get("properties", {})
+    content = (props.get("content") or "").lower()
+    for key in ("title", "source_doc", "standard_code", "source_url"):
+        val = (props.get(key) or "").lower()
+        if not val:
+            continue
+        if val in titles_lower or any(t in val or val in t for t in titles_lower):
+            return True
+    # Fallback: match salient tokens from the library title inside chunk text
+    for title in titles_lower:
+        tokens = [t for t in title.replace("-", " ").split() if len(t) >= 3 or t.isdigit()]
+        if not tokens:
+            continue
+        hits = sum(1 for t in tokens if t in content)
+        if hits >= min(2, len(tokens)):
+            return True
+        if any(t.isdigit() and t in content for t in tokens):
+            return True
+    return False
+
+
+def retrieve_for_collections(
+    query: str,
+    collections: List[str],
+    *,
+    asset_id: Optional[str] = None,
+    document_titles: Optional[List[str]] = None,
+    limit_per_collection: int = 4,
+) -> List[Dict]:
+    """Retrieve only from user-selected collection keys (opt-in RAG)."""
+    if not collections:
+        return []
+
+    titles_lower = {t.lower() for t in document_titles} if document_titles else set()
+    results: List[Dict] = []
+
+    for key in collections:
+        if key == "asset_intelligence" and asset_id:
+            results += retrieve_asset_intelligence(asset_id, query)
+            continue
+        coll_name = _COLLECTION_KEYS.get(key)
+        if not coll_name:
+            continue
+        hits = _hybrid_search(coll_name, query, limit=limit_per_collection * 2)
+        if titles_lower:
+            hits = [h for h in hits if _title_matches(h, titles_lower)]
+        results += hits[:limit_per_collection]
+
+    results.sort(
+        key=lambda x: x.get("rrf_score", 0) or (1.0 - x.get("distance", 1.0)),
+        reverse=True,
+    )
+    return results[:12]
+
+
 def retrieve_sop(asset_type: str, query: str, procedure_phase: Optional[str] = None) -> List[Dict]:
     where = None
     if procedure_phase:

@@ -5,6 +5,7 @@ import {
   type BackendChatMessage,
 } from "@/lib/mappers";
 import type { ChatSession, Message, RagDoc } from "./types";
+import type { RagMessagePayload } from "./chat";
 
 export async function fetchSessions(): Promise<ChatSession[]> {
   const rows = await apiList<BackendChatSession>("/api/v1/chat/sessions/");
@@ -69,10 +70,24 @@ export function deleteSession(sessionId: string, sessions: ChatSession[]): ChatS
 export async function sendChatMessage(
   sessionId: string,
   content: string,
-  ragCollections: string[] = [],
+  rag: RagMessagePayload | string[] = [],
+  options?: { deepThinking?: boolean },
 ): Promise<{ task_id: string; message_id: string }> {
+  const payload =
+    Array.isArray(rag)
+      ? { rag_collections: rag, rag_document_titles: [], custom_rag_context: "", custom_documents: [], user_role: "" }
+      : rag;
+
   return apiJson(`/api/v1/chat/sessions/${sessionId}/message/`, {
     method: "POST",
-    body: JSON.stringify({ content, rag_collections: ragCollections }),
+    body: JSON.stringify({
+      content,
+      rag_collections: payload.rag_collections,
+      rag_document_titles: payload.rag_document_titles,
+      custom_rag_context: payload.custom_rag_context,
+      custom_documents: payload.custom_documents,
+      user_role: payload.user_role ?? "",
+      deep_thinking: options?.deepThinking ?? payload.deep_thinking ?? false,
+    }),
   });
 }

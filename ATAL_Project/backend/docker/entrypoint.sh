@@ -69,6 +69,9 @@ if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ]; then
         -d "{\"name\":\"${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}\"}" \
         | tail -1 || echo "[entrypoint] WARNING: worker model pull returned non-zero"
     echo "[entrypoint] Models ready."
+    echo "[entrypoint] Warming Ollama models into memory..."
+    $RUN_AS python manage.py warm_ollama --skip-rag \
+        || echo "[entrypoint] WARNING: Ollama warmup failed — first chat may be slow."
 fi
 
 # ── Apply migrations ───────────────────────────────────────────────────────────
@@ -100,12 +103,17 @@ echo "[entrypoint] Seeding initial synthetic telemetry..."
 $RUN_AS python manage.py seed_initial_telemetry --samples=30 \
   || echo "[entrypoint] WARNING: seed_initial_telemetry failed — check logs."
 
-# ── Ingest RAG corpus (idempotent — uses get_or_create, safe to re-run) ───────
-echo "[entrypoint] Ingesting RAG corpus (OEM manuals, ISO standards, SOPs, safety codes)..."
-$RUN_AS python manage.py ingest_corpus --sync --force || echo "[entrypoint] WARNING: corpus ingestion failed — check logs."
-
-echo "[entrypoint] Seeding maintenance logs for RAG..."
-$RUN_AS python manage.py seed_maintenance_logs --sync || echo "[entrypoint] WARNING: seed_maintenance_logs failed — check logs."
+# ── Optional RAG corpus ingest (off by default — user picks library docs in MANAS) ─
+if [ "${INGEST_CORPUS_ON_START:-0}" = "1" ]; then
+    echo "[entrypoint] Ingesting RAG corpus (INGEST_CORPUS_ON_START=1)..."
+    $RUN_AS python manage.py ingest_corpus --sync --force \
+        || echo "[entrypoint] WARNING: corpus ingestion failed — check logs."
+    echo "[entrypoint] Seeding maintenance logs for RAG..."
+    $RUN_AS python manage.py seed_maintenance_logs --sync \
+        || echo "[entrypoint] WARNING: seed_maintenance_logs failed — check logs."
+else
+    echo "[entrypoint] Skipping corpus ingest (set INGEST_CORPUS_ON_START=1 to enable)."
+fi
 
 # ── Static files ──────────────────────────────────────────────────────────────
 echo "[entrypoint] Collecting static files..."
@@ -160,6 +168,13 @@ if echo "$*" | grep -q "uvicorn\|gunicorn\|asgi"; then
     # Kill background instance and re-exec as the main process
     kill $APP_PID 2>/dev/null || true
     wait $APP_PID 2>/dev/null || true
+fi
+
+# ── Re-warm inference stack (Ollama + BGE) before serving — avoids first-chat spike ─
+if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ] && echo "$*" | grep -q "uvicorn\|gunicorn\|asgi"; then
+    echo "[entrypoint] Re-warming Ollama models before serving traffic..."
+    $RUN_AS python manage.py warm_ollama --skip-rag \
+        || echo "[entrypoint] WARNING: inference warmup failed — first chat may be slow."
 fi
 
 # ── Start application (as appuser) ────────────────────────────────────────────

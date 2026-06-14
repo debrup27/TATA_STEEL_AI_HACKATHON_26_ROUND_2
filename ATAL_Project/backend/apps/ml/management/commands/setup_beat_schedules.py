@@ -147,6 +147,20 @@ class Command(BaseCommand):
             },
         )
 
+        # ── Ollama keep-alive ping every 15 minutes ─────────────────────────────
+        ollama_keepalive_interval, _ = IntervalSchedule.objects.get_or_create(
+            every=15, period=IntervalSchedule.MINUTES
+        )
+        PeriodicTask.objects.update_or_create(
+            name="ollama-keepalive",
+            defaults={
+                "interval": ollama_keepalive_interval,
+                "task": "apps.agents.keep_ollama_warm",
+                "enabled": True,
+                "description": "Ping Ollama so qwen models stay loaded in VRAM",
+            },
+        )
+
         self.stdout.write(self.style.SUCCESS(
             "[setup_beat_schedules] Periodic tasks seeded: "
             "weekly-ml-retrain, weekly-synthetic-dataset-refresh, "

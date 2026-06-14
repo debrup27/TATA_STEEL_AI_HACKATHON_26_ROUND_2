@@ -206,7 +206,12 @@ CORPUS_DIR = config("CORPUS_DIR", default=str(BASE_DIR / "data" / "corpus"))
 OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://ollama:11434")
 OLLAMA_MODEL = config("OLLAMA_MODEL", default="qwen3.5:9b")
 OLLAMA_SMALL_MODEL = config("OLLAMA_SMALL_MODEL", default="qwen3.5:0.8b")
-OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="30m")
+OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="-1")
+
+# --- RAG (BGE-M3 on GPU when EMBEDDING_DEVICE=cuda) ---
+EMBEDDING_DEVICE = config("EMBEDDING_DEVICE", default="cuda")
+RAG_USE_RERANKER = config("RAG_USE_RERANKER", default=False, cast=bool)
+INGEST_CORPUS_ON_START = config("INGEST_CORPUS_ON_START", default=False, cast=bool)
 
 # --- Artifact roots ---
 # MODEL_ARTIFACT_ROOT must be on a persistent Docker volume so trained models

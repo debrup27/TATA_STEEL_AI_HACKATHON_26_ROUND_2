@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { X, Trash2 } from "lucide-react";
-import { getPreloadedDocs } from "@/services/chat";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { X, Trash2, ChevronDown, Eye, Check } from "lucide-react";
+import { Markdown } from "@/components/ai-components/markdown";
+import { getLibraryDocuments, fetchLibraryDocumentPreview } from "@/services/chat";
+import { groupLibraryDocuments, previewTextForDoc } from "@/lib/rag-doc-groups";
 import type { RagDoc } from "@/services/types";
 
 interface RagDocumentSelectorModalProps {
@@ -16,6 +18,53 @@ interface RagDocumentSelectorModalProps {
   onConfirm: (selected: RagDoc[]) => void;
 }
 
+function DocRow({
+  doc,
+  checked,
+  onToggle,
+  onPreview,
+}: {
+  doc: RagDoc;
+  checked: boolean;
+  onToggle: () => void;
+  onPreview: () => void;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${
+        checked ? "bg-[#4A582E]/5 border-[#4A582E]" : "bg-white border-zinc-200 hover:bg-zinc-50"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`size-5 shrink-0 rounded-md border flex items-center justify-center transition-all cursor-pointer ${
+          checked ? "bg-[#4A582E] border-[#4A582E]" : "border-zinc-300 bg-white"
+        }`}
+      >
+        {checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+      </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex-1 min-w-0 text-left cursor-pointer"
+      >
+        <p className="text-xs font-bold truncate text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
+          {doc.name}
+        </p>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onPreview(); }}
+        className="shrink-0 p-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:text-[#f97316] hover:border-orange-200 hover:bg-orange-50 transition-colors cursor-pointer"
+        title="Preview"
+      >
+        <Eye className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function RagDocumentSelectorModal({
   isOpen,
   onClose,
@@ -26,171 +75,240 @@ export default function RagDocumentSelectorModal({
   onRemoveCustom,
   onConfirm,
 }: RagDocumentSelectorModalProps) {
-  const [preloadedDocs, setPreloadedDocs] = useState<RagDoc[]>([]);
+  const [libraryDocs, setLibraryDocs] = useState<RagDoc[]>([]);
   const [fetched, setFetched] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ maintenance_log: true });
+  const [previewDoc, setPreviewDoc] = useState<RagDoc | null>(null);
+  const [previewBody, setPreviewBody] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    getPreloadedDocs()
-      .then((docs) => { if (!cancelled) setPreloadedDocs(docs); })
+    setFetched(false);
+    getLibraryDocuments()
+      .then((docs) => { if (!cancelled) setLibraryDocs(docs); })
       .finally(() => { if (!cancelled) setFetched(true); });
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  const loading = isOpen && !fetched;
+  const groups = useMemo(() => groupLibraryDocuments(libraryDocs), [libraryDocs]);
 
-  if (!isOpen) return null;
+  const selectedCount =
+    selectedPreloaded.length + customDocs.length;
+
+  const loadPreview = useCallback(async (doc: RagDoc) => {
+    setPreviewDoc(doc);
+    setPreviewLoading(true);
+    setPreviewBody("");
+    try {
+      if (doc.isCustom) {
+        setPreviewBody(previewTextForDoc(doc));
+      } else if (doc.id) {
+        const res = await fetchLibraryDocumentPreview(doc.id);
+        setPreviewBody(res.excerpt);
+      } else {
+        setPreviewBody("No preview available.");
+      }
+    } catch {
+      setPreviewBody("Could not load preview.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  const toggleGroupAll = (docNames: string[], selectAll: boolean) => {
+    for (const name of docNames) {
+      const isSelected = selectedPreloaded.includes(name);
+      if (selectAll && !isSelected) onTogglePreloaded(name);
+      if (!selectAll && isSelected) onTogglePreloaded(name);
+    }
+  };
 
   const handleConfirm = () => {
     const selected: RagDoc[] = [];
-    preloadedDocs.forEach((doc) => {
-      if (selectedPreloaded.includes(doc.name)) {
-        selected.push(doc);
-      }
+    libraryDocs.forEach((doc) => {
+      if (selectedPreloaded.includes(doc.name)) selected.push(doc);
     });
     selected.push(...customDocs);
     onConfirm(selected);
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-[1100] bg-black/55 backdrop-blur-xs flex items-center justify-center p-4">
-      <div 
-        className="bg-[#FAF9F5] border border-zinc-200/85 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden relative animate-in fade-in zoom-in-95 duration-200 text-[#1b253c]"
+      <div
+        className="bg-[#FAF9F5] border border-zinc-200/85 rounded-3xl shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col overflow-hidden text-[#1b253c]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute top-2.5 left-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-        <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-[#1b253c]/20 select-none">+</div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-250/80 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 shrink-0">
           <div>
             <h3 className="text-lg font-black uppercase tracking-tight" style={{ fontFamily: "var(--font-questrial)" }}>
-              Select Documents for RAG Context
+              Concierge Context
             </h3>
             <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider font-bold">
-              Choose preloaded guides or upload custom files to contextually answer queries
+              Select library documents or upload files — preview before loading
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="size-8 rounded-full flex items-center justify-center hover:bg-zinc-150 transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
+            className="size-8 rounded-full flex items-center justify-center hover:bg-zinc-100 transition-colors cursor-pointer text-zinc-500"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="overflow-y-auto p-6 space-y-6 flex-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
-          <div>
-            <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Preloaded System Docs</h4>
-            {loading && <p className="text-xs text-zinc-500">Loading corpus…</p>}
-            {!loading && preloadedDocs.length === 0 && (
-              <p className="text-xs text-zinc-500">No ingested documents found. Run corpus ingestion on the backend.</p>
+        <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+          {/* Selection list */}
+          <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4 border-b lg:border-b-0 lg:border-r border-zinc-200 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
+            {fetched && libraryDocs.length === 0 && (
+              <p className="text-xs text-zinc-500">No library documents ingested yet.</p>
             )}
-            <div className="space-y-2.5">
-              {preloadedDocs.map((doc) => {
-                const isChecked = selectedPreloaded.includes(doc.name);
-                return (
-                  <div
-                    key={doc.name}
-                    onClick={() => onTogglePreloaded(doc.name)}
-                    className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer select-none transition-all duration-200 ${
-                      isChecked
-                        ? "bg-[#4A582E]/5 border-[#4A582E] text-[#1b253c]"
-                        : "bg-white border-zinc-200 hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        isChecked ? "bg-[#4A582E] text-white" : "bg-zinc-100 text-zinc-400"
-                      }`}>
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate pr-2" style={{ fontFamily: "var(--font-questrial)" }}>{doc.name}</p>
-                        <span className="text-[10px] text-zinc-400 font-mono">{doc.size}</span>
-                      </div>
-                    </div>
-                    <div className={`size-5 rounded-md border flex items-center justify-center transition-all ${
-                      isChecked ? "bg-[#4A582E] border-[#4A582E]" : "border-zinc-350 bg-white"
-                    }`}>
-                      {isChecked && <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    </div>
+            {!fetched && <p className="text-xs text-zinc-500">Loading library…</p>}
+
+            {groups.map((group) => {
+              const isCollapsed = collapsed[group.key] ?? false;
+              const names = group.docs.map((d) => d.name);
+              const selectedInGroup = names.filter((n) => selectedPreloaded.includes(n)).length;
+              const allSelected = names.length > 0 && selectedInGroup === names.length;
+
+              return (
+                <div key={group.key} className="rounded-2xl border border-zinc-200 bg-white/80 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-50/90 border-b border-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => setCollapsed((c) => ({ ...c, [group.key]: !isCollapsed }))}
+                      className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer text-left"
+                    >
+                      <ChevronDown
+                        className={`w-4 h-4 text-zinc-500 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                      />
+                      <span className="text-[11px] font-extrabold uppercase tracking-widest text-[#f97316] truncate">
+                        {group.label}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 font-mono shrink-0">
+                        {selectedInGroup}/{group.docs.length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupAll(names, !allSelected)}
+                      className="text-[9px] font-bold uppercase tracking-wide text-zinc-500 hover:text-[#4A582E] px-2 py-1 rounded-md hover:bg-zinc-100 cursor-pointer shrink-0"
+                    >
+                      {allSelected ? "Clear" : "All"}
+                    </button>
                   </div>
-                );
-              })}
+                  {!isCollapsed && (
+                    <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
+                      {group.docs.map((doc) => (
+                        <DocRow
+                          key={doc.id ?? doc.name}
+                          doc={doc}
+                          checked={selectedPreloaded.includes(doc.name)}
+                          onToggle={() => onTogglePreloaded(doc.name)}
+                          onPreview={() => loadPreview(doc)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="rounded-2xl border border-zinc-200 bg-white/80 p-3">
+              <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-2 px-1">
+                Your Uploads
+              </h4>
+              {customDocs.length > 0 && (
+                <div className="space-y-1.5 mb-3">
+                  {customDocs.map((doc) => (
+                    <div key={doc.name} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <DocRow
+                          doc={doc}
+                          checked
+                          onToggle={() => {}}
+                          onPreview={() => loadPreview(doc)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveCustom(doc.name)}
+                        className="p-1.5 rounded-lg border border-zinc-200 text-zinc-400 hover:text-red-500 hover:bg-red-50 cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-zinc-300 rounded-xl bg-zinc-50/50 hover:bg-zinc-50 cursor-pointer transition-colors">
+                <p className="text-xs font-bold text-zinc-600">Upload PDF, TXT, or MD</p>
+                <p className="text-[9px] text-zinc-400 mt-1 font-mono uppercase">via concierge only</p>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={onUploadCustom}
+                  accept=".pdf,.txt,.md,.markdown,.csv"
+                />
+              </label>
             </div>
           </div>
 
-          <div className="border-t border-zinc-200 pt-6">
-            <h4 className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] mb-3">Custom Context Documents</h4>
-            {customDocs.length > 0 && (
-              <div className="space-y-2.5 mb-4">
-                {customDocs.map((doc) => (
-                  <div
-                    key={doc.name}
-                    className="flex items-center justify-between p-3.5 bg-white border border-zinc-200 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 text-[#f97316]">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold truncate pr-2" style={{ fontFamily: "var(--font-questrial)" }}>{doc.name}</p>
-                        <span className="text-[10px] text-zinc-455 font-semibold uppercase tracking-wider font-mono">Custom Upload • {doc.size}</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onRemoveCustom(doc.name)}
-                      className="p-1.5 rounded-lg border border-zinc-200 hover:border-red-200 text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+          {/* Preview panel */}
+          <div className="w-full lg:w-[42%] shrink-0 flex flex-col bg-[#F7F4EC]/60 min-h-[200px] lg:min-h-0">
+            <div className="px-4 py-3 border-b border-zinc-200/80 shrink-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-500">Preview</p>
+              <p className="text-xs font-bold truncate mt-0.5" style={{ fontFamily: "var(--font-questrial)" }}>
+                {previewDoc?.name ?? "Select a document"}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 text-sm text-zinc-700 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/10">
+              {!previewDoc && (
+                <p className="text-xs text-zinc-400 italic">Click the eye icon on any document to preview it here.</p>
+              )}
+              {previewDoc && previewLoading && (
+                <p className="text-xs text-zinc-500">Loading preview…</p>
+              )}
+              {previewDoc && !previewLoading && previewDoc.pages?.[0]?.startsWith("data:image") && (
+                <img
+                  src={previewDoc.pages[0]}
+                  alt={previewDoc.name}
+                  className="w-full rounded-lg border border-zinc-200 mb-3 max-h-48 object-contain bg-white"
+                />
+              )}
+              {previewDoc && !previewLoading && previewBody && (
+                <Markdown className="text-sm prose prose-zinc prose-sm max-w-none">
+                  {previewBody.slice(0, 4000)}
+                </Markdown>
+              )}
+            </div>
+            {selectedCount > 0 && (
+              <div className="px-4 py-2 border-t border-zinc-200/80 text-[10px] text-zinc-500 font-mono shrink-0">
+                {selectedCount} document{selectedCount !== 1 ? "s" : ""} selected
               </div>
             )}
-
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-zinc-300 rounded-2xl bg-white hover:bg-zinc-50 cursor-pointer transition-all duration-200 group">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-4">
-                <svg className="w-8 h-8 text-zinc-400 group-hover:text-[#f97316] transition-colors mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <p className="text-xs font-bold text-zinc-700" style={{ fontFamily: "var(--font-questrial)" }}>
-                  Click or drag files here to upload custom documents
-                </p>
-                <p className="text-[9px] text-zinc-455 font-bold uppercase tracking-wider mt-1 font-mono">
-                  Supports PDF, PNG, TXT, DOCX
-                </p>
-              </div>
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={onUploadCustom}
-                accept=".pdf,.png,.jpg,.jpeg,.txt,.docx"
-              />
-            </label>
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-200 shrink-0 select-none bg-white">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-200 shrink-0 bg-white">
           <button
+            type="button"
             onClick={onClose}
-            className="h-10 px-5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-zinc-650 hover:text-zinc-900 transition-colors font-bold text-xs uppercase cursor-pointer"
-            style={{ fontFamily: "var(--font-pixeloid)" }}
+            className="h-10 px-5 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-xs font-bold uppercase cursor-pointer"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleConfirm}
-            className="h-10 px-6 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl transition-all duration-300 font-bold text-xs uppercase cursor-pointer"
-            style={{ fontFamily: "var(--font-pixeloid)" }}
+            disabled={selectedCount === 0}
+            className="h-10 px-6 bg-zinc-900 hover:bg-[#f97316] disabled:opacity-40 text-white rounded-xl text-xs font-bold uppercase cursor-pointer transition-colors"
           >
-            Load Context & Start
+            Load {selectedCount > 0 ? `${selectedCount} ` : ""}into Context
           </button>
         </div>
       </div>

@@ -70,24 +70,35 @@ export interface MessageFile {
 }
 
 export interface Citation {
+  /** 1-based source number matching inline [n] markers in the answer. */
+  index?: number;
   doc: string;
   section?: string;
+  /** Retrieved passage shown in the sources panel. */
+  excerpt?: string;
   score?: number;
+  source?: "library" | "upload";
 }
 
 export interface Message {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Model chain-of-thought when Deep Thinking is enabled. */
+  reasoning?: string;
   files?: MessageFile[];
   citations?: Citation[];
   isCompacting?: boolean;
 }
 
 export interface RagDoc {
+  id?: string;
   name: string;
   size: string;
   type?: string;
+  docType?: string;
   pages?: string[];
+  /** Extracted plain text sent to backend RAG (not base64 previews). */
+  textContent?: string;
   isCustom?: boolean;
 }
 
@@ -96,6 +107,8 @@ export interface ChatSession {
   title: string;
   createdAt: string;
   messages: Message[];
+  /** Sidebar preview from list API before full history is loaded. */
+  lastMessagePreview?: string;
   ragDocs?: RagDoc[];
 }
 

@@ -50,6 +50,48 @@ class DocumentListView(APIView):
         return Response({"documents": data, "count": len(data)})
 
 
+class DocumentPreviewView(APIView):
+    """GET /api/v1/rag/documents/<id>/preview/ — excerpt for concierge selector."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, document_id):
+        try:
+            doc = Document.objects.get(id=document_id, is_ingested=True)
+        except Document.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        excerpt = ""
+        try:
+            from apps.rag.chroma_client import get_chroma_client
+            client = get_chroma_client()
+            coll = client.get_collection(doc.chroma_collection)
+            if doc.chroma_object_ids:
+                result = coll.get(
+                    ids=doc.chroma_object_ids[:1],
+                    include=["documents"],
+                )
+                if result.get("documents") and result["documents"][0]:
+                    excerpt = result["documents"][0][:2500]
+        except Exception:
+            pass
+
+        if not excerpt:
+            try:
+                from apps.rag.chunker import chunk_document
+                chunks = chunk_document(doc)
+                if chunks:
+                    excerpt = (chunks[0].get("content") or "")[:2500]
+            except Exception:
+                pass
+
+        return Response({
+            "id": str(doc.id),
+            "title": doc.title,
+            "doc_type": doc.doc_type,
+            "excerpt": excerpt or "No preview available.",
+        })
+
+
 class RAGQueryView(APIView):
     permission_classes = [IsAuthenticated]
 

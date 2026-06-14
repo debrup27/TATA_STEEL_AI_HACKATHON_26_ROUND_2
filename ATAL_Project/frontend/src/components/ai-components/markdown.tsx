@@ -37,7 +37,24 @@ const defaultComponents: Partial<Components> = {
   ),
   strong: ({ children }) => <strong>{children}</strong>,
   em: ({ children }) => <em>{children}</em>,
-  li: ({ children }) => <li className="list-disc ml-4">{children}</li>,
+  ul: ({ children }) => <ul className="list-disc ml-5 my-2 space-y-1">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal ml-5 my-2 space-y-1">{children}</ol>,
+  li: ({ children }) => <li className="my-0.5">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-orange-300 pl-3 my-2 text-zinc-600 italic">{children}</blockquote>
+  ),
+  a: ({ href, children }) => (
+    <a href={href} className="text-orange-600 underline underline-offset-2 hover:text-orange-700" target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="min-w-full text-sm border border-zinc-200 rounded-lg">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => <th className="border border-zinc-200 bg-zinc-50 px-2 py-1 text-left font-semibold">{children}</th>,
+  td: ({ children }) => <td className="border border-zinc-200 px-2 py-1">{children}</td>,
   p: ({ children }) => <p className="my-1.5">{children}</p>,
 };
 

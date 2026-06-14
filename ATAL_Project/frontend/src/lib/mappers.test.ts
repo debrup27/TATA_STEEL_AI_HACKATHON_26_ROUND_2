@@ -52,5 +52,16 @@ describe("mappers", () => {
     );
     expect(session.id).toBe("s1");
     expect(session.messages).toHaveLength(1);
+    expect(session.lastMessagePreview).toBe("hi");
+  });
+
+  it("uses list last_message when full history not loaded", () => {
+    const session = mapChatSession({
+      id: "s2",
+      last_active: "2026-06-14T10:00:00Z",
+      last_message: { role: "assistant", content: "Last reply preview" },
+    });
+    expect(session.messages).toHaveLength(0);
+    expect(session.lastMessagePreview).toBe("Last reply preview");
   });
 });

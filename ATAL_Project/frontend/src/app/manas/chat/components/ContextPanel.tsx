@@ -1,8 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { ChevronDown, Eye, X } from "lucide-react";
+import { Markdown } from "@/components/ai-components/markdown";
+import { groupLibraryDocuments, previewTextForDoc } from "@/lib/rag-doc-groups";
+import { fetchLibraryDocumentPreview } from "@/services/chat";
 import { SPRING_NAV } from "@/lib/constants";
 import type { MessageFile, RagDoc } from "@/services/types";
 
@@ -14,6 +17,69 @@ interface ContextPanelProps {
   onExpandFile: (file: MessageFile) => void;
 }
 
+function DocCard({
+  doc,
+  onRemove,
+  onExpandFile,
+  onPreview,
+}: {
+  doc: RagDoc;
+  onRemove: () => void;
+  onExpandFile: (file: MessageFile) => void;
+  onPreview: () => void;
+}) {
+  const groupLabel = doc.isCustom
+    ? "Upload"
+    : (doc.docType || doc.type || "library");
+
+  return (
+    <div className="bg-white border border-zinc-250/70 rounded-2xl p-4 shadow-3xs flex flex-col gap-2 transition-all hover:border-[#4A582E]">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 text-[#f97316]">
+          <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold truncate text-[#1b253c] leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
+            {doc.name}
+          </p>
+          <span className="text-[10px] text-zinc-400 font-mono font-medium">{doc.size}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onPreview}
+          className="shrink-0 p-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:text-[#f97316] hover:border-orange-200 hover:bg-orange-50 transition-colors cursor-pointer"
+          title="Preview"
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {doc.pages && doc.pages.length > 0 && doc.pages[0] && (doc.type?.startsWith("image/") || doc.name.match(/\.(png|jpg|jpeg|webp|gif|bmp)$/i)) && (
+        <div
+          className="mt-2 w-full h-24 rounded-lg overflow-hidden border border-zinc-150 relative bg-zinc-50 flex items-center justify-center cursor-pointer group/thumb"
+          onClick={() => onExpandFile({ name: doc.name, type: doc.type || "image/png", pages: doc.pages || [] })}
+        >
+          <img src={doc.pages[0]} alt={doc.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-105" />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-155/65">
+        <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider font-mono">
+          {groupLabel}
+        </span>
+        <button
+          onClick={onRemove}
+          className="text-[9px] font-bold text-red-500 hover:text-red-755 transition-colors uppercase flex items-center gap-1 cursor-pointer"
+          title="Remove from conversation context"
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ContextPanel({
   ragDocs,
   onClose,
@@ -21,6 +87,40 @@ export default function ContextPanel({
   onRemoveDoc,
   onExpandFile,
 }: ContextPanelProps) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ maintenance_log: true });
+  const [previewDoc, setPreviewDoc] = useState<RagDoc | null>(null);
+  const [previewBody, setPreviewBody] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const libraryDocs = useMemo(() => ragDocs.filter((d) => !d.isCustom), [ragDocs]);
+  const customDocs = useMemo(() => ragDocs.filter((d) => d.isCustom), [ragDocs]);
+  const groups = useMemo(() => groupLibraryDocuments(libraryDocs), [libraryDocs]);
+
+  const loadPreview = useCallback(async (doc: RagDoc) => {
+    setPreviewDoc(doc);
+    setPreviewLoading(true);
+    setPreviewBody("");
+    try {
+      if (doc.isCustom) {
+        setPreviewBody(previewTextForDoc(doc));
+      } else if (doc.id) {
+        const res = await fetchLibraryDocumentPreview(doc.id);
+        setPreviewBody(res.excerpt);
+      } else {
+        setPreviewBody("No preview available.");
+      }
+    } catch {
+      setPreviewBody("Could not load preview.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewBody("");
+  };
+
   return (
     <motion.div
       initial={{ width: 0, opacity: 0 }}
@@ -36,64 +136,111 @@ export default function ContextPanel({
               Context Panel
             </h3>
             <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-black font-mono">
-              {ragDocs.length} Active Document{ragDocs.length !== 1 ? 's' : ''}
+              {ragDocs.length} Active Document{ragDocs.length !== 1 ? "s" : ""}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="size-7 rounded-full border border-zinc-200 hover:border-zinc-350 hover:bg-zinc-100 flex items-center justify-center transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
-              title="Close panel"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-        
-        {/* Document list */}
-        <div className="flex-1 overflow-y-auto py-4 space-y-3 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full pr-1">
-          {ragDocs.map((doc, idx) => (
-            <div key={idx} className="bg-white border border-zinc-250/70 rounded-2xl p-4 shadow-3xs flex flex-col gap-2 transition-all hover:border-[#4A582E]">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="size-8 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 text-[#f97316]">
-                  <svg className="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold truncate text-[#1b253c] leading-snug" style={{ fontFamily: "var(--font-questrial)" }}>
-                    {doc.name}
-                  </p>
-                  <span className="text-[10px] text-zinc-400 font-mono font-medium">{doc.size}</span>
-                </div>
-              </div>
-              {doc.pages && doc.pages.length > 0 && doc.pages[0] && (doc.type?.startsWith("image/") || doc.name.match(/\.(png|jpg|jpeg|webp|gif|bmp)$/i)) && (
-                <div 
-                  className="mt-2 w-full h-24 rounded-lg overflow-hidden border border-zinc-150 relative bg-zinc-50 flex items-center justify-center cursor-pointer group/thumb" 
-                  onClick={() => onExpandFile({ name: doc.name, type: doc.type || "image/png", pages: doc.pages || [] })}
-                >
-                  <img src={doc.pages[0]} alt={doc.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/thumb:scale-105" />
-                </div>
-              )}
-              
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-zinc-155/65">
-                <span className="text-[9px] text-zinc-400 font-bold uppercase tracking-wider font-mono">
-                  {doc.isCustom ? "Custom File" : "Preloaded Guide"}
-                </span>
-                <button
-                  onClick={() => onRemoveDoc(doc.name)}
-                  className="text-[9px] font-bold text-red-500 hover:text-red-755 transition-colors uppercase flex items-center gap-1 cursor-pointer"
-                  title="Remove from conversation context"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
+          <button
+            onClick={onClose}
+            className="size-7 rounded-full border border-zinc-200 hover:border-zinc-350 hover:bg-zinc-100 flex items-center justify-center transition-colors cursor-pointer text-zinc-500 hover:text-zinc-800"
+            title="Close panel"
+          >
+            <X size={14} />
+          </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto py-4 space-y-3 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full pr-1">
+          {groups.map((group) => {
+            const isCollapsed = collapsed[group.key] ?? false;
+            return (
+              <div key={group.key} className="rounded-2xl border border-zinc-200/80 bg-white/50 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setCollapsed((c) => ({ ...c, [group.key]: !isCollapsed }))}
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-zinc-50/90 border-b border-zinc-100 cursor-pointer text-left"
+                >
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-zinc-500 shrink-0 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316] truncate flex-1">
+                    {group.label}
+                  </span>
+                  <span className="text-[9px] text-zinc-400 font-mono">{group.docs.length}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className="p-2 space-y-2">
+                    {group.docs.map((doc) => (
+                      <DocCard
+                        key={doc.id ?? doc.name}
+                        doc={doc}
+                        onRemove={() => onRemoveDoc(doc.name)}
+                        onExpandFile={onExpandFile}
+                        onPreview={() => loadPreview(doc)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {customDocs.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200/80 bg-white/50 overflow-hidden">
+              <div className="px-3 py-2 bg-zinc-50/90 border-b border-zinc-100">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316]">
+                  Your Uploads
+                </span>
+                <span className="text-[9px] text-zinc-400 font-mono ml-2">{customDocs.length}</span>
+              </div>
+              <div className="p-2 space-y-2">
+                {customDocs.map((doc) => (
+                  <DocCard
+                    key={doc.name}
+                    doc={doc}
+                    onRemove={() => onRemoveDoc(doc.name)}
+                    onExpandFile={onExpandFile}
+                    onPreview={() => loadPreview(doc)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {previewDoc && (
+          <div className="shrink-0 border-t border-zinc-200 bg-white rounded-2xl mx-0 mb-3 overflow-hidden flex flex-col max-h-[40%]">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-zinc-50/80">
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-500">Preview</p>
+                <p className="text-[11px] font-bold truncate text-[#1b253c]">{previewDoc.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="p-1 rounded-md hover:bg-zinc-100 text-zinc-500 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 text-xs text-zinc-700 min-h-[80px]">
+              {previewLoading && <p className="text-zinc-500">Loading preview…</p>}
+              {!previewLoading && previewDoc.pages?.[0]?.startsWith("data:image") && (
+                <img
+                  src={previewDoc.pages[0]}
+                  alt={previewDoc.name}
+                  className="w-full rounded-lg border border-zinc-200 mb-2 max-h-32 object-contain bg-zinc-50"
+                />
+              )}
+              {!previewLoading && previewBody && (
+                <Markdown className="text-xs prose prose-zinc prose-sm max-w-none">
+                  {previewBody.slice(0, 3000)}
+                </Markdown>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="pt-4 border-t border-zinc-200/60 shrink-0 select-none">
-          <button 
+          <button
             onClick={onManageDocs}
             className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl py-2.5 text-xs font-bold transition-all duration-300 shadow-sm cursor-pointer"
             style={{ fontFamily: "var(--font-pixeloid)" }}

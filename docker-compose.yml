@@ -39,7 +39,10 @@ x-django-env: &django-env
   OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
   OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
   OLLAMA_SMALL_MODEL: ${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}
-  OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+  OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+  EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-cuda}
+  RAG_USE_RERANKER: ${RAG_USE_RERANKER:-0}
+  INGEST_CORPUS_ON_START: ${INGEST_CORPUS_ON_START:-0}
   BGE_M3_MODEL_PATH: ${BGE_M3_MODEL_PATH:-/models/bge-m3}
   BGE_RERANKER_MODEL_PATH: ${BGE_RERANKER_MODEL_PATH:-/models/bge-reranker-v2-m3}
   JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-atal-hackathon-jwt-key-2026}
@@ -109,14 +112,14 @@ services:
 
   # Ollama — always-on GPU service.
   # VRAM budget: qwen3.5:9b Q4≈6GB + qwen3.5:0.8b≈0.8GB + BGE-M3≈1.7GB = ~8.5GB (within 16GB)
-  # keep_alive=30m ensures both models stay resident after first inference call.
+  # keep_alive=-1 keeps both models resident indefinitely after first inference call.
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
     volumes:
       - ollama-data:/root/.ollama
     deploy:
@@ -142,12 +145,13 @@ services:
     image: curlimages/curl:8.11.1
     restart: "no"
     environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "curl -fsS http://ollama:11434/api/generate
-      -H 'Content-Type: application/json'
-      -d '{\"model\":\"${OLLAMA_MODEL:-qwen3.5:9b}\",\"prompt\":\"reply with ok\",\"stream\":false,\"keep_alive\":\"${OLLAMA_KEEP_ALIVE:-30m}\"}'"
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
+      OLLAMA_SMALL_MODEL: ${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}
+    volumes:
+      - ./ATAL_Project/backend/scripts/ollama-warmup.sh:/warmup.sh:ro
+    entrypoint: ["/bin/sh", "/warmup.sh"]
     networks:
       - backend-net
     depends_on:

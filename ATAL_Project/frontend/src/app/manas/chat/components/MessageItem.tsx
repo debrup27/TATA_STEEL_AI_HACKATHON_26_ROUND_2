@@ -3,32 +3,23 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { DURATION_VERY_SLOW } from "@/lib/constants";
-import type { Message, MessageFile, Citation } from "@/services/types";
+import { CitedMarkdown } from "@/components/ai-components/CitedMarkdown";
+import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-components/reasoning";
+import type { Message, MessageFile } from "@/services/types";
 
 interface MessageItemProps {
   message: Message;
   index: number;
   onExpandFile: (file: MessageFile) => void;
-}
-
-function CitationBadge({ citation }: { citation: Citation }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-md px-2 py-0.5">
-      <svg className="w-3 h-3 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-      {citation.doc}
-      {citation.section ? ` §${citation.section}` : ""}
-    </span>
-  );
+  reasoningStreaming?: boolean;
 }
 
 const MessageItem = React.memo(function MessageItem({
   message,
   index,
   onExpandFile,
+  reasoningStreaming = false,
 }: MessageItemProps) {
-  // System / compaction messages — centred pill
   if (message.role === "system") {
     return (
       <motion.div
@@ -62,6 +53,10 @@ const MessageItem = React.memo(function MessageItem({
 
   const isUser = message.role === "user";
 
+  if (!isUser && !message.content && !(message.citations?.length) && !message.reasoning) {
+    return null;
+  }
+
   return (
     <motion.div
       layout
@@ -74,7 +69,7 @@ const MessageItem = React.memo(function MessageItem({
         className={`leading-relaxed flex flex-col gap-2 ${
           isUser
             ? "max-w-[80%] text-sm font-semibold bg-zinc-900 text-white rounded-2xl rounded-br-md px-4 py-2.5 shadow-3xs"
-            : "max-w-full text-base md:text-[17px] font-semibold text-zinc-900 w-full py-2"
+            : "max-w-full text-base md:text-[17px] font-normal text-zinc-900 w-full py-2"
         }`}
       >
         {message.files && message.files.length > 0 && (
@@ -122,15 +117,28 @@ const MessageItem = React.memo(function MessageItem({
           </div>
         )}
 
-        <div>{message.content}</div>
-
-        {/* Citations — only on assistant messages with sources */}
-        {!isUser && message.citations && message.citations.length > 0 && (
-          <div className="mt-1 pt-2 border-t border-zinc-100 flex flex-wrap gap-1.5">
-            {message.citations.map((c, i) => (
-              <CitationBadge key={i} citation={c} />
-            ))}
-          </div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        ) : (
+          <>
+            {(message.reasoning || reasoningStreaming) && (
+              <Reasoning isStreaming={reasoningStreaming}>
+                <ReasoningTrigger>
+                  {reasoningStreaming ? "Thinking…" : "View reasoning"}
+                </ReasoningTrigger>
+                <ReasoningContent markdown className="text-zinc-600">
+                  {message.reasoning || ""}
+                </ReasoningContent>
+              </Reasoning>
+            )}
+            {(message.content || !reasoningStreaming) && (
+              <CitedMarkdown
+                content={message.content}
+                citations={message.citations}
+                className="text-base md:text-[17px]"
+              />
+            )}
+          </>
         )}
       </div>
     </motion.div>

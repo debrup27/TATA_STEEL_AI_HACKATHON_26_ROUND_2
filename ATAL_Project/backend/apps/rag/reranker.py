@@ -19,8 +19,8 @@ def _load():
     if _model is None:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
-        # Default cpu — keeps GPU VRAM free for Ollama.
-        _device = os.environ.get("EMBEDDING_DEVICE", "cpu")
+        # Reranker disabled by default (RAG_USE_RERANKER=0) — saves ~1GB VRAM + CPU.
+        _device = os.environ.get("EMBEDDING_DEVICE", "cuda")
         from transformers import PreTrainedTokenizerFast
         _tokenizer = PreTrainedTokenizerFast(
             tokenizer_file=os.path.join(_MODEL_PATH, "tokenizer.json"),

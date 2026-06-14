@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import { PromptInputWithActions } from "../../../components/PromptInputWithActions";
 import { getPagesFromPdf } from "@/lib/pdf-renderer";
+import { extractRagTextFromFile } from "@/lib/rag-file-text";
 import { fileToBase64, formatBytes } from "@/lib/utils";
 import { DURATION_SLOW, DURATION_SECTION_FADE, DURATION_VERY_SLOW } from "@/lib/constants";
 
@@ -25,7 +26,7 @@ import {
   sendChatMessage,
   persistSessions,
 } from "@/services/sessions";
-import { getPreloadedDocs, ragCollectionsFromDocs } from "@/services/chat";
+import { getLibraryDocuments, ragPayloadFromDocs, warmChatStack } from "@/services/chat";
 import type { MessageFile, ChatSession, RagDoc, Citation } from "@/services/types";
 import { useChatStream } from "@/hooks";
 
@@ -42,7 +43,18 @@ export default function ManasChatPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [deepThinking, setDeepThinking] = useState(false);
+  const [deepThinking, setDeepThinking] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("manas_deep_thinking") === "true";
+    }
+    return false;
+  });
+  const [selectedRole, setSelectedRole] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("manas_selected_role") || null;
+    }
+    return null;
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFile, setExpandedFile] = useState<MessageFile | null>(null);
 
@@ -92,6 +104,26 @@ export default function ManasChatPage() {
             msgs[msgs.length - 1] = { ...last, content: last.content + token };
           } else {
             msgs.push({ role: "assistant", content: token });
+          }
+          return { ...session, messages: msgs };
+        }),
+      );
+    },
+    onThinkToken: (token) => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const msgs = [...session.messages];
+          const last = msgs[msgs.length - 1];
+          if (last?.role === "assistant") {
+            msgs[msgs.length - 1] = {
+              ...last,
+              reasoning: (last.reasoning ?? "") + token,
+            };
+          } else {
+            msgs.push({ role: "assistant", content: "", reasoning: token });
           }
           return { ...session, messages: msgs };
         }),
@@ -171,6 +203,11 @@ export default function ManasChatPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // Pre-warm Ollama + RAG models so the first message does not cold-start.
+  useEffect(() => {
+    warmChatStack().catch(() => undefined);
+  }, []);
+
   // Derived state
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) || null : null;
   const hasContext = !!(activeSession?.ragDocs && activeSession.ragDocs.length > 0);
@@ -193,6 +230,21 @@ export default function ManasChatPage() {
     setAlertsEnabled(val);
     if (typeof window !== "undefined") {
       localStorage.setItem("manas_alerts_enabled", String(val));
+    }
+  }, []);
+
+  const handleRoleChange = useCallback((role: string | null) => {
+    setSelectedRole(role);
+    if (typeof window !== "undefined") {
+      if (role) localStorage.setItem("manas_selected_role", role);
+      else localStorage.removeItem("manas_selected_role");
+    }
+  }, []);
+
+  const handleDeepThinkingChange = useCallback((val: boolean) => {
+    setDeepThinking(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("manas_deep_thinking", String(val));
     }
   }, []);
 
@@ -223,9 +275,7 @@ export default function ManasChatPage() {
           setActiveSessionId(null);
           setShowRagSelector(true);
           setShowRightPanel(true);
-          void getPreloadedDocs().then((docs) =>
-            setSelectedPreloadedDocs(docs.map((d) => d.name)),
-          );
+          setSelectedPreloadedDocs([]);
         }, 0);
         return () => clearTimeout(timer);
       }
@@ -234,10 +284,11 @@ export default function ManasChatPage() {
 
   const handleCustomFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles: { name: string; size: string; type: string; pages: string[]; isCustom: boolean }[] = [];
+      const newFiles: { name: string; size: string; type: string; pages: string[]; textContent?: string; isCustom: boolean }[] = [];
       for (const file of Array.from(e.target.files)) {
         try {
           let pages: string[] = [];
+          const textContent = await extractRagTextFromFile(file);
           if (file.type === "application/pdf") {
             try {
               pages = await getPagesFromPdf(file);
@@ -245,7 +296,7 @@ export default function ManasChatPage() {
               console.error("Failed to render PDF page, using fallback", err);
               pages = [];
             }
-          } else {
+          } else if (file.type.startsWith("image/")) {
             pages = [await fileToBase64(file)];
           }
 
@@ -253,7 +304,8 @@ export default function ManasChatPage() {
             name: file.name,
             size: formatBytes(file.size),
             type: file.type,
-            pages: pages,
+            pages,
+            textContent: textContent || undefined,
             isCustom: true,
           });
         } catch (err) {
@@ -337,47 +389,14 @@ export default function ManasChatPage() {
     }
   }, [activeSession?.ragDocs]);
 
-  const handleUploadContextDoc = useCallback((file: { name: string; size: string; type: string; pages: string[]; isCustom: boolean }) => {
-    let targetSessionId = activeSessionId;
-    if (!activeSessionId) {
-      const newId = `session-${Date.now()}`;
-      const newSession: ChatSession = {
-        id: newId,
-        title: "New Session",
-        createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        messages: [
-          {
-            role: "assistant",
-            content: "Hi! I have initialized this conversation with context documents. Ask me anything about them."
-          }
-        ],
-        ragDocs: []
-      };
-      setSessions((prev) => [...prev, newSession]);
-      setActiveSessionId(newId);
-      targetSessionId = newId;
-    }
-
-    setSessions((prevSessions) =>
-      prevSessions.map((session) => {
-        if (session.id !== targetSessionId) return session;
-        const currentDocs = session.ragDocs || [];
-        if (currentDocs.some(d => d.name === file.name)) return session;
-        return {
-          ...session,
-          ragDocs: [...currentDocs, file]
-        };
-      })
-    );
-    setShowRightPanel(true);
-    setTriggerToast(`Context document "${file.name}" loaded`);
-    setTimeout(() => setTriggerToast(null), 100);
-  }, [activeSessionId]);
-
-  const handleSendMessage = useCallback(async (messageText: string, attachedFiles?: MessageFile[]) => {
+  const handleSendMessage = useCallback(async (messageText: string) => {
     let targetId = activeSessionId;
     const session = targetId ? sessions.find((s) => s.id === targetId) : null;
-    const ragNames = session?.ragDocs?.map((d) => d.name) ?? [];
+    const ragNames = session?.ragDocs ?? [];
+    const ragPayload = {
+      ...ragPayloadFromDocs(ragNames),
+      user_role: selectedRole ?? undefined,
+    };
 
     if (!targetId) {
       const created = await createSession(undefined, messageText.slice(0, 40) || "New Chat");
@@ -397,8 +416,8 @@ export default function ManasChatPage() {
         if (s.id !== targetId) return s;
         const updatedMessages = [
           ...s.messages,
-          { role: "user" as const, content: messageText, files: attachedFiles },
-          { role: "assistant" as const, content: "" },
+          { role: "user" as const, content: messageText },
+          { role: "assistant" as const, content: "", reasoning: deepThinking ? "" : undefined },
         ];
         const isNew = s.title === "New Session" || s.messages.length === 0;
         const newTitle = isNew
@@ -413,7 +432,7 @@ export default function ManasChatPage() {
     chatSim.start();
     try {
       await chatSim.waitUntilReady();
-      await sendChatMessage(targetId, messageText, ragCollectionsFromDocs(ragNames));
+      await sendChatMessage(targetId, messageText, ragPayload, { deepThinking });
     } catch {
       setSessions((prev) =>
         prev.map((s) => {
@@ -431,7 +450,7 @@ export default function ManasChatPage() {
       );
       chatSim.reset();
     }
-  }, [activeSessionId, sessions, chatSim]);
+  }, [activeSessionId, sessions, chatSim, selectedRole, deepThinking]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -451,7 +470,13 @@ export default function ManasChatPage() {
       // Kick off async load; update state when it resolves
       fetchSessionDetail(id)
         .then((detail) => {
-          setSessions((p) => p.map((s) => (s.id === id ? { ...s, messages: detail.messages } : s)));
+          setSessions((p) =>
+            p.map((s) =>
+              s.id === id
+                ? { ...s, messages: detail.messages, lastMessagePreview: detail.lastMessagePreview }
+                : s,
+            ),
+          );
         })
         .catch(() => undefined);
       return prev;
@@ -564,7 +589,7 @@ export default function ManasChatPage() {
                 <motion.div layoutId="chatbox" className="w-full max-w-3xl mx-auto mt-8 shrink-0">
                   <PromptInputWithActions
                     deepThinking={deepThinking}
-                    onDeepThinkingChange={setDeepThinking}
+                    onDeepThinkingChange={handleDeepThinkingChange}
                     onSendMessage={handleSendMessage}
                     isLoading={chatSim.isLoading}
                     hasContext={hasContext}
@@ -576,8 +601,9 @@ export default function ManasChatPage() {
                       );
                       setShowRightPanel(false);
                     }}
-                    onUploadContextDoc={handleUploadContextDoc}
                     onConciergeClick={handleOpenConciergeContext}
+                    selectedRole={selectedRole}
+                    onRoleChange={handleRoleChange}
                     contextEnabled={contextEnabled}
                     alertsEnabled={alertsEnabled}
                     onDisableAlerts={() => handleToggleAlerts(false)}
@@ -604,6 +630,11 @@ export default function ManasChatPage() {
                       message={msg}
                       index={i}
                       onExpandFile={setExpandedFile}
+                      reasoningStreaming={
+                        i === activeSession.messages.length - 1 &&
+                        msg.role === "assistant" &&
+                        chatSim.isThinking
+                      }
                     />
                   ))}
 
@@ -624,10 +655,10 @@ export default function ManasChatPage() {
                             <StepsItem status="complete">Request received</StepsItem>
                             <StepsItem status="active">
                               {activeSession?.ragDocs && activeSession.ragDocs.length > 0
-                                ? `Referencing: ${activeSession.ragDocs.map((d) => d.name).join(", ")}`
-                                : "Analyzing your query"}
+                                ? `Searching: ${activeSession.ragDocs.map((d) => d.name).join(", ")}`
+                                : "Preparing response"}
                             </StepsItem>
-                            <StepsItem status="pending">Generating response</StepsItem>
+                            <StepsItem status="pending">Streaming answer</StepsItem>
                           </div>
                         </StepsContent>
                       </Steps>
@@ -648,7 +679,7 @@ export default function ManasChatPage() {
               <ScrollButton containerRef={scrollContainerRef} className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 z-40" />
               <PromptInputWithActions
                 deepThinking={deepThinking}
-                onDeepThinkingChange={setDeepThinking}
+                onDeepThinkingChange={handleDeepThinkingChange}
                 onSendMessage={handleSendMessage}
                 isLoading={chatSim.isLoading}
                 hasContext={hasContext}
@@ -660,8 +691,9 @@ export default function ManasChatPage() {
                   );
                   setShowRightPanel(false);
                 }}
-                onUploadContextDoc={handleUploadContextDoc}
                 onConciergeClick={handleOpenConciergeContext}
+                selectedRole={selectedRole}
+                onRoleChange={handleRoleChange}
                 contextEnabled={contextEnabled}
                 alertsEnabled={alertsEnabled}
                 onDisableAlerts={() => handleToggleAlerts(false)}

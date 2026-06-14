@@ -20,6 +20,7 @@ export const SessionListItem = React.memo(function SessionListItem({
   onDelete,
 }: SessionListItemProps) {
   const lastMsg = session.messages[session.messages.length - 1];
+  const previewText = lastMsg?.content || session.lastMessagePreview;
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -51,7 +52,7 @@ export const SessionListItem = React.memo(function SessionListItem({
             {session.title || "Empty Chat"}
           </div>
           <div className="text-[10px] text-zinc-400 truncate mt-0.5 font-medium">
-            {lastMsg ? lastMsg.content : "No messages yet"}
+            {previewText || "No messages yet"}
           </div>
         </div>
       )}
