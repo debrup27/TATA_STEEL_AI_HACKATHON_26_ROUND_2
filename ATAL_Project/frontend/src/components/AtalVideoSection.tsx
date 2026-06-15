@@ -3,8 +3,11 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
+import { triggerPageTransition } from "@/animations/PageTransition";
+import { useUser } from "@/hooks";
 
 export default function AtalVideoSection() {
+  const { user } = useUser();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -19,8 +22,12 @@ export default function AtalVideoSection() {
           <p className="text-sm md:text-base text-zinc-500 font-medium leading-relaxed mb-6">
             From real-time sensor monitoring preventing catastrophic furnace delays to interactive agent diagnostics on the mill floor, AI built for steel manufacturing is changing what&apos;s possible.
           </p>
-          <button className="bg-[#1b253c] hover:bg-blue-600 text-white font-bold text-xs md:text-sm px-6 py-3.5 rounded-full transition-all duration-300 shadow-md cursor-pointer transform hover:scale-105 active:scale-95">
-            Sign Up
+          <button
+            type="button"
+            onClick={() => triggerPageTransition(user ? "/sansad/hub" : "/login")}
+            className="bg-[#1b253c] hover:bg-blue-600 text-white font-bold text-xs md:text-sm px-6 py-3.5 rounded-full transition-all duration-300 shadow-md cursor-pointer transform hover:scale-105 active:scale-95"
+          >
+            {user ? "Open SANSAD Hub" : "Sign In"}
           </button>
         </div>
 

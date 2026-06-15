@@ -11,6 +11,12 @@ from apps.reports.models import MaintenanceReport
 from apps.ml.cross_stage import get_cross_stage_correlations, PRODUCTION_SEQUENCE
 from apps.ml.inference import MAX_SANE_RUL_HOURS
 from apps.telemetry.models import SensorReading
+from apps.assets.rca_sanitize import (
+    derive_sensor_root_causes,
+    is_junk_diagnosis_hint,
+    is_junk_rca_factor,
+    sanitize_root_causes,
+)
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
@@ -121,6 +127,8 @@ def _parse_rca(rca_text: str, diagnosis: str) -> list[dict]:
             line = line.strip().lstrip("-•*#").strip()
             if not line:
                 continue
+            if is_junk_rca_factor(line):
+                continue
             weight = 0.33
             m = re.search(r"(\d+)%", line)
             if m:
@@ -129,7 +137,7 @@ def _parse_rca(rca_text: str, diagnosis: str) -> list[dict]:
     if not factors and diagnosis:
         for i, line in enumerate(diagnosis.split(".")[:3]):
             line = line.strip()
-            if line:
+            if line and not is_junk_rca_factor(line):
                 factors.append({
                     "factor": line,
                     "weight": round(0.5 - i * 0.1, 2),
@@ -205,18 +213,24 @@ def _prioritize_sensors(sensors: list[dict], limit: int = 3) -> list[dict]:
     return ranked[:limit]
 
 
-def _clean_fault_hint(text: str, fault_idx: int) -> str:
+def _clean_fault_hint(
+    text: str,
+    fault_idx: int,
+    *,
+    fault_injected: bool = False,
+    has_warning_sensors: bool = False,
+) -> str:
     raw = (text or "").strip()
-    lower = raw.lower()
-    junk = (
-        "provide consolidated",
-        "asset_id",
-        "sensor_readings",
-        "ml_predictions",
-        "maintenance_history",
-        "active_alarms",
-    )
-    if not raw or any(j in lower for j in junk):
+    if is_junk_diagnosis_hint(
+        raw,
+        fault_injected=fault_injected,
+        has_warning_sensors=has_warning_sensors,
+    ):
+        if fault_injected or has_warning_sensors:
+            return _FAULT_LABELS.get(
+                max(fault_idx, 1),
+                "Sensor envelope breach — investigate live readings",
+            )
         return _FAULT_LABELS.get(fault_idx, "Active equipment fault")
     return raw[:300]
 
@@ -357,7 +371,6 @@ def build_diagnostic(asset: Asset) -> dict:
                 "link": "Local sensor envelope breach (24h window)",
             })
         process_defects = process_defects[:4]
-        root_causes = root_causes[:3]
 
     since = timezone.now() - timedelta(hours=2)
     sensors = []
@@ -383,6 +396,21 @@ def build_diagnostic(asset: Asset) -> dict:
             "status": _sensor_status(dev),
         })
     sensors = _prioritize_sensors(sensors, limit=3)
+
+    has_warning_sensors = any(
+        s.get("status") in ("warning", "critical") for s in sensors
+    )
+    fault_label_hint = _clean_fault_hint(
+        fault_label_hint or _FAULT_LABELS.get(fault_idx, ""),
+        fault_idx,
+        fault_injected=fault_injected,
+        has_warning_sensors=has_warning_sensors,
+    )
+    if active_fault:
+        root_causes = sanitize_root_causes(root_causes)
+        if not root_causes:
+            root_causes = derive_sensor_root_causes(sensors, early_warning)
+        root_causes = root_causes[:3]
 
     rul_hours = _sanitize_rul_hours(health.get("rul_hours"))
     rul_days = _rul_days_from_hours(rul_hours)

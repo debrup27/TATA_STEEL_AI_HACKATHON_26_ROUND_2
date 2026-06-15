@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { SPRING_DEFAULT } from "@/lib/constants";
+import { triggerPageTransition } from "@/animations/PageTransition";
 import type { ProductionLineData } from "@/services/types";
 
 interface FactoryTab {
@@ -264,7 +265,12 @@ export default function SansadFactoriesDashboard() {
               <span className="text-xs font-bold text-zinc-400 select-none">
                 Scale: {targetOutput > 85 ? "Maximum Output Alert" : "Optimal Conditions"}
               </span>
-              <button className="w-11 h-11 rounded-full bg-[#1b253c] hover:bg-blue-600 text-white flex items-center justify-center transition-all duration-300 shadow-md cursor-pointer transform hover:scale-105 active:scale-95">
+              <button
+                type="button"
+                onClick={() => triggerPageTransition("/sansad/hub")}
+                className="w-11 h-11 rounded-full bg-[#1b253c] hover:bg-blue-600 text-white flex items-center justify-center transition-all duration-300 shadow-md cursor-pointer transform hover:scale-105 active:scale-95"
+                aria-label="Open SANSAD hub"
+              >
                 <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18.25" />
                 </svg>
@@ -279,7 +285,11 @@ export default function SansadFactoriesDashboard() {
                 <h3 className="text-lg font-bold text-zinc-800 select-none">
                   Production Lines
                 </h3>
-                <button className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none">
+                <button
+                  type="button"
+                  onClick={() => triggerPageTransition("/sansad/hub/horizon-foundry")}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50/50 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer select-none"
+                >
                   View all
                 </button>
               </div>
@@ -334,7 +344,11 @@ export default function SansadFactoriesDashboard() {
               <span className="text-xs font-bold text-zinc-500 select-none">
                 Diagnostic Scan?
               </span>
-              <button className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none">
+              <button
+                type="button"
+                onClick={() => triggerPageTransition("/sansad/hub/diagnostics")}
+                className="bg-[#1b253c] hover:bg-zinc-800 text-white text-[11px] font-bold px-4 py-2.5 rounded-full transition-all duration-300 cursor-pointer shadow-md transform hover:scale-105 active:scale-95 select-none"
+              >
                 Scan telemetry
               </button>
             </div>
@@ -343,7 +357,11 @@ export default function SansadFactoriesDashboard() {
       </div>
 
       {/* Button below card */}
-      <button className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95">
+      <button
+        type="button"
+        onClick={() => triggerPageTransition("/sansad/hub")}
+        className="mt-8 bg-white border border-zinc-200/80 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 text-xs font-bold px-6 py-3.5 rounded-full transition-all duration-300 cursor-pointer shadow-sm select-none transform hover:scale-105 active:scale-95"
+      >
         Initialize Factory Dashboard
       </button>
     </div>

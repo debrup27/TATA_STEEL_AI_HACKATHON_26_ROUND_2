@@ -29,7 +29,9 @@ chromadb>=0.6.0
 # Django calls vLLM via its OpenAI-compatible REST API using httpx.
 langchain>=0.3.0
 langchain-community>=0.3.0
+langchain-ollama>=0.2.0
 langgraph>=0.2.0
+better-profanity>=0.7.0
 
 # Embeddings & Reranking (BGE-M3 + BGE Reranker v2-M3 via FlagEmbedding)
 FlagEmbedding>=1.2.0

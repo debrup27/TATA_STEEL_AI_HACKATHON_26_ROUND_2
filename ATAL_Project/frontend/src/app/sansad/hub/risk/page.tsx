@@ -42,7 +42,7 @@ export default function RiskPriorityPage() {
   const [activeId, setActiveId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [insight, setInsight] = useState<{ angle: string; text: string } | null>(null);
+  const [insight, setInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightTargetId, setInsightTargetId] = useState<string | null>(null);
 
@@ -91,7 +91,7 @@ export default function RiskPriorityPage() {
       },
     );
     if (res?.insight?.trim()) {
-      setInsight({ angle: res.insight_angle, text: res.insight });
+      setInsight({ angle: res.insight_angle, text: res.insight, router: res.router });
     } else if (!res) {
       setError("MANAS returned an empty insight — retry in a moment");
     }

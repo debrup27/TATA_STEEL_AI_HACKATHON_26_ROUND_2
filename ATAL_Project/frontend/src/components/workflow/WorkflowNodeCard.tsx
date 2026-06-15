@@ -338,11 +338,6 @@ export default function WorkflowNodeCard({
                   Work Order
                 </button>
               </div>
-              <WorkOrderRaisedModal
-                open={woModalOpen}
-                assetName={node.title}
-                onClose={() => setWoModalOpen(false)}
-              />
             </motion.div>
           )}
         </div>
@@ -372,6 +367,11 @@ export default function WorkflowNodeCard({
           />
         )}
       </AnimatePresence>
+      <WorkOrderRaisedModal
+        open={woModalOpen}
+        assetName={node.title}
+        onClose={() => setWoModalOpen(false)}
+      />
     </motion.div>
   );
 }

@@ -6,6 +6,7 @@ import { Send, RefreshCw } from "lucide-react";
 import { triggerPageTransition } from "../animations/PageTransition";
 import { useTelemetryCells } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
+import { getDemoManasPredictions } from "@/lib/landing-demo";
 import { fetchManasPredictions, type RulPredictionData } from "@/services/prediction";
 import { SPRING_DEFAULT } from "@/lib/constants";
 import SansadGrid from "@/components/SansadGrid";
@@ -47,7 +48,9 @@ export default function AtalDisplayModal() {
   const [predictions, setPredictions] = useState<RulPredictionData[]>([]);
 
   useEffect(() => {
-    fetchManasPredictions().then(setPredictions).catch(() => setPredictions([]));
+    fetchManasPredictions()
+      .then(setPredictions)
+      .catch(() => setPredictions(getDemoManasPredictions()));
   }, []);
 
   const [demoMessages, setDemoMessages] = useState<{ role: "user" | "assistant" | "system"; content: string }[]>([

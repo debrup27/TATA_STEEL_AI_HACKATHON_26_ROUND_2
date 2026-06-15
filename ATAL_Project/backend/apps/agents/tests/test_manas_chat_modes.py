@@ -52,6 +52,17 @@ class TestManasModeCombos:
     def test_admin_role_both_lenses(self):
         assert resolve_manas_roles("admin") == ["technician", "supervisor"]
 
+    def test_system_prompt_includes_scope_guardrails(self, session):
+        prompt = _build_manas_system_prompt(
+            rag_context="",
+            citations=[],
+            user_content="FS vibration high",
+            session=session,
+        )
+        assert "SCOPE GUARDRAILS" in prompt
+        assert "[MANAS chat harness]" in prompt
+        assert "Dijkstra" in prompt or "algorithms" in prompt
+
     def test_deep_thinking_addendum(self):
         assert "response body" in _deep_thinking_system_addendum(True).lower()
         assert _deep_thinking_system_addendum(False) == ""
@@ -69,6 +80,14 @@ class TestManasModeCombos:
         body, think = _finalize_deep_thinking_response("Final answer here.", "thinking trace")
         assert body == "Final answer here."
         assert think == "thinking trace"
+
+    def test_finalize_deep_thinking_rejects_chain_of_thought_content(self):
+        leak = (
+            "This looks like a directive for how I should format my output. "
+            "Wait, if I ignore the table request, is it helpful?"
+        )
+        body, think = _finalize_deep_thinking_response(leak, "")
+        assert body == ""
 
     def test_finalize_deep_thinking_salvages_empty_content(self):
         body, think = _finalize_deep_thinking_response(

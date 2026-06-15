@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Maximize2, X, Sparkles } from "lucide-react";
+import HubMarkdown from "./HubMarkdown";
 
 interface InsightPanelProps {
   title: string;
@@ -33,10 +34,15 @@ export default function ManasInsightPanel({ title, text, loading }: InsightPanel
     <>
       <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3 relative">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
+          </div>
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
             className="flex items-center gap-1 text-[9px] font-bold uppercase text-orange-600 hover:text-orange-800 transition-colors cursor-pointer shrink-0"
             title="Pop out full response"
           >
@@ -44,16 +50,18 @@ export default function ManasInsightPanel({ title, text, loading }: InsightPanel
             Expand
           </button>
         </div>
-        <p
-          className={`text-xs text-zinc-800 mt-1.5 leading-relaxed ${isLong ? "line-clamp-4" : ""}`}
-          style={{ fontFamily: "var(--font-questrial)" }}
+        <HubMarkdown
+          className={`text-xs mt-1.5 ${isLong ? "line-clamp-4" : ""}`}
         >
           {text}
-        </p>
+        </HubMarkdown>
         {isLong && (
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
             className="mt-1.5 text-[10px] font-bold text-orange-600 hover:text-orange-800 cursor-pointer"
           >
             Read full response →
@@ -65,7 +73,10 @@ export default function ManasInsightPanel({ title, text, loading }: InsightPanel
         typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
             onClick={() => setOpen(false)}
           >
             <div
@@ -86,12 +97,7 @@ export default function ManasInsightPanel({ title, text, loading }: InsightPanel
                 </button>
               </div>
               <div className="overflow-y-auto px-6 py-5">
-                <p
-                  className="text-sm text-zinc-800 leading-relaxed whitespace-pre-wrap"
-                  style={{ fontFamily: "var(--font-questrial)" }}
-                >
-                  {text}
-                </p>
+                <HubMarkdown className="text-sm">{text}</HubMarkdown>
               </div>
             </div>
           </div>,

@@ -13,6 +13,8 @@ from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 
+from apps.agents.llm.policy import MANAS_SCOPE_GUARDRAILS
+
 logger = logging.getLogger(__name__)
 
 _STOPPED_MESSAGE = "Generation stopped."
@@ -175,10 +177,30 @@ def _citation_from_chunk(
         cite["document_id"] = doc_id
     return cite
 
-def _sansad_context_addendum(session) -> str:
+def _sansad_context_addendum(session, user_question: str = "") -> str:
     """Inject latest SANSAD plant context when session carries asset or metadata from §5 pages."""
+    from apps.agents.sansad_context_mode import build_sansad_query_supplement
+
     meta = session.session_metadata or {}
     lines: list[str] = []
+    if meta.get("sansad_mode") and meta.get("sansad_context_summary"):
+        updated = meta.get("sansad_context_updated_at")
+        if updated:
+            lines.append(f"SANSAD linked briefing (updated {updated}):")
+        lines.append(
+            "Use the briefing below as live plant data from the SANSAD hub. "
+            "Answer factory and asset state questions from it. "
+            "Factory 1 / F1 = Horizon; Factory 2 / F2 = Zephyr. "
+            "Historical maintenance logs, 90-day dossiers, reports, and alarm history ARE in this context — "
+            "summarize them when asked. Never say historical data is unavailable or out of scope. "
+            "Write your answer directly — no planning aloud. "
+            "If the user asks for a table, reply with a markdown table using briefing values. "
+            "Never return an empty response when this briefing is present."
+        )
+        lines.append(meta["sansad_context_summary"])
+        supplement = build_sansad_query_supplement(user_question)
+        if supplement:
+            lines.append(supplement.strip())
     source = meta.get("sansad_source")
     if source:
         lines.append(f"User navigated from SANSAD section: {source}.")
@@ -250,6 +272,8 @@ You are MANAS, the ATAL's Diagnostic for steel-plant maintenance (SRF, HHPD, FS,
 - Do NOT introduce yourself or list capabilities unless they explicitly ask what you can do.
 - No [n] citations unless numbered excerpts appear below.
 - Do not invent numeric thresholds or standard values.
+- Never output planning, debate, or meta-commentary about how you will answer — only the final answer.
+- If the user asks for a table, use a markdown table with real values from context.
 
 ## Retrieved Context
 {rag_context}
@@ -284,6 +308,18 @@ Do not fabricate thresholds. Keep under 150 words.
 """
 
 
+def _session_asset_code(session) -> str | None:
+    asset_id = getattr(session, "asset_id", None)
+    if not asset_id:
+        return None
+    try:
+        from apps.assets.models import Asset
+
+        return Asset.objects.filter(pk=asset_id).values_list("asset_type", flat=True).first()
+    except Exception:
+        return None
+
+
 def _build_manas_system_prompt(
     *,
     rag_context: str,
@@ -291,6 +327,9 @@ def _build_manas_system_prompt(
     user_content: str,
     role_advisory: str = "",
     session,
+    user_role: str = "",
+    advice_mode: bool = False,
+    deep_thinking: bool = False,
 ) -> str:
     if citations:
         prompt = _MANAS_DOCUMENT_PROMPT.replace("{rag_context}", rag_context)
@@ -311,14 +350,31 @@ def _build_manas_system_prompt(
                 " When citing document excerpts, keep [n] markers and apply the role lens to how you "
                 "phrase procedures and escalation — still ground every fact in the excerpts."
             )
+    sansad_addendum = _sansad_context_addendum(session, user_content)
+    if sansad_addendum:
+        prompt += sansad_addendum
+    from apps.agents.manas_chat_harness import build_chat_harness_addendum
+
+    meta = session.session_metadata or {}
+    harness = build_chat_harness_addendum(
+        user_content,
+        has_citations=bool(citations),
+        sansad_mode=bool(meta.get("sansad_mode")),
+        user_role=user_role,
+        advice_mode=advice_mode,
+        deep_thinking=deep_thinking,
+        session_asset_code=_session_asset_code(session),
+    )
+    if harness:
+        prompt += harness
     if not citations:
-        prompt += _sansad_context_addendum(session)
         try:
             from apps.agents.preference_profile import get_preference_patch
 
             prompt += get_preference_patch(session.user)
         except Exception:
             pass
+    prompt += MANAS_SCOPE_GUARDRAILS
     return prompt
 
 
@@ -336,6 +392,7 @@ def run_chat_logic(
     rag_collections: list,
     *,
     rag_document_titles: list | None = None,
+    rag_document_ids: list | None = None,
     custom_rag_context: str = "",
     custom_documents: list | None = None,
     user_role: str = "",
@@ -407,15 +464,56 @@ def run_chat_logic(
         user_msg = ChatMessage.objects.get(id=user_message_id)
         user_content = user_msg.content
 
+        from apps.agents.sansad_context_mode import increment_sansad_turn_and_maybe_refresh
+
+        increment_sansad_turn_and_maybe_refresh(session_id)
+        session.refresh_from_db(fields=["session_metadata"])
+
         logger.info("MANAS thread alive — session=%s msg=%s", session_id[:8], user_message_id[:8])
         # Immediate heartbeat — frontend knows the thread is alive
         _send({"type": "started"})
+
+        # ── Input guardrails (profanity / off-topic / steer) ─────────────────
+        from apps.agents.llm.guardrails import check_input_guard, refusal_message
+        from apps.agents.llm.schemas import GuardrailAction
+
+        _send({"type": "phase", "phase": "guard"})
+        guard_verdict = check_input_guard(user_content, source="user")
+        if guard_verdict.action == GuardrailAction.BLOCK:
+            refusal = refusal_message(guard_verdict)
+            _send({
+                "type": "blocked",
+                "category": guard_verdict.category.value,
+                "message": refusal,
+            })
+            assistant_msg = ChatMessage.objects.create(
+                session=session,
+                role="assistant",
+                content=refusal,
+                citations=[],
+                model_used="guardrail",
+            )
+            session.last_active = assistant_msg.timestamp
+            session.save(update_fields=["last_active"])
+            _send({
+                "type": "done",
+                "message_id": str(assistant_msg.id),
+                "citations": [],
+                "blocked": True,
+                "blocked_message": refusal,
+            })
+            clear_cancel(session_id)
+            return {"status": "blocked", "message_id": str(assistant_msg.id)}
+        _send({"type": "phase", "phase": "guard_done"})
+        if guard_verdict.action == GuardrailAction.STEER and guard_verdict.steered_text:
+            user_content = guard_verdict.steered_text
 
         # ── RAG context assembly (opt-in: only when user selected library/upload docs) ─
         raw_docs: list = []
         custom_text = (custom_rag_context or "").strip()
         titles = [t for t in (rag_document_titles or []) if t]
-        has_rag_request = bool(rag_collections or titles or custom_text or custom_documents)
+        doc_ids = [str(i).strip() for i in (rag_document_ids or []) if str(i).strip()]
+        has_rag_request = bool(rag_collections or titles or doc_ids or custom_text or custom_documents)
 
         if has_rag_request:
             _send({"type": "phase", "phase": "rag"})
@@ -428,13 +526,14 @@ def run_chat_logic(
                 logger.warning("retrieve_by_document_titles failed: %s", _e)
             _raise_if_cancelled()
 
-        if rag_collections or titles:
+        if rag_collections or titles or doc_ids:
             try:
                 chroma_hits = retrieve_for_collections(
                     user_content,
                     rag_collections,
                     asset_id=str(session.asset_id) if session.asset_id else None,
                     document_titles=titles or None,
+                    document_ids=doc_ids or None,
                 )
                 seen = {
                     (h.get("properties", {}).get("content", "")[:200],)
@@ -589,6 +688,9 @@ def run_chat_logic(
             user_content=user_content,
             role_advisory=role_advisory,
             session=session,
+            user_role=user_role,
+            advice_mode=advice_mode,
+            deep_thinking=deep_thinking,
         ) + _deep_thinking_system_addendum(deep_thinking)
 
         if is_cancelled(session_id):
@@ -600,7 +702,7 @@ def run_chat_logic(
         input_tokens = 0
         output_tokens = 0
 
-        # ── Stream from Ollama (native /api/chat — qwen3.5 streams thinking separately when think=true)
+        # ── Stream from Ollama (native /api/chat — qwen3.5 streams thinking separately)
         import time as _time
 
         ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
@@ -630,7 +732,11 @@ def run_chat_logic(
                 with httpx.Client(timeout=httpx.Timeout(connect=180, read=300, write=30, pool=5)) as client:
                     with client.stream("POST", ollama_url, json=ollama_payload) as resp:
                         resp.raise_for_status()
-                        logger.info("MANAS Ollama HTTP %s — streaming started session=%s", resp.status_code, session_id[:8])
+                        logger.info(
+                            "MANAS Ollama HTTP %s — streaming started session=%s",
+                            resp.status_code,
+                            session_id[:8],
+                        )
                         for line in resp.iter_lines():
                             if is_cancelled(session_id):
                                 logger.info("MANAS stream cancelled session=%s", session_id[:8])
@@ -645,7 +751,8 @@ def run_chat_logic(
                             think_token = msg.get("thinking", "")
                             if think_token:
                                 full_reasoning += think_token
-                                _send({"type": "think_token", "token": think_token})
+                                if deep_thinking:
+                                    _send({"type": "think_token", "token": think_token})
                             token = msg.get("content", "")
                             if token:
                                 if _first_content:
@@ -655,7 +762,58 @@ def run_chat_logic(
                                 _send({"type": "token", "token": token})
                             if chunk.get("done"):
                                 break
-                logger.info("MANAS Ollama done — %d chars session=%s", len(full_response), session_id[:8])
+
+                if deep_thinking:
+                    full_response, full_reasoning = _finalize_deep_thinking_response(
+                        full_response, full_reasoning,
+                    )
+
+                meta = session.session_metadata or {}
+                from apps.agents.llm.client import is_chain_of_thought_leak, salvage_qwen_output
+
+                briefing = str(meta.get("sansad_context_summary") or "")
+                if not full_response.strip() and full_reasoning.strip():
+                    salvaged = salvage_qwen_output(full_response, full_reasoning).strip()
+                    if salvaged:
+                        full_response = salvaged
+
+                # Treat trivially short bodies (e.g. "**", stray markdown) as empty:
+                # qwen3.5 occasionally emits near-nothing when fed the large SANSAD
+                # briefing. Recover from the linked briefing via the 9b answer path.
+                _resp_stripped = full_response.strip().strip("*#`-_ \n\t")
+                needs_sansad_recovery = meta.get("sansad_mode") and (
+                    len(_resp_stripped) < 15
+                    or is_chain_of_thought_leak(full_response)
+                )
+                if needs_sansad_recovery:
+                    from apps.agents.sansad_context_mode import (
+                        sansad_briefing_excerpt,
+                        sansad_llm_answer,
+                    )
+
+                    recovered = sansad_llm_answer(
+                        user_content,
+                        briefing,
+                        deep_thinking=False,
+                    )
+                    if not recovered.strip():
+                        recovered = sansad_briefing_excerpt(user_content, briefing)
+                    if recovered.strip():
+                        full_response = recovered.strip()
+                        if _first_content:
+                            _send({"type": "token", "token": full_response})
+                        logger.info(
+                            "MANAS SANSAD recovery session=%s chars=%d",
+                            session_id[:8],
+                            len(full_response),
+                        )
+
+                logger.info(
+                    "MANAS Ollama done — %d chars (reasoning %d) session=%s",
+                    len(full_response),
+                    len(full_reasoning),
+                    session_id[:8],
+                )
                 break
             except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.HTTPStatusError) as _retry_err:
                 if isinstance(_retry_err, httpx.HTTPStatusError) and _retry_err.response.status_code != 500:
@@ -665,11 +823,6 @@ def run_chat_logic(
                     _time.sleep(10)
                 else:
                     raise
-
-        if deep_thinking:
-            full_response, full_reasoning = _finalize_deep_thinking_response(
-                full_response, full_reasoning,
-            )
 
         # ── Persist assistant message ──────────────────────────────────────
         cancelled = is_cancelled(session_id)
@@ -692,6 +845,8 @@ def run_chat_logic(
             "message_id": str(assistant_msg.id),
             "citations": citations,
             "cancelled": cancelled,
+            "content": full_response,
+            "reasoning": full_reasoning if deep_thinking else "",
         })
 
         clear_cancel(session_id)
@@ -742,6 +897,7 @@ def start_chat_thread(
     rag_collections: list,
     *,
     rag_document_titles: list | None = None,
+    rag_document_ids: list | None = None,
     custom_rag_context: str = "",
     custom_documents: list | None = None,
     user_role: str = "",
@@ -754,6 +910,7 @@ def start_chat_thread(
         args=(session_id, user_message_id, rag_collections),
         kwargs={
             "rag_document_titles": rag_document_titles,
+            "rag_document_ids": rag_document_ids,
             "custom_rag_context": custom_rag_context,
             "custom_documents": custom_documents,
             "user_role": user_role,

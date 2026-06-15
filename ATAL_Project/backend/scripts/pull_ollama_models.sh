@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "${REPO_ROOT}"
 
 PROJECT="${COMPOSE_PROJECT_NAME:-atal}"
-VOLUME="${PROJECT}_ollama_data"
+VOLUME="${OLLAMA_DATA_VOLUME:-atal_ollama_data}"
 MAIN="${OLLAMA_MODEL:-qwen3.5:9b}"
 SMALL="${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}"
 IMAGE="${OLLAMA_IMAGE:-ollama/ollama:latest}"

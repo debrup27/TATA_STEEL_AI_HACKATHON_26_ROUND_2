@@ -1,8 +1,12 @@
 "use client";
 
-import React from "react";
-import { ShieldAlert, AlertTriangle, CheckCircle } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Loader2, MessageCircle } from "lucide-react";
 import type { LogEntry } from "@/services/types";
+import { fetchLogInsight } from "@/services/telemetry";
+import { getLogSeverity } from "@/lib/logSeverity";
+import { useHubManasNotify } from "./HubManasNotify";
+import ManasInsightPanel from "./ManasInsightPanel";
 
 interface LogDetailModalProps {
   log: LogEntry | null;
@@ -13,21 +17,53 @@ export default function LogDetailModal({
   log,
   onClose,
 }: LogDetailModalProps) {
+  const { runManasCall } = useHubManasNotify();
+  const [logInsight, setLogInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
+  const [logInsightLoading, setLogInsightLoading] = useState(false);
+
+  useEffect(() => {
+    setLogInsight(null);
+    setLogInsightLoading(false);
+  }, [log?.id]);
+
   if (!log) return null;
 
-  const isCritical = log.text.includes("CRITICAL") || log.text.includes("fatigue") || log.text.includes("risk") || log.text.includes("extreme");
-  const isWarning = log.text.includes("WARNING") || log.text.includes("drift") || log.text.includes("vibration");
+  const severity = getLogSeverity(log.text);
+
+  const askLogInsight = async () => {
+    setLogInsightLoading(true);
+    setLogInsight(null);
+    const res = await runManasCall(
+      `Log insight — ${log.module}`,
+      () => fetchLogInsight({ module: log.module, text: log.text, time: log.time }),
+      {
+        pendingDetail: "MANAS is explaining this log entry…",
+        validate: (r) => Boolean(r.insight?.trim()),
+        emptyDetail: "MANAS returned an empty explanation — retry in a moment",
+        successDetail: "Log explanation is ready below",
+      },
+    );
+    if (res?.insight?.trim()) {
+      setLogInsight({ angle: res.insight_angle, text: res.insight, router: res.router });
+    }
+    setLogInsightLoading(false);
+  };
+
+  const handleClose = () => {
+    setLogInsight(null);
+    setLogInsightLoading(false);
+    onClose();
+  };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-6 animate-in fade-in duration-200 cursor-default"
-      onClick={onClose}
+      onClick={handleClose}
     >
-      <div 
+      <div
         className="bg-white border border-zinc-200/80 rounded-3xl p-10 max-w-3xl w-full shadow-2xl relative animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Corner Indicators */}
         <div className="absolute top-3.5 left-3.5 font-mono text-[10px] text-[#1b253c]/20 select-none">+</div>
         <div className="absolute bottom-3.5 right-3.5 font-mono text-[10px] text-[#1b253c]/20 select-none">+</div>
 
@@ -39,17 +75,16 @@ export default function LogDetailModal({
             </h3>
           </div>
           <div className={`px-3 py-1 rounded-full text-xs font-bold border uppercase tracking-wider shrink-0 ${
-            isCritical
+            severity === "critical"
               ? "text-rose-600 bg-rose-50 border-rose-200/50 animate-pulse"
-              : isWarning
+              : severity === "warning"
                 ? "text-amber-600 bg-amber-50 border-amber-200/50"
                 : "text-emerald-600 bg-emerald-50 border-emerald-200/50"
           }`}>
-            {isCritical ? "critical" : isWarning ? "warning" : "info"}
+            {severity}
           </div>
         </div>
 
-        {/* Detailed Log Statement container */}
         <div className="bg-[#FAF9F5] p-8 rounded-2xl border border-zinc-150 mb-8 select-text">
           <span className="block font-mono text-[11px] text-zinc-400 font-extrabold uppercase tracking-wider mb-2 select-none">Log Statement</span>
           <p className="text-xl lg:text-2xl font-bold leading-relaxed text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
@@ -57,37 +92,40 @@ export default function LogDetailModal({
           </p>
         </div>
 
-        {/* Simulated Recommendation context based on text/severity */}
-        <div className={`p-6 rounded-2xl border flex items-start gap-4 select-none mb-8 ${
-          isCritical
-            ? "bg-rose-50 border-rose-100 text-rose-950"
-            : isWarning
-              ? "bg-amber-50 border-amber-100 text-amber-950"
-              : "bg-emerald-50 border-emerald-100 text-emerald-950"
-        }`}>
-          {isCritical ? (
-            <ShieldAlert className="w-6 h-6 shrink-0 text-rose-500 mt-0.5" />
-          ) : isWarning ? (
-            <AlertTriangle className="w-6 h-6 shrink-0 text-amber-500 mt-0.5" />
-          ) : (
-            <CheckCircle className="w-6 h-6 shrink-0 text-emerald-500 mt-0.5" />
-          )}
-          <div>
-            <span className="text-xs font-mono font-bold uppercase tracking-wider block text-zinc-500">Recommended SOP Action</span>
-            <p className="text-sm mt-1.5 leading-relaxed font-sans font-medium">
-              {isCritical
-                ? "CRITICAL INCIDENT: Telemetry loop has registered severe anomalous operation. Inspect target device immediately, verify standby device engagement, and notify the site operations command."
-                : isWarning
-                  ? "WARNING ALARM: System parameter drift observed. Perform secondary calibration checks, flag the physical components in the asset manager database, and monitor telemetry on the next shift cycle."
-                  : "NOMINAL STATUS: System diagnostics operating within normal boundaries. No intervention required. Logs successfully routed to Manas vector database."}
-            </p>
+        <div className="mb-8">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500">
+              MANAS explanation
+            </span>
+            <button
+              type="button"
+              onClick={() => void askLogInsight()}
+              disabled={logInsightLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              {logInsightLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <MessageCircle className="w-3.5 h-3.5" />
+              )}
+              Ask MANAS
+            </button>
           </div>
+          {logInsightLoading ? (
+            <ManasInsightPanel title="MANAS — Log explanation" loading />
+          ) : logInsight ? (
+            <ManasInsightPanel title={`MANAS — ${logInsight.angle}`} text={logInsight.text} />
+          ) : (
+            <p className="text-sm text-zinc-500 leading-relaxed" style={{ fontFamily: "var(--font-questrial)" }}>
+              Tap <strong className="text-orange-600">Ask MANAS</strong> for a plain-language explanation of this log and recommended preventive actions.
+            </p>
+          )}
         </div>
 
         <div className="flex justify-between items-center text-xs font-mono text-zinc-400 border-t border-zinc-150 pt-5">
           <span>Telemetry Timestamp: {log.time}</span>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="h-9 px-5 bg-zinc-900 hover:bg-[#f97316] text-white rounded-xl transition-all duration-300 font-bold uppercase text-[10px] cursor-pointer"
             style={{ fontFamily: "var(--font-pixeloid)" }}
           >

@@ -1,4 +1,5 @@
 import { apiJson, apiList, getAccessToken, ApiError } from "@/lib/api";
+import { getDemoTelemetryCells } from "@/lib/landing-demo";
 import { createAssetAliasResolver, resolveLogModuleLabel, isUuid } from "@/lib/assetAliases";
 import { assetSystemTag } from "@/lib/asset-system-tag";
 import { formatLogTimeKolkata, logSortKey } from "@/lib/log-time";
@@ -17,6 +18,9 @@ const FALLBACK_CELLS: TelemetryCell[] = [
 
 /** Placeholder cells shown before the first API / WS payload arrives. */
 export function getInitialTelemetryCells(): TelemetryCell[] {
+  if (typeof window !== "undefined" && !getAccessToken()) {
+    return getDemoTelemetryCells();
+  }
   return FALLBACK_CELLS.map((c) => ({ ...c }));
 }
 
@@ -56,6 +60,9 @@ export function applyTelemetryWsUpdate(
 }
 
 export async function fetchTelemetryCells(assetId?: string): Promise<TelemetryCell[]> {
+  if (!getAccessToken()) {
+    return getDemoTelemetryCells();
+  }
   try {
     const assets = await apiList<{ id: string }>("/api/v1/assets/");
     const targetId = assetId ?? assets[0]?.id;
@@ -270,4 +277,25 @@ export async function fetchAlertLogsDetailed(limit = 50): Promise<AlertLogsResul
     }
     return { entries: [], status };
   }
+}
+
+export interface LogInlineInsight {
+  insight: string;
+  insight_angle: string;
+  router: string;
+}
+
+export async function fetchLogInsight(log: {
+  module: string;
+  text: string;
+  time: string;
+}): Promise<LogInlineInsight> {
+  return apiJson<LogInlineInsight>("/api/v1/alerts/log-insight/", {
+    method: "POST",
+    body: JSON.stringify({
+      module: log.module,
+      text: log.text,
+      time: log.time,
+    }),
+  });
 }

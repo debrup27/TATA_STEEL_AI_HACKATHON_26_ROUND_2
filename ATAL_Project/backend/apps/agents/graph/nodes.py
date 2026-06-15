@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from apps.agents.graph.state import AgentState, ToolCall, ToolResult, WorkerTask, WorkerOutput, AgentEvent
 from apps.agents.graph.tools import dispatch_tool, TOOL_DEFINITIONS
 from apps.agents.graph.agents import WORKER_DISPATCH
+from apps.agents.llm.policy import MANAS_SCOPE_GUARDRAILS
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def _build_system_prompt() -> str:
         patch = get_cached_prompt_patch()
     except Exception:
         patch = ""
-    return _SUPERVISOR_SYSTEM + patch
+    return _SUPERVISOR_SYSTEM + patch + MANAS_SCOPE_GUARDRAILS
 
 
 def supervisor_node(state: AgentState) -> dict:
@@ -71,9 +72,6 @@ def supervisor_node(state: AgentState) -> dict:
     MANAS (qwen3.5:9b) — reasoning node.
     Reads payload + RAG context + prior tool results, emits tool_calls / worker_tasks / decision.
     """
-    import httpx
-    from django.conf import settings
-
     system_prompt = _build_system_prompt()
 
     # Build the conversation: prior tool results are injected as user messages
@@ -81,11 +79,15 @@ def supervisor_node(state: AgentState) -> dict:
 
     # First user message: the consolidated payload + RAG context
     if state.get("iteration", 0) == 0:
+        from apps.agents.manas_chat_harness import supervisor_payload_context
+
         payload_str = json.dumps(state.get("payload", {}), indent=2, default=str)[:4000]
         rag_str = state.get("rag_context", "")[:1500]
+        plant_ctx = supervisor_payload_context(state.get("payload", {}) or {})
         messages.append({
             "role": "user",
             "content": (
+                f"{plant_ctx}\n\n"
                 f"Asset condition report:\n{payload_str}\n\n"
                 f"Retrieved knowledge context:\n{rag_str or '[none]'}"
             ),
@@ -107,22 +109,16 @@ def supervisor_node(state: AgentState) -> dict:
         })
 
     try:
-        with httpx.Client(timeout=180) as client:
-            resp = client.post(
-                f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
-                json={
-                    "model": settings.OLLAMA_MODEL,
-                    "messages": messages,
-                    "tools": TOOL_DEFINITIONS,
-                    "max_tokens": 2048,
-                    "temperature": 0.1,
-                    "stream": False,
-                    "think": False,
-                    "keep_alive": settings.OLLAMA_KEEP_ALIVE,
-                },
-                headers={"Content-Type": "application/json"},
-            )
-            resp.raise_for_status()
+        from apps.agents.llm.client import invoke_openai_compat
+
+        body = invoke_openai_compat(
+            messages,
+            model_size="large",
+            tools=TOOL_DEFINITIONS,
+            max_tokens=2048,
+            temperature=0.1,
+            think=False,
+        )
     except Exception as exc:
         logger.error("supervisor_ollama_error error=%s", str(exc))
         return {
@@ -130,7 +126,6 @@ def supervisor_node(state: AgentState) -> dict:
             "iteration": state.get("iteration", 0) + 1,
         }
 
-    body = resp.json()
     msg = body["choices"][0]["message"]
     content = msg.get("content", "") or ""
 

@@ -19,9 +19,38 @@ export const MANAS_SLASH_COMMANDS: ManasSlashCommand[] = [
     name: "compact",
     label: "/compact",
     description: "Summarise older chat messages into a context summary.",
-    hint: "Keeps the last 6 messages · frees context window",
+    hint: "Manual from 3 msgs · auto at 7 · keeps last 2 / 6",
+  },
+  {
+    name: "sansad",
+    label: "/sansad",
+    description: "Link live SANSAD plant context to this chat.",
+    hint: "0.8b harvest · refreshed every 5 messages",
+  },
+  {
+    name: "deactivate",
+    label: "/deactivate",
+    description: "Exit SANSAD context mode and clear the briefing.",
+    hint: "Removes persistent plant summary",
+  },
+  {
+    name: "update",
+    label: "/update",
+    description: "Re-fetch live plant data and replace the SANSAD briefing.",
+    hint: "SANSAD mode only · fresh 0.8b harvest",
   },
 ];
+
+const SANSAD_MODE_ONLY = new Set(["deactivate", "update"]);
+
+/** Commands shown in the slash menu for the current session mode. */
+export function visibleSlashCommands(sansadModeActive = false): ManasSlashCommand[] {
+  return MANAS_SLASH_COMMANDS.filter((cmd) => {
+    if (!sansadModeActive && SANSAD_MODE_ONLY.has(cmd.name)) return false;
+    if (sansadModeActive && cmd.name === "sansad") return false;
+    return true;
+  });
+}
 
 /** Returns the filter string after `/`, or null if not in slash-command mode. */
 export function getSlashFilter(prompt: string): string | null {
@@ -32,9 +61,10 @@ export function getSlashFilter(prompt: string): string | null {
   return rest.toLowerCase();
 }
 
-export function filterSlashCommands(filter: string): ManasSlashCommand[] {
-  if (!filter) return MANAS_SLASH_COMMANDS;
-  return MANAS_SLASH_COMMANDS.filter(
+export function filterSlashCommands(filter: string, sansadModeActive = false): ManasSlashCommand[] {
+  const pool = visibleSlashCommands(sansadModeActive);
+  if (!filter) return pool;
+  return pool.filter(
     (cmd) => cmd.name.startsWith(filter) || cmd.label.slice(1).startsWith(filter),
   );
 }

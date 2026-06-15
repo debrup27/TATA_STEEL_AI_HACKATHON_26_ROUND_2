@@ -13,10 +13,9 @@ volumes:
   redis-data:
   staticfiles:
   model-artifacts:
-  # Reuses the atal_ollama_data volume populated by ollama_qwen.py standalone pull.
-  # Declare as external so compose doesn't create a new empty volume.
+  # Fixed name so compose, ollama_qwen.py, and pull_ollama_models.sh share one volume.
+  # Compose creates this automatically on first `docker compose up` (no external: true).
   ollama-data:
-    external: true
     name: atal_ollama_data
 
 # Shared env block for all Django/Celery containers.
@@ -57,8 +56,8 @@ x-django-env: &django-env
 # VRAM: qwen3.5:9b≈6GB + 0.8b≈0.8GB + BGE≈1.7GB + KV headroom ≈ 16GB total.
 # Host: ollama 10g | django 2.5g | celery 4g | postgres 2g | ui 2.5g | redis/nginx ≈ 1g
 x-mem-django: &mem-django
-  mem_limit: 2.5g
-  mem_reservation: 512m
+  mem_limit: 4g
+  mem_reservation: 768m
 
 x-mem-celery: &mem-celery
   mem_limit: 4g
@@ -82,7 +81,7 @@ services:
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atal_user}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -193,11 +192,11 @@ services:
       ollama-warmup:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 180s
 
   celery-worker:
     build:
@@ -233,8 +232,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+        restart: true
       postgres-db:
         condition: service_healthy
+        restart: true
       django-backend:
         condition: service_healthy
     healthcheck:
@@ -270,8 +271,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+        restart: true
       postgres-db:
         condition: service_healthy
+        restart: true
       django-backend:
         condition: service_healthy
 
@@ -336,7 +339,7 @@ services:
     networks:
       - backend-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atal_user"]
+      test: ["CMD-SHELL", "pg_isready -U atal_user -d atal_test"]
       interval: 5s
       timeout: 5s
       retries: 10

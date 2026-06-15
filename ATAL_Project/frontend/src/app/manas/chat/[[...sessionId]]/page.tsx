@@ -20,7 +20,7 @@ import {
 } from "@/components/ai-components/steps";
 import { TextShimmerLoader } from "@/components/ai-components/loader";
 import { ScrollButton } from "@/components/ai-components/scroll-button";
-import { ApiError, getAccessToken } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { fetchBackendReady } from "@/lib/backend-ready";
 import { isManasRoleId, manasRoleLabel } from "@/lib/manas-roles";
 import { isBackendSessionId } from "@/lib/session-id";
@@ -30,6 +30,9 @@ import {
   createSession,
   sendChatMessage,
   compactChatSession,
+  activateSansadMode,
+  deactivateSansadMode,
+  updateSansadMode,
   deleteSessionRemote,
   cancelChatGeneration,
 } from "@/services/sessions";
@@ -237,14 +240,23 @@ export default function ManasChatPage() {
     onDone: (payload) => {
       const p = payload as {
         citations?: Citation[];
+        content?: string;
+        reasoning?: string;
         error?: string;
         message_id?: string;
         cancelled?: boolean;
+        blocked?: boolean;
+        blocked_message?: string;
       };
       const citations = p?.citations;
       const error = p?.error;
       const messageId = p?.message_id;
+      const doneContent = typeof p?.content === "string" ? p.content.trim() : "";
+      const doneReasoning = typeof p?.reasoning === "string" ? p.reasoning : undefined;
+      const blockedMessage =
+        typeof p?.blocked_message === "string" ? p.blocked_message.trim() : "";
       const targetId = streamSessionRef.current ?? activeSessionId;
+      let hydrateTarget: string | null = null;
       if (targetId) {
         setSessions((prev) =>
           prev.map((session) => {
@@ -252,21 +264,78 @@ export default function ManasChatPage() {
             const msgs = [...session.messages];
             const last = msgs[msgs.length - 1];
             if (last?.role === "assistant") {
+              const filled =
+                doneContent ||
+                (last.content || "").trim() ||
+                blockedMessage ||
+                (error ? `⚠️ ${error}` : "");
               const baseContent =
-                error && !last.content
+                error && !filled
                   ? "⚠️ " + error
-                  : applyStoppedGenerationContent(last.content, p?.cancelled);
+                  : applyStoppedGenerationContent(filled, p?.cancelled);
+              const mergedReasoning =
+                (last.reasoning ?? "") || (doneReasoning ?? "") || undefined;
               const withMeta = {
                 ...last,
                 content: baseContent,
+                ...(mergedReasoning ? { reasoning: mergedReasoning } : {}),
                 ...(messageId ? { id: messageId } : {}),
                 ...(citations?.length ? { citations } : {}),
               };
               msgs[msgs.length - 1] = withMeta;
+              if (!baseContent.trim() && messageId) {
+                hydrateTarget = targetId;
+              }
+            } else if (doneContent || blockedMessage) {
+              msgs.push({
+                role: "assistant",
+                content: doneContent || blockedMessage,
+                ...(doneReasoning ? { reasoning: doneReasoning } : {}),
+                ...(messageId ? { id: messageId } : {}),
+                ...(citations?.length ? { citations } : {}),
+              });
+            } else if (messageId) {
+              hydrateTarget = targetId;
             }
             return { ...session, messages: msgs };
           }),
         );
+      }
+      if (hydrateTarget && messageId) {
+        void fetchSessionDetail(hydrateTarget)
+          .then((detail) => {
+            if (deletedSessionIdsRef.current.has(hydrateTarget!)) return;
+            const remote = [...(detail.messages ?? [])]
+              .reverse()
+              .find((m) => m.role === "assistant" && m.id === messageId);
+            if (!remote?.content?.trim()) return;
+            setSessions((prev) =>
+              prev.map((session) => {
+                if (session.id !== hydrateTarget) return session;
+                const msgs = [...session.messages];
+                let idx = -1;
+                for (let i = msgs.length - 1; i >= 0; i -= 1) {
+                  if (msgs[i].role === "assistant" && msgs[i].id === messageId) {
+                    idx = i;
+                    break;
+                  }
+                }
+                if (idx < 0) {
+                  msgs.push(remote);
+                } else if (!(msgs[idx].content || "").trim()) {
+                  msgs[idx] = {
+                    ...msgs[idx],
+                    content: remote.content,
+                    reasoning: remote.reasoning ?? msgs[idx].reasoning,
+                    citations: remote.citations ?? msgs[idx].citations,
+                    id: remote.id ?? msgs[idx].id,
+                  };
+                }
+                return { ...session, messages: msgs };
+              }),
+            );
+          })
+          .catch(() => {});
       }
       streamSessionRef.current = null;
       thinkingSessionIdRef.current = null;
@@ -297,7 +366,7 @@ export default function ManasChatPage() {
             ...session,
             messages: [
               ...session.messages,
-              { role: "system" as const, content: "Running context compaction…", isCompacting: true },
+              { role: "system" as const, content: "Running context compaction…", isCompacting: true, systemKind: "compaction" as const },
             ],
           };
         }),
@@ -323,7 +392,7 @@ export default function ManasChatPage() {
                     m.role === "system" && m.isCompacting
                       ? {
                           role: "system" as const,
-                          content: "Not enough messages to compact yet (keep chatting first).",
+                          content: "Not enough messages to compact yet (need at least 3).",
                         }
                       : m,
                   );
@@ -335,7 +404,7 @@ export default function ManasChatPage() {
                     ...session.messages,
                     {
                       role: "system" as const,
-                      content: "Not enough messages to compact yet (keep chatting first).",
+                      content: "Not enough messages to compact yet (need at least 3).",
                     },
                   ],
                 };
@@ -380,6 +449,124 @@ export default function ManasChatPage() {
             }),
           );
         });
+    },
+    onSansadSyncing: (data) => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      const refresh = Boolean(data?.refresh);
+      const replace = Boolean(data?.replace);
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const hasSyncing = session.messages.some(
+            (m) => m.role === "system" && m.isSansadSyncing,
+          );
+          if (hasSyncing) return session;
+          return {
+            ...session,
+            messages: [
+              ...session.messages,
+              {
+                role: "system" as const,
+                content: replace
+                  ? "Re-fetching SANSAD plant data (replacing prior briefing)…"
+                  : refresh
+                    ? "Refreshing SANSAD plant briefing…"
+                    : "Linking SANSAD plant context (logs, reports, KPIs)…",
+                isSansadSyncing: true,
+                systemKind: "sansad" as const,
+              },
+            ],
+          };
+        }),
+      );
+    },
+    onSansadSynced: (data) => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      const refresh = Boolean(data?.refresh);
+      const replace = Boolean(data?.replace);
+      const syncedText = data?.error
+        ? `SANSAD context sync failed: ${data.error}`
+        : replace
+          ? "SANSAD briefing replaced — fresh plant harvest applied."
+          : refresh
+            ? "SANSAD plant briefing refreshed — MANAS context updated."
+            : "SANSAD plant briefing linked — MANAS now has live logs, reports, and KPI context.";
+
+      fetchSessionDetail(targetId)
+        .then((detail) => {
+          if (deletedSessionIdsRef.current.has(targetId)) return;
+          setSessions((prev) =>
+            prev.map((session) => {
+              if (session.id !== targetId) return session;
+              let msgs = detail.messages;
+              const hasSyncing = session.messages.some(
+                (m) => m.role === "system" && m.isSansadSyncing,
+              );
+              if (hasSyncing) {
+                msgs = session.messages.map((m) =>
+                  m.role === "system" && m.isSansadSyncing
+                    ? { role: "system" as const, content: syncedText, systemKind: "sansad" as const }
+                    : m,
+                );
+              } else {
+                msgs = [...session.messages, { role: "system" as const, content: syncedText, systemKind: "sansad" as const }];
+              }
+              return {
+                ...session,
+                messages: msgs,
+                metadata: detail.metadata,
+                ragDocs: session.ragDocs ?? detail.ragDocs,
+                historicalLogDocs: session.historicalLogDocs ?? detail.historicalLogDocs,
+              };
+            }),
+          );
+          if (!chatLoadingRef.current) {
+            streamSessionRef.current = null;
+          }
+        })
+        .catch(() => {
+          setSessions((prev) =>
+            prev.map((session) => {
+              if (session.id !== targetId) return session;
+              const msgs = session.messages.map((m) =>
+                m.role === "system" && m.isSansadSyncing
+                  ? { role: "system" as const, content: syncedText, systemKind: "sansad" as const }
+                  : m,
+              );
+              return {
+                ...session,
+                messages: msgs,
+                metadata: { ...session.metadata, sansad_mode: !data?.error },
+              };
+            }),
+          );
+        });
+    },
+    onSansadDeactivated: () => {
+      const targetId = streamSessionRef.current ?? activeSessionId;
+      if (!targetId) return;
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const meta = { ...(session.metadata ?? {}) };
+          delete meta.sansad_mode;
+          delete meta.sansad_context_summary;
+          delete meta.sansad_context_updated_at;
+          delete meta.sansad_turn_count;
+          delete meta.sansad_refresh_every;
+          return {
+            ...session,
+            metadata: meta,
+            messages: [
+              ...session.messages,
+              { role: "system" as const, content: "SANSAD context mode ended." },
+            ],
+          };
+        }),
+      );
+      streamSessionRef.current = null;
     },
   });
 
@@ -435,12 +622,6 @@ export default function ManasChatPage() {
     ensureSessionLoaded(urlSessionId);
   }, [urlSessionId, ensureSessionLoaded]);
 
-  useEffect(() => {
-    if (!getAccessToken()) {
-      window.location.href = "/login/";
-    }
-  }, []);
-
   // Pre-warm Ollama + RAG models so the first message does not cold-start.
   useEffect(() => {
     warmChatStack().catch(() => undefined);
@@ -458,6 +639,7 @@ export default function ManasChatPage() {
   const contextCount = activeSession?.ragDocs ? activeSession.ragDocs.length : 0;
   const historicalLogsCount = countHistoricalLogDocs(activeSession?.historicalLogDocs);
   const hasHistoricalLogs = historicalLogsCount > 0;
+  const sansadModeActive = Boolean(activeSession?.metadata?.sansad_mode);
   const panelRagDocs =
     contextPanelMode === "logs"
       ? activeSession?.historicalLogDocs ?? []
@@ -821,18 +1003,126 @@ export default function ManasChatPage() {
     }
   }, [chatSim]);
 
+  const handleSansadActivate = useCallback(async (targetId: string) => {
+    streamSessionRef.current = targetId;
+    try {
+      await chatSim.waitUntilReady();
+      await activateSansadMode(targetId);
+    } catch {
+      setTriggerToast("Could not link SANSAD context — check backend connection");
+      setTimeout(() => setTriggerToast(null), 2500);
+      streamSessionRef.current = null;
+    }
+  }, [chatSim]);
+
+  const handleSansadDeactivate = useCallback(async (targetId: string) => {
+    streamSessionRef.current = targetId;
+    try {
+      await chatSim.waitUntilReady();
+      await deactivateSansadMode(targetId);
+    } catch {
+      setTriggerToast("Could not deactivate SANSAD mode — check backend connection");
+      setTimeout(() => setTriggerToast(null), 2500);
+      streamSessionRef.current = null;
+    }
+  }, [chatSim]);
+
+  const handleSansadUpdate = useCallback(async (targetId: string) => {
+    streamSessionRef.current = targetId;
+    try {
+      await chatSim.waitUntilReady();
+      await updateSansadMode(targetId);
+    } catch (err) {
+      const detail =
+        err instanceof ApiError ? err.message : "Could not update SANSAD context — check backend connection";
+      setTriggerToast(detail);
+      setTimeout(() => setTriggerToast(null), 3500);
+      streamSessionRef.current = null;
+    }
+  }, [chatSim]);
+
+  const ensureBackendSessionForCommand = useCallback(
+    async (titleHint: string): Promise<string | null> => {
+      if (activeSessionId && isBackendSessionId(activeSessionId)) {
+        return activeSessionId;
+      }
+
+      try {
+        if (!(await fetchBackendReady())) {
+          throw new ApiError(503, "Backend is still starting — wait a moment and try again.");
+        }
+        const local = activeSessionId ? sessions.find((s) => s.id === activeSessionId) : null;
+        const created = await createSession(undefined, titleHint);
+        setSessions((prev) => [
+          ...prev.filter((s) => s.id !== activeSessionId),
+          {
+            ...created,
+            title: titleHint,
+            ragDocs: local?.ragDocs,
+            historicalLogDocs: local?.historicalLogDocs,
+            messages: local?.messages ?? [],
+            metadata: local?.metadata,
+          },
+        ]);
+        setActiveSessionId(created.id);
+        updateManasChatUrl(created.id, "replace");
+        return created.id;
+      } catch (err) {
+        const detail =
+          err instanceof ApiError
+            ? err.message
+            : "Could not create chat session — sign in and check the backend.";
+        setTriggerToast(detail);
+        setTimeout(() => setTriggerToast(null), 3500);
+        return null;
+      }
+    },
+    [activeSessionId, sessions],
+  );
+
   const handleSendMessage = useCallback(async (messageText: string) => {
     const trimmed = messageText.trim();
+    if (!trimmed) return;
+
+    if (chatLoadingRef.current) {
+      setTriggerToast("Wait for the current reply to finish");
+      setTimeout(() => setTriggerToast(null), 3000);
+      return;
+    }
+
     const slash = parseSlashCommandInput(trimmed);
 
     if (slash?.cmd.name === "compact") {
-      const targetId = activeSessionId;
-      if (!targetId) {
-        setTriggerToast("Start a chat session before compacting");
-        setTimeout(() => setTriggerToast(null), 2500);
+      const targetId = await ensureBackendSessionForCommand("MANAS · Context");
+      if (!targetId) return;
+      await handleCompactSession(targetId);
+      return;
+    }
+
+    if (slash?.cmd.name === "sansad") {
+      const targetId = await ensureBackendSessionForCommand("MANAS · SANSAD");
+      if (!targetId) return;
+      await handleSansadActivate(targetId);
+      return;
+    }
+
+    if (slash?.cmd.name === "deactivate") {
+      const targetId = await ensureBackendSessionForCommand("MANAS Chat");
+      if (!targetId) return;
+      await handleSansadDeactivate(targetId);
+      return;
+    }
+
+    if (slash?.cmd.name === "update") {
+      const targetId = await ensureBackendSessionForCommand("MANAS · SANSAD");
+      if (!targetId) return;
+      const session = sessions.find((s) => s.id === targetId);
+      if (!session?.metadata?.sansad_mode) {
+        setTriggerToast("SANSAD mode is not active — use /sansad first");
+        setTimeout(() => setTriggerToast(null), 3000);
         return;
       }
-      await handleCompactSession(targetId);
+      await handleSansadUpdate(targetId);
       return;
     }
 
@@ -845,12 +1135,21 @@ export default function ManasChatPage() {
       }
       const session = activeSessionId ? sessions.find((s) => s.id === activeSessionId) : null;
       try {
-        const optimized = await optimizeMaintenancePrompt(draft, {
+        const result = await optimizeMaintenancePrompt(draft, {
           hasRagContext: (session?.ragDocs?.length ?? 0) > 0,
           userRole: selectedRole ?? undefined,
         });
-        setInjectPrompt(optimized);
-        setTriggerToast("Prompt optimized — review and send when ready");
+        if (result.action === "block") {
+          setTriggerToast(result.message || "That prompt is outside MANAS maintenance scope");
+          setTimeout(() => setTriggerToast(null), 4000);
+          return;
+        }
+        setInjectPrompt(result.optimized);
+        setTriggerToast(
+          result.action === "steer"
+            ? "Prompt steered toward maintenance scope — review and send"
+            : "Prompt optimized — review and send when ready",
+        );
         setTimeout(() => setTriggerToast(null), 3000);
       } catch (err) {
         const detail =
@@ -971,7 +1270,7 @@ export default function ManasChatPage() {
       );
       chatSim.reset();
     }
-  }, [activeSessionId, sessions, chatSim, selectedRole, adviceMode, deepThinking, handleCompactSession]);
+  }, [activeSessionId, sessions, chatSim, selectedRole, adviceMode, deepThinking, handleCompactSession, handleSansadActivate, handleSansadDeactivate, handleSansadUpdate, ensureBackendSessionForCommand]);
 
   const handleStopGeneration = useCallback(() => {
     const targetId = streamSessionRef.current ?? activeSessionId;
@@ -1214,7 +1513,11 @@ export default function ManasChatPage() {
                       <StepsTrigger>
                         <TextShimmerLoader
                           text={
-                            chatSim.streamPhase === "rag"
+                            chatSim.streamPhase === "guard"
+                              ? "Verifying safety"
+                              : chatSim.streamPhase === "guard_blocked"
+                                ? "Safety check failed"
+                                : chatSim.streamPhase === "rag"
                               ? "Processing document"
                               : chatSim.streamPhase === "role"
                                 ? "Applying role context"
@@ -1230,6 +1533,24 @@ export default function ManasChatPage() {
                       <StepsContent bar={<StepsBar />}>
                         <div className="space-y-1">
                           <StepsItem status="complete">Request received</StepsItem>
+                          <StepsItem
+                            status={
+                              chatSim.streamPhase === "guard_blocked"
+                                ? "failed"
+                                : chatSim.streamPhase === "guard"
+                                  ? "active"
+                                  : chatSim.streamPhase === "waiting" ||
+                                      chatSim.streamPhase === "rag" ||
+                                      chatSim.streamPhase === "role" ||
+                                      chatSim.streamPhase === "post_rag" ||
+                                      chatSim.streamPhase === "thinking" ||
+                                      chatSim.streamPhase === "answering"
+                                    ? "complete"
+                                    : "pending"
+                            }
+                          >
+                            Verifying safety
+                          </StepsItem>
                           {hasContext && (
                             <StepsItem
                               status={
@@ -1269,17 +1590,19 @@ export default function ManasChatPage() {
                           )}
                           <StepsItem
                             status={
-                              chatSim.streamPhase === "post_rag" ||
-                              chatSim.streamPhase === "thinking"
-                                ? "active"
-                                : chatSim.streamPhase === "answering"
-                                  ? "complete"
-                                  : chatSim.streamPhase === "rag" ||
-                                      chatSim.streamPhase === "role"
-                                    ? "pending"
-                                    : chatSim.streamPhase === "waiting"
-                                      ? "active"
-                                      : "pending"
+                              chatSim.streamPhase === "guard_blocked"
+                                ? "pending"
+                                : chatSim.streamPhase === "post_rag" ||
+                                    chatSim.streamPhase === "thinking"
+                                  ? "active"
+                                  : chatSim.streamPhase === "answering"
+                                    ? "complete"
+                                    : chatSim.streamPhase === "rag" ||
+                                        chatSim.streamPhase === "role"
+                                      ? "pending"
+                                      : chatSim.streamPhase === "waiting"
+                                        ? "active"
+                                        : "pending"
                             }
                           >
                             Processing response text
@@ -1299,7 +1622,11 @@ export default function ManasChatPage() {
                           )}
                           <StepsItem
                             status={
-                              chatSim.streamPhase === "answering" ? "active" : "pending"
+                              chatSim.streamPhase === "guard_blocked"
+                                ? "pending"
+                                : chatSim.streamPhase === "answering"
+                                  ? "active"
+                                  : "pending"
                             }
                           >
                             Generating answer
@@ -1357,6 +1684,7 @@ export default function ManasChatPage() {
                 triggerToast={triggerToast}
                 injectPrompt={injectPrompt}
                 onInjectPromptConsumed={() => setInjectPrompt(null)}
+                sansadModeActive={sansadModeActive}
                 className="pointer-events-auto relative z-10 w-full"
               />
             </div>

@@ -2,10 +2,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { Search, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
+import { Search, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle, MessageCircle, Loader2 } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-import { LOG_STREAM_POLL_MS, LOG_STREAM_REVEAL_MS } from "@/services/telemetry";
+import { LOG_STREAM_POLL_MS, LOG_STREAM_REVEAL_MS, fetchLogInsight } from "@/services/telemetry";
 import { useTelemetryLogs } from "@/hooks";
+import { useHubManasNotify } from "../components/HubManasNotify";
+import ManasInsightPanel from "../components/ManasInsightPanel";
 import SansadBackButton from "../components/SansadBackButton";
 import {
   buildLogModuleFilters,
@@ -70,6 +72,7 @@ const LogEntryCard = React.memo(function LogEntryCard({
 });
 
 export default function LogsConsolePage() {
+  const { runManasCall } = useHubManasNotify();
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -77,7 +80,36 @@ export default function LogsConsolePage() {
   const [selectedModule, setSelectedModule] = useState("ALL MODULES");
   const [isLive, setIsLive] = useState(true);
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
+  const [logInsight, setLogInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
+  const [logInsightLoading, setLogInsightLoading] = useState(false);
   const [catalogAssets, setCatalogAssets] = useState<AssetAliasRow[]>([]);
+
+  const openLogModal = (log: LogEntry) => {
+    setActiveLogForModal(log);
+    setLogInsight(null);
+    setLogInsightLoading(false);
+  };
+
+  const askLogInsight = async () => {
+    if (!activeLogForModal) return;
+    setLogInsightLoading(true);
+    setLogInsight(null);
+    const log = activeLogForModal;
+    const res = await runManasCall(
+      `Log insight — ${log.module}`,
+      () => fetchLogInsight({ module: log.module, text: log.text, time: log.time }),
+      {
+        pendingDetail: "MANAS is explaining this log entry…",
+        validate: (r) => Boolean(r.insight?.trim()),
+        emptyDetail: "MANAS returned an empty explanation — retry in a moment",
+        successDetail: "Log explanation is ready below",
+      },
+    );
+    if (res?.insight?.trim()) {
+      setLogInsight({ angle: res.insight_angle, text: res.insight, router: res.router });
+    }
+    setLogInsightLoading(false);
+  };
 
   const { logs, clear, status: logStreamStatus, metrics: streamMetrics } = useTelemetryLogs(
     LOG_STREAM_POLL_MS,
@@ -411,7 +443,7 @@ export default function LogsConsolePage() {
                       </div>
                     ) : (
                       filteredLogs.map((log) => (
-                        <LogEntryCard key={log.id} log={log} onSelect={setActiveLogForModal} />
+                        <LogEntryCard key={log.id} log={log} onSelect={openLogModal} />
                       ))
                     )}
                   </div>
@@ -465,37 +497,45 @@ export default function LogsConsolePage() {
               </p>
             </div>
 
-            {/* Simulated Recommendation context based on text/severity */}
-            <div className={`p-6 rounded-2xl border flex items-start gap-4 select-none mb-8 ${
-              activeLogForModal.text.includes("CRITICAL")
-                ? "bg-rose-50 border-rose-100 text-rose-950"
-                : activeLogForModal.text.includes("WARNING")
-                  ? "bg-amber-50 border-amber-100 text-amber-950"
-                  : "bg-emerald-50 border-emerald-100 text-emerald-950"
-            }`}>
-              {activeLogForModal.text.includes("CRITICAL") ? (
-                <ShieldAlert className="w-6 h-6 shrink-0 text-rose-500 mt-0.5" />
-              ) : activeLogForModal.text.includes("WARNING") ? (
-                <AlertTriangle className="w-6 h-6 shrink-0 text-amber-500 mt-0.5" />
-              ) : (
-                <CheckCircle className="w-6 h-6 shrink-0 text-emerald-500 mt-0.5" />
-              )}
-              <div>
-                <span className="text-xs font-mono font-bold uppercase tracking-wider block text-zinc-500">Recommended SOP Action</span>
-                <p className="text-sm mt-1.5 leading-relaxed font-sans font-medium">
-                  {activeLogForModal.text.includes("CRITICAL")
-                    ? "CRITICAL INCIDENT: Telemetry loop has registered severe anomalous operation. Inspect target device immediately, verify standby device engagement, and notify the site operations command."
-                    : activeLogForModal.text.includes("WARNING")
-                      ? "WARNING ALARM: System parameter drift observed. Perform secondary calibration checks, flag the physical components in the asset manager database, and monitor telemetry on the next shift cycle."
-                      : "NOMINAL STATUS: System diagnostics operating within normal boundaries. No intervention required. Logs successfully routed to Manas vector database."}
-                </p>
+            {/* MANAS log explanation */}
+            <div className="mb-8">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500">
+                  MANAS explanation
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void askLogInsight()}
+                  disabled={logInsightLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  {logInsightLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <MessageCircle className="w-3.5 h-3.5" />
+                  )}
+                  Ask MANAS
+                </button>
               </div>
+              {logInsightLoading ? (
+                <ManasInsightPanel title="MANAS — Log explanation" loading />
+              ) : logInsight ? (
+                <ManasInsightPanel title={`MANAS — ${logInsight.angle}`} text={logInsight.text} />
+              ) : (
+                <p className="text-sm text-zinc-500 leading-relaxed" style={{ fontFamily: "var(--font-questrial)" }}>
+                  Tap <strong className="text-orange-600">Ask MANAS</strong> for a plain-language explanation of this log and recommended preventive actions.
+                </p>
+              )}
             </div>
 
             <div className="flex justify-between items-center text-xs font-mono text-zinc-400 border-t border-zinc-150 pt-5">
               <span>Telemetry Timestamp: {activeLogForModal.time}</span>
               <button 
-                onClick={() => setActiveLogForModal(null)}
+                onClick={() => {
+                  setActiveLogForModal(null);
+                  setLogInsight(null);
+                  setLogInsightLoading(false);
+                }}
                 className="h-11 px-8 bg-[#1b253c] hover:bg-[#f97316] hover:scale-105 active:scale-95 text-white rounded-xl font-bold uppercase tracking-wider text-xs cursor-pointer transition-all duration-300 shadow-md"
                 style={{ fontFamily: "var(--font-pixeloid)" }}
               >

@@ -10,10 +10,7 @@ import json
 import logging
 import re
 
-import httpx
 from django.conf import settings
-
-from apps.agents.ollama_warmup import ollama_keep_alive_value, OLLAMA_SMALL_LOCK
 
 logger = logging.getLogger(__name__)
 
@@ -130,23 +127,22 @@ def generate_work_order_sync(asset_id: str, *, user=None) -> dict:
     fault = feed["fault_active"]
 
     llm: dict | None = None
-    payload = {
-        "model": settings.OLLAMA_SMALL_MODEL,
-        "messages": [
-            {"role": "system", "content": _WO_SYSTEM},
-            {"role": "user", "content": f"LIVE CONDITION FEED:\n{json.dumps(feed, default=str)[:2200]}"},
-        ],
-        "stream": False,
-        "think": False,
-        "keep_alive": ollama_keep_alive_value(),
-        "options": {"num_predict": 420, "temperature": 0.1},
-    }
     try:
-        with OLLAMA_SMALL_LOCK:
-            with httpx.Client(timeout=60) as client:
-                resp = client.post(f"{settings.OLLAMA_BASE_URL}/api/chat", json=payload)
-                resp.raise_for_status()
-        content = (resp.json().get("message") or {}).get("content") or ""
+        from apps.agents.llm.client import invoke_raw
+        from apps.agents.plant_module_context import maintenance_asset_context
+
+        content = invoke_raw(
+            model_size="small",
+            system=_WO_SYSTEM,
+            user=(
+                f"ASSET CONTEXT:\n{maintenance_asset_context(asset.asset_type)}\n\n"
+                f"LIVE CONDITION FEED:\n{json.dumps(feed, default=str)[:2200]}"
+            ),
+            max_tokens=420,
+            temperature=0.1,
+            skip_input_guard=True,
+            source="system",
+        )
         llm = _parse_json(content)
     except Exception as exc:
         logger.warning("work_order_llm_failed asset=%s err=%s", asset.id, exc)

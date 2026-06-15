@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { FileCheck, X } from "lucide-react";
 
 interface WorkOrderRaisedModalProps {
@@ -17,28 +19,38 @@ export default function WorkOrderRaisedModal({
   priority,
   onClose,
 }: WorkOrderRaisedModalProps) {
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
-  return (
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6"
+        className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 relative"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="wo-raised-title"
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
               <FileCheck className="w-5 h-5 text-emerald-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Work order raised</p>
-              <h2 id="wo-raised-title" className="text-lg font-black text-[#1b253c] mt-0.5">
+              <h2 id="wo-raised-title" className="text-lg font-black text-[#1b253c] mt-0.5 leading-tight">
                 Maintenance ticket created
               </h2>
             </div>
@@ -46,7 +58,7 @@ export default function WorkOrderRaisedModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 cursor-pointer shrink-0"
             aria-label="Close"
           >
             <X className="w-4 h-4" />
@@ -86,6 +98,7 @@ export default function WorkOrderRaisedModal({
           Acknowledge
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

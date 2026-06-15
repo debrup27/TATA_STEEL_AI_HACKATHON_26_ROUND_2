@@ -31,18 +31,6 @@ _ROLE_SYSTEMS: dict[str, str] = {
     ),
 }
 
-_STATIC_FALLBACK: dict[str, str] = {
-    "technician": (
-        "Prioritise hands-on repair steps, tooling, LOTO/safety checks, and observable symptoms. "
-        "Keep language concise and shop-floor practical."
-    ),
-    "supervisor": (
-        "Balance technical detail with crew coordination, shift planning, escalation criteria, "
-        "and downtime impact."
-    ),
-}
-
-
 class RoleAdvisoryState(TypedDict, total=False):
     user_question: str
     rag_snippet: str
@@ -69,8 +57,13 @@ def resolve_manas_roles(user_role: str, *, advice_mode: bool = False) -> list[st
 
 
 def _advise_one_role(role: str, user_question: str, rag_snippet: str) -> tuple[str, str]:
+    from apps.agents.manas_chat_harness import build_role_advisory_context
+
     system = _ROLE_SYSTEMS[role]
     user = f"User question:\n{user_question[:1500]}"
+    plant_ctx = build_role_advisory_context(user_question)
+    if plant_ctx.strip():
+        user += f"\n\nPlant context:\n{plant_ctx[:1800]}"
     if rag_snippet.strip():
         user += (
             f"\n\nLoaded document excerpt (use for role-specific emphasis — cite facts from here):\n"
@@ -82,7 +75,13 @@ def _advise_one_role(role: str, user_question: str, rag_snippet: str) -> tuple[s
             return role, text.strip()
     except Exception as exc:
         logger.warning("role_advisory_0.8b_failed role=%s err=%s", role, exc)
-    return role, _STATIC_FALLBACK.get(role, "")
+    try:
+        text = _call_small_model(system, user)
+        if text and len(text.strip()) > 20:
+            return role, text.strip()
+    except Exception as retry_exc:
+        logger.warning("role_advisory_0.8b_retry_failed role=%s err=%s", role, retry_exc)
+    return role, ""
 
 
 def _workers_node(state: RoleAdvisoryState) -> dict:
@@ -137,8 +136,17 @@ def run_role_advisory(user_question: str, roles: list[str], rag_snippet: str = "
     """Run 0.8b role workers via LangGraph; returns text for 9b system prompt."""
     if not roles:
         return ""
+    from apps.agents.llm.guardrails import check_input_guard, refusal_message
+    from apps.agents.llm.schemas import GuardrailAction
+
+    verdict = check_input_guard(user_question, source="user")
+    if verdict.action == GuardrailAction.BLOCK:
+        return refusal_message(verdict)
+    effective_question = user_question
+    if verdict.action == GuardrailAction.STEER and verdict.steered_text:
+        effective_question = verdict.steered_text
     result = _get_role_graph().invoke({
-        "user_question": user_question,
+        "user_question": effective_question,
         "rag_snippet": rag_snippet,
         "roles": roles,
     })

@@ -207,6 +207,8 @@ OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://ollama:11434")
 OLLAMA_MODEL = config("OLLAMA_MODEL", default="qwen3.5:9b")
 OLLAMA_SMALL_MODEL = config("OLLAMA_SMALL_MODEL", default="qwen3.5:0.8b")
 OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="-1")
+GUARDRAILS_ENABLED = config("GUARDRAILS_ENABLED", default=True, cast=bool)
+GUARDRAILS_LLM_CLASSIFIER = config("GUARDRAILS_LLM_CLASSIFIER", default=True, cast=bool)
 
 # --- RAG (BGE-M3 on GPU when EMBEDDING_DEVICE=cuda) ---
 EMBEDDING_DEVICE = config("EMBEDDING_DEVICE", default="cuda")

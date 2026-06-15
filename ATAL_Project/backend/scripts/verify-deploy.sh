@@ -29,7 +29,7 @@ check "Redis ping" \
     "docker compose exec -T redis redis-cli ping"
 
 check "Postgres ready" \
-    "docker compose exec -T postgres-db pg_isready -U atal_user"
+    "docker compose exec -T postgres-db pg_isready -U atal_user -d atal_db"
 
 check "Celery worker alive" \
     "docker compose exec -T celery-worker celery -A backend inspect ping --timeout 5"

@@ -47,6 +47,7 @@ function PanelCard({ children, className = "" }: { children: React.ReactNode; cl
 
 // MANAS insight card with pop-out modal (shared) — handles long responses that overflow inline.
 import InsightPanel from "../components/ManasInsightPanel";
+import HubMarkdown from "../components/HubMarkdown";
 
 function formatRul(asset: DiagnosticAsset): { value: string; unit: string } {
   if (asset.rulHours != null && asset.rulHours > 0) return { value: asset.rulHours.toFixed(0), unit: "hours" };
@@ -62,8 +63,8 @@ export default function DiagnosticsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rcaInsight, setRcaInsight] = useState<{ angle: string; text: string } | null>(null);
-  const [defectInsight, setDefectInsight] = useState<{ angle: string; text: string } | null>(null);
+  const [rcaInsight, setRcaInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
+  const [defectInsight, setDefectInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
   const [rcaLoading, setRcaLoading] = useState(false);
   const [defectLoading, setDefectLoading] = useState(false);
 
@@ -161,7 +162,7 @@ export default function DiagnosticsPage() {
       },
     );
     if (res?.insight?.trim()) {
-      setRcaInsight({ angle: res.insight_angle, text: res.insight });
+      setRcaInsight({ angle: res.insight_angle, text: res.insight, router: res.router });
       setError(null);
     } else if (!res) {
       setError("MANAS returned an empty insight — retry in a moment");
@@ -184,7 +185,7 @@ export default function DiagnosticsPage() {
       },
     );
     if (res?.insight?.trim()) {
-      setDefectInsight({ angle: res.insight_angle, text: res.insight });
+      setDefectInsight({ angle: res.insight_angle, text: res.insight, router: res.router });
       setError(null);
     } else if (!res) {
       setError("MANAS returned an empty insight — retry in a moment");
@@ -307,7 +308,7 @@ export default function DiagnosticsPage() {
           {asset.earlyWarning && (
             <div className="shrink-0 bg-rose-50 border border-rose-200 rounded-xl p-3 flex gap-2 text-sm text-rose-900">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
-              {asset.earlyWarning}
+              <HubMarkdown className="text-sm text-rose-900 [&_p]:my-0">{asset.earlyWarning}</HubMarkdown>
             </div>
           )}
 
@@ -320,7 +321,9 @@ export default function DiagnosticsPage() {
               </div>
               {hasDiagnosis ? (
                 <>
-                  <p className="text-base font-semibold text-zinc-800 leading-snug">{asset.probableFault}</p>
+                  <HubMarkdown className="text-base font-semibold text-zinc-800 leading-snug [&_p]:my-0">
+                    {asset.probableFault}
+                  </HubMarkdown>
                   {hasConfidence && (
                     <div className="mt-3 flex items-center gap-2">
                       <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">

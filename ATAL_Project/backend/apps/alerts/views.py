@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from apps.alerts.models import AlarmEvent
 from apps.assets.models import Asset
+from apps.agents.diagnostics_insight import generate_log_insight
 
 
 class AlarmEventSerializer:
@@ -81,3 +82,25 @@ class ExternalAlertIngestView(APIView):
             iso_standard_ref=request.data.get("iso_standard_ref", ""),
         )
         return Response({"status": "created"}, status=status.HTTP_201_CREATED)
+
+
+class LogInsightView(APIView):
+    """POST /api/v1/alerts/log-insight/ — plain-language log explanation via 0.8b MANAS."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        module = (request.data.get("module") or "Plant").strip()
+        text = (request.data.get("text") or "").strip()
+        time = (request.data.get("time") or "").strip()
+        if not text:
+            return Response({"error": "text required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = generate_log_insight(module=module, text=text, time=time or "—")
+        except Exception as exc:
+            return Response({"error": f"insight unavailable: {exc}"}, status=503)
+        return Response({
+            "insight_angle": result["insight_angle"],
+            "insight": result["insight"],
+            "router": result["router"],
+        })

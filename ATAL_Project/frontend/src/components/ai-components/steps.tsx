@@ -21,7 +21,7 @@ interface StepsContentProps {
 
 interface StepsItemProps {
   children: React.ReactNode;
-  status?: "pending" | "active" | "complete";
+  status?: "pending" | "active" | "complete" | "failed";
 }
 
 interface StepsBarProps {
@@ -114,6 +114,14 @@ function StepsItem({ children, status = "pending" }: StepsItemProps) {
         </svg>
       </span>
     );
+  } else if (status === "failed") {
+    indicator = (
+      <span className="size-3.5 rounded-full bg-red-500/90 text-white flex items-center justify-center shrink-0 mt-0.5 transition-all duration-300 shadow-sm">
+        <svg className="size-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </span>
+    );
   } else if (status === "active") {
     indicator = (
       <span className="relative flex size-3.5 items-center justify-center shrink-0 mt-0.5">
@@ -131,7 +139,9 @@ function StepsItem({ children, status = "pending" }: StepsItemProps) {
     ? "text-zinc-950 font-bold"
     : status === "complete"
       ? "text-zinc-650 font-medium"
-      : "text-zinc-400 font-normal"
+      : status === "failed"
+        ? "text-red-700 font-semibold"
+        : "text-zinc-400 font-normal"
 
   return (
     <div className={`flex items-start gap-2.5 text-xs sm:text-sm transition-colors duration-300 ${textClass}`}>

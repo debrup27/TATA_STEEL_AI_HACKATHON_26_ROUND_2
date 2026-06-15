@@ -8,6 +8,9 @@ from apps.agents.views import (
     ChatOptimizePromptView,
     ChatMessageFeedbackView,
     ChatCancelView,
+    ChatSansadModeActivateView,
+    ChatSansadModeDeactivateView,
+    ChatSansadModeUpdateView,
 )
 
 urlpatterns = [
@@ -19,4 +22,7 @@ urlpatterns = [
     path("sessions/<uuid:session_id>/cancel/", ChatCancelView.as_view()),
     path("sessions/<uuid:session_id>/message/", ChatMessageView.as_view()),
     path("sessions/<uuid:session_id>/compact/", ChatCompactView.as_view()),
+    path("sessions/<uuid:session_id>/sansad-mode/activate/", ChatSansadModeActivateView.as_view()),
+    path("sessions/<uuid:session_id>/sansad-mode/deactivate/", ChatSansadModeDeactivateView.as_view()),
+    path("sessions/<uuid:session_id>/sansad-mode/update/", ChatSansadModeUpdateView.as_view()),
 ]

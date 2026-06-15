@@ -107,6 +107,10 @@ export interface Message {
   files?: MessageFile[];
   citations?: Citation[];
   isCompacting?: boolean;
+  /** SANSAD context sync in progress. */
+  isSansadSyncing?: boolean;
+  /** System banner kind — drives label and expand UI. */
+  systemKind?: "compaction" | "sansad";
   /** User thumbs feedback on assistant replies. */
   feedbackRating?: "up" | "down";
 }
@@ -135,6 +139,8 @@ export interface ChatSession {
   ragDocs?: RagDoc[];
   /** Live system log stream (separate from concierge RAG docs). */
   historicalLogDocs?: RagDoc[];
+  /** Backend session metadata (sansad_mode, title, etc.). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface TickerItem {

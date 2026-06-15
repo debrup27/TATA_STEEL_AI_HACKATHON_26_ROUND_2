@@ -6,10 +6,8 @@ import logging
 import os
 import re
 
-import httpx
 from django.conf import settings
 
-from apps.agents.ollama_warmup import ollama_keep_alive_value
 from apps.assets.models import Asset, Factory
 from apps.assets.services import FactoryHealthService
 from apps.maintenance.threshold_scorer import score_asset
@@ -71,28 +69,21 @@ def _ollama_polish(draft_markdown: str, base: dict, extra_context: str = "") -> 
     )
     if extra_context:
         user += f"\n\nHISTORICAL PLANT CONTEXT (reference only, do not contradict):\n{extra_context[:2200]}"
-    payload = {
-        "model": settings.OLLAMA_SMALL_MODEL,
-        "messages": [
-            {"role": "system", "content": _POLISH_SYSTEM},
-            {"role": "user", "content": user},
-        ],
-        "stream": False,
-        "keep_alive": ollama_keep_alive_value(),
-        "options": {"num_predict": 380, "temperature": 0.05},
-    }
     try:
-        with httpx.Client(timeout=35) as client:
-            resp = client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/chat",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            )
-            resp.raise_for_status()
-            content = (resp.json().get("message") or {}).get("content") or ""
-            if _is_gibberish(content):
-                return None
-            return _parse_json(content)
+        from apps.agents.llm.client import invoke_raw
+
+        content = invoke_raw(
+            model_size="small",
+            system=_POLISH_SYSTEM,
+            user=user,
+            max_tokens=380,
+            temperature=0.05,
+            skip_input_guard=True,
+            source="system",
+        )
+        if _is_gibberish(content):
+            return None
+        return _parse_json(content)
     except Exception as exc:
         logger.warning("intelligence_polish_failed: %s", exc)
         return None
@@ -368,11 +359,14 @@ def _merge_polish(base: dict, polished: dict | None) -> dict:
 
 
 def build_asset_intelligence_plan(asset: Asset, *, use_llm: bool = True) -> dict:
+    from apps.agents.plant_module_context import maintenance_asset_context
+
     scored = score_asset(asset)
     base = _asset_plan_struct(scored)
     base["report_text"] = _normalize_report_markdown(base["report_text"])
     if use_llm:
-        polished = _ollama_polish(base["report_text"], base)
+        asset_ctx = maintenance_asset_context(asset.asset_type)
+        polished = _ollama_polish(base["report_text"], base, extra_context=asset_ctx)
         return _merge_polish(base, polished)
     return base
 

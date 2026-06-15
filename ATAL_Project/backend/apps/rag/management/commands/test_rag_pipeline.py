@@ -23,13 +23,17 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS("P2-043 PASS: BGE-M3 embedding 1024-dim"))
 
-        # P2-044 reranker
-        sample = [{"properties": {"content": "ISO 4406 hydraulic oil cleanliness code 16/14/11 for HAGCC"}}]
-        ranked = rerank("HAGCC oil cleanliness ISO 4406", sample)
-        if not ranked or "reranker_score" not in ranked[0]:
-            failures.append("P2-044: reranker_score missing")
+        # P2-044 reranker (optional — disabled when RAG_USE_RERANKER=0 to save VRAM)
+        from django.conf import settings
+        if settings.RAG_USE_RERANKER:
+            sample = [{"properties": {"content": "ISO 4406 hydraulic oil cleanliness code 16/14/11 for HAGCC"}}]
+            ranked = rerank("HAGCC oil cleanliness ISO 4406", sample)
+            if not ranked or "reranker_score" not in ranked[0]:
+                failures.append("P2-044: reranker_score missing")
+            else:
+                self.stdout.write(self.style.SUCCESS(f"P2-044 PASS: reranker_score={ranked[0]['reranker_score']:.3f}"))
         else:
-            self.stdout.write(self.style.SUCCESS(f"P2-044 PASS: reranker_score={ranked[0]['reranker_score']:.3f}"))
+            self.stdout.write(self.style.WARNING("P2-044 SKIP: RAG_USE_RERANKER=0"))
 
         # P2-045 collection counts
         client = get_chroma_client()
@@ -71,7 +75,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("P2-045 SKIP: no TCMS asset — run seed_fixtures"))
 
         # P2-045 rerank score on live retrieval
-        if iso_hits:
+        if settings.RAG_USE_RERANKER and iso_hits:
             reranked = rerank("ISO 4406 HAGCC cleanliness", iso_hits, top_k=3)
             top_score = reranked[0].get("reranker_score", 0) if reranked else 0
             if top_score <= 0:

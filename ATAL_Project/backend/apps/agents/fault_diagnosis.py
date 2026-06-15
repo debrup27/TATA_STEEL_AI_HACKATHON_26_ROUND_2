@@ -4,37 +4,57 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import time
-
-import httpx
-from django.conf import settings
-
-from apps.agents.ollama_warmup import ollama_keep_alive_value
 
 logger = logging.getLogger(__name__)
 
-_DIAGNOSIS_SYSTEM = """You write probable fault diagnosis lines for the SANSAD diagnostics panel (ATAL's Diagnostic).
+_DIAGNOSIS_SYSTEM = """Summarize the likely equipment fault for a steel-plant engineer in 1–2 plain sentences.
+Use sensor readings, fault class, health/RUL, and root causes from the data provided.
 
-Output exactly 1–2 plain sentences for a plant engineer. Explain the likely fault mechanism and WHY,
-citing specific sensor readings, ML fault class, health/RUL, and top root-cause factors from the context.
-
-Rules:
-- Human-readable prose only — no bullets, markdown, labels, or greetings.
-- Name sensors with their values and status when available.
-- If simulation/abnormality is active, mention it as the trigger.
-- Stay under 280 characters when possible.
-- Do not mention MANAS, chat, or AI.
+Plain prose only — no bullets, markdown, labels, task headers, or mention of prompts/AI/chat.
 """
+
+_DIAGNOSIS_META_MARKERS = (
+    "write a probable",
+    "write the probable",
+    "write probable",
+    "task:",
+    "**task",
+    "sansad diagnostics",
+    "atal's diagnostic",
+    "atal diagnostic",
+    "probable fault diagnosis line",
+    "diagnostics panel",
+    "output exactly",
+    "rules:",
+    "you write",
+    "cite specific",
+    "verify the prompt",
+)
 
 _CACHE_TTL_SEC = 90
 _cache: dict[str, tuple[str, float, str]] = {}
 
 
+def _strip_markdown_noise(text: str) -> str:
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"\*+", "", cleaned)
+    cleaned = re.sub(r"#+\s*", "", cleaned)
+    cleaned = re.sub(r"^\s*[-•]\s+", "", cleaned)
+    cleaned = re.sub(r"^\s*task:\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
 def _is_usable_diagnosis(text: str) -> bool:
-    if len(text) < 24 or len(text) > 400:
+    cleaned = _strip_markdown_noise(text)
+    if len(cleaned) < 24 or len(cleaned) > 400:
         return False
-    lower = text.lower()
+    lower = cleaned.lower()
     if lower.startswith("thinking") or "thinking process" in lower[:80]:
+        return False
+    if any(marker in lower for marker in _DIAGNOSIS_META_MARKERS):
         return False
     junk = (
         "asset_id",
@@ -45,8 +65,15 @@ def _is_usable_diagnosis(text: str) -> bool:
         "maintenance_history",
         "you are",
         "as an ai",
+        "unable to perform",
+        "without specific asset data",
+        "asset uuid",
     )
     if any(j in lower for j in junk):
+        return False
+    from apps.agents.llm.client import is_chain_of_thought_leak
+
+    if is_chain_of_thought_leak(cleaned):
         return False
     return True
 
@@ -55,50 +82,30 @@ def _ollama_small(system: str, user: str, *, max_tokens: int = 120) -> str:
     if os.environ.get("OLLAMA_MOCK") == "1":
         return ""
 
-    payload = {
-        "model": settings.OLLAMA_SMALL_MODEL,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "stream": False,
-        "keep_alive": ollama_keep_alive_value(),
-        "options": {"num_predict": max_tokens, "temperature": 0.15},
-    }
-    url = f"{settings.OLLAMA_BASE_URL}/api/chat"
-    try:
-        with httpx.Client(timeout=60) as client:
-            resp = client.post(url, json=payload, headers={"Content-Type": "application/json"})
-            resp.raise_for_status()
-        content = (resp.json().get("message") or {}).get("content") or ""
-        content = content.strip().strip('"')
-        if _is_usable_diagnosis(content):
-            return content
-    except Exception as exc:
-        logger.warning("fault_diagnosis ollama failed: %s", exc)
+    from apps.agents.llm.client import (
+        _invoke_ollama_chat_completions_parts,
+        _retry_invoke,
+        is_chain_of_thought_leak,
+    )
+    from apps.agents.ollama_warmup import OLLAMA_SMALL_LOCK
 
-    try:
-        openai_url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
-        with httpx.Client(timeout=60) as client:
-            resp = client.post(
-                openai_url,
-                json={
-                    "model": settings.OLLAMA_SMALL_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.15,
-                    "stream": False,
-                },
-            )
-            resp.raise_for_status()
-        out = ((resp.json().get("choices") or [{}])[0].get("message") or {}).get("content", "").strip()
-        return out if _is_usable_diagnosis(out) else ""
-    except Exception as exc:
-        logger.warning("fault_diagnosis ollama openai failed: %s", exc)
+    def _call() -> str:
+        content, reasoning = _invoke_ollama_chat_completions_parts(
+            model_size="small",
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            temperature=0.12,
+            think=False,
+        )
+        for candidate in (content, reasoning):
+            cleaned = _strip_markdown_noise(candidate).strip().strip('"')
+            if cleaned and _is_usable_diagnosis(cleaned) and not is_chain_of_thought_leak(cleaned):
+                return cleaned
         return ""
+
+    with OLLAMA_SMALL_LOCK:
+        return _retry_invoke(_call)
 
 
 def _sensor_blob(sensors: list[dict]) -> str:
@@ -111,11 +118,16 @@ def _sensor_blob(sensors: list[dict]) -> str:
 
 
 def _rca_blob(root_causes: list[dict]) -> str:
+    from apps.assets.rca_sanitize import is_junk_rca_factor
+
     if not root_causes:
+        return "none"
+    valid = [rc for rc in root_causes[:3] if not is_junk_rca_factor(str(rc.get("factor", "")))]
+    if not valid:
         return "none"
     return "; ".join(
         f"{rc.get('factor')} ({int(float(rc.get('weight', 0)) * 100)}%)"
-        for rc in root_causes[:3]
+        for rc in valid
     )
 
 
@@ -156,8 +168,15 @@ def _template_narrative(
 
     rca_bit = ""
     if root_causes:
-        rc = root_causes[0]
-        rca_bit = f", with {rc.get('factor')} the strongest contributor ({int(float(rc.get('weight', 0)) * 100)}%)"
+        from apps.assets.rca_sanitize import is_junk_rca_factor
+
+        valid = [rc for rc in root_causes if not is_junk_rca_factor(str(rc.get("factor", "")))]
+        if valid:
+            rc = valid[0]
+            rca_bit = (
+                f", with {rc.get('factor')} the strongest contributor "
+                f"({int(float(rc.get('weight', 0)) * 100)}%)"
+            )
 
     rul_bit = f" RUL ~{rul_days} days." if rul_days else ""
     conf_bit = f" Model confidence {int(confidence * 100)}%." if confidence > 0 else ""
@@ -204,7 +223,9 @@ def generate_probable_fault_narrative(
     now = time.time()
     cached = _cache.get(asset_id)
     if cached and cached[0] == fingerprint and (now - cached[1]) < _CACHE_TTL_SEC:
-        return cached[2]
+        cached_text = cached[2]
+        if _is_usable_diagnosis(cached_text):
+            return cached_text
 
     template = _template_narrative(
         asset_name=asset_name,
@@ -234,16 +255,19 @@ def generate_probable_fault_narrative(
         f"Predictions: {', '.join(pred_lines) or 'n/a'}\n"
         f"Sensors: {_sensor_blob(sensors)}\n"
         f"Root causes: {_rca_blob(root_causes)}\n"
-        "Write the probable fault diagnosis."
+        "Summarize the likely fault mechanism in 1-2 sentences for the engineer."
     )
 
     text = _ollama_small(_DIAGNOSIS_SYSTEM, user_blob)
     if not _is_usable_diagnosis(text):
         text = template
 
-    text = text.replace("\n", " ").strip()
+    text = _strip_markdown_noise(text)
     if len(text) > 320:
         text = text[:317].rsplit(" ", 1)[0] + "…"
+
+    if not _is_usable_diagnosis(text):
+        text = template
 
     _cache[asset_id] = (fingerprint, now, text)
     return text

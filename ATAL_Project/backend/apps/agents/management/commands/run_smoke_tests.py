@@ -43,11 +43,17 @@ class Command(BaseCommand):
                             help="Skip Celery ping (for environments without worker)")
         parser.add_argument("--skip-ollama", action="store_true", default=False,
                             help="Skip Ollama reachability check")
+        parser.add_argument("--skip-rag", action="store_true", default=False,
+                            help="Skip RAG vector search (avoids loading BGE during uvicorn smoke probe)")
+        parser.add_argument("--skip-chat", action="store_true", default=False,
+                            help="Skip inline MANAS run_chat_logic (avoids OOM alongside background uvicorn)")
 
     def handle(self, *args, **options):
         fail_fast = options["fail_fast"]
         skip_celery = options["skip_celery"]
         skip_ollama = options["skip_ollama"]
+        skip_rag = options["skip_rag"]
+        skip_chat = options["skip_chat"]
 
         failures: list[str] = []
         passed = 0
@@ -229,22 +235,25 @@ class Command(BaseCommand):
         get("/api/v1/reports/", "Reports list")
 
         # ── 12. RAG search ────────────────────────────────────────────────────
-        try:
-            if token:
-                import httpx
-                r = httpx.post(
-                    "http://localhost:8000/api/v1/rag/query/",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json={"query": "bearing vibration ISO 10816", "type": "iso_compliance", "standard_code": "ISO 10816"},
-                    timeout=30,
-                )
-                if r.status_code == 200:
-                    results = r.json()
-                    ok(f"RAG search — {len(results)} results")
-                else:
-                    fail("RAG search", f"status {r.status_code}")
-        except Exception as e:
-            fail("RAG search", str(e))
+        if skip_rag:
+            self.stdout.write(self.style.WARNING("  ⏭ RAG search — skipped (--skip-rag; BGE loads on first chat)"))
+        else:
+            try:
+                if token:
+                    import httpx
+                    r = httpx.post(
+                        "http://localhost:8000/api/v1/rag/query/",
+                        headers={"Authorization": f"Bearer {token}"},
+                        json={"query": "bearing vibration ISO 10816", "type": "iso_compliance", "standard_code": "ISO 10816"},
+                        timeout=60,
+                    )
+                    if r.status_code == 200:
+                        results = r.json()
+                        ok(f"RAG search — {len(results)} results")
+                    else:
+                        fail("RAG search", f"status {r.status_code}")
+            except Exception as e:
+                fail("RAG search", str(e))
 
         # ── 13. Chat session ──────────────────────────────────────────────────
         chat_session_id = None
@@ -266,7 +275,11 @@ class Command(BaseCommand):
             fail("Chat session create", str(e))
 
         # ── 13b. MANAS chat reply (Ollama native /api/chat) ───────────────────
-        if chat_session_id and token:
+        if skip_chat:
+            self.stdout.write(self.style.WARNING(
+                "  ⏭ MANAS chat reply — skipped (--skip-chat; tested on first user message)"
+            ))
+        elif chat_session_id and token:
             try:
                 from apps.agents.models import ChatSession, ChatMessage
                 from apps.agents.tasks import run_chat_logic
@@ -353,19 +366,33 @@ class Command(BaseCommand):
             fail("Redis cache", str(e))
 
         # ── 18. ChromaDB collections ──────────────────────────────────────────
-        try:
-            from apps.rag.chroma_client import get_chroma_client, COLLECTIONS
-            client = get_chroma_client()
-            counts = {}
-            for name in COLLECTIONS:
-                counts[name] = client.get_or_create_collection(name).count()
-            total = sum(counts.values())
-            if total > 0:
-                ok(f"ChromaDB — {total} chunks across {len(COLLECTIONS)} collections")
-            else:
-                fail("ChromaDB", "all collections empty — run ingest_corpus")
-        except Exception as e:
-            fail("ChromaDB", str(e))
+        if skip_rag:
+            try:
+                from apps.rag.chroma_client import get_chroma_client, COLLECTIONS
+                client = get_chroma_client()
+                total = sum(client.get_or_create_collection(name).count() for name in COLLECTIONS)
+                if total > 0:
+                    ok(f"ChromaDB — {total} chunks (count only, --skip-rag)")
+                else:
+                    self.stdout.write(self.style.WARNING(
+                        "  ⚠ ChromaDB empty — run ingest_corpus or set INGEST_CORPUS_ON_START=1"
+                    ))
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f"  ⚠ ChromaDB check skipped: {e}"))
+        else:
+            try:
+                from apps.rag.chroma_client import get_chroma_client, COLLECTIONS
+                client = get_chroma_client()
+                counts = {}
+                for name in COLLECTIONS:
+                    counts[name] = client.get_or_create_collection(name).count()
+                total = sum(counts.values())
+                if total > 0:
+                    ok(f"ChromaDB — {total} chunks across {len(COLLECTIONS)} collections")
+                else:
+                    fail("ChromaDB", "all collections empty — run ingest_corpus")
+            except Exception as e:
+                fail("ChromaDB", str(e))
 
         # ── 19. Ollama reachability ───────────────────────────────────────────
         if not skip_ollama:

@@ -415,6 +415,7 @@ export function mapChatSession(
     createdAt: new Date(ts).toLocaleString(),
     messages: mappedMessages,
     lastMessagePreview,
+    metadata: s.metadata,
   };
 }
 

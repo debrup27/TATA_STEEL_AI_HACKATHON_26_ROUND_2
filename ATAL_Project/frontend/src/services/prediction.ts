@@ -1,4 +1,5 @@
-import { apiJson } from "@/lib/api";
+import { apiJson, getAccessToken } from "@/lib/api";
+import { getDemoManasPredictions } from "@/lib/landing-demo";
 import { mapRiskAsset, type BackendRankedAsset } from "@/lib/mappers";
 import type { RiskAsset } from "./types";
 
@@ -58,6 +59,9 @@ export function getScoreBgColor(score: number): string {
 }
 
 export async function fetchManasPredictions(): Promise<RulPredictionData[]> {
+  if (!getAccessToken()) {
+    return getDemoManasPredictions();
+  }
   const assets = await fetchRiskAssets();
   return assets.slice(0, 6).map((a) => ({
     title: a.name,
@@ -80,5 +84,5 @@ export async function fetchManasPredictions(): Promise<RulPredictionData[]> {
 
 /** @deprecated Use fetchManasPredictions */
 export function getManasPredictions(): RulPredictionData[] {
-  return [];
+  return getDemoManasPredictions();
 }

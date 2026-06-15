@@ -112,6 +112,14 @@ class LLMStreamConsumer:
             return {"type": "think_token", "token": event.get("token", "")}
         if t == "phase":
             return {"type": "phase", "phase": event.get("phase", "")}
+        if t == "blocked":
+            return {
+                "type": "blocked",
+                "category": event.get("category", ""),
+                "message": event.get("message", ""),
+            }
+        if t == "citations":
+            return {"type": "citations", "citations": event.get("citations", [])}
         if t == "done":
             return {
                 "type": "done",
@@ -119,6 +127,8 @@ class LLMStreamConsumer:
                 "citations": event.get("citations", []),
                 "error": event.get("error"),
                 "cancelled": bool(event.get("cancelled", False)),
+                "blocked": bool(event.get("blocked", False)),
+                "blocked_message": event.get("blocked_message"),
             }
         if t == "compacting":
             return {"type": "compacting"}
@@ -128,6 +138,23 @@ class LLMStreamConsumer:
                 "compacted_count": event.get("compacted_count", 0),
                 "skipped": bool(event.get("skipped", False)),
             }
+        if t == "sansad_syncing":
+            return {
+                "type": "sansad_syncing",
+                "refresh": bool(event.get("refresh", False)),
+                "replace": bool(event.get("replace", False)),
+            }
+        if t == "sansad_synced":
+            return {
+                "type": "sansad_synced",
+                "updated_at": event.get("updated_at"),
+                "preview": event.get("preview", ""),
+                "refresh": bool(event.get("refresh", False)),
+                "replace": bool(event.get("replace", False)),
+                "error": event.get("error"),
+            }
+        if t == "sansad_deactivated":
+            return {"type": "sansad_deactivated"}
         return None
 
 

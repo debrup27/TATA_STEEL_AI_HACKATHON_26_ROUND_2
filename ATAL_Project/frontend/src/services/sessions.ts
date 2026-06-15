@@ -89,6 +89,30 @@ export async function compactChatSession(
   });
 }
 
+export async function activateSansadMode(
+  sessionId: string,
+): Promise<{ status: string }> {
+  return apiJson(`/api/v1/chat/sessions/${sessionId}/sansad-mode/activate/`, {
+    method: "POST",
+  });
+}
+
+export async function deactivateSansadMode(
+  sessionId: string,
+): Promise<{ status: string }> {
+  return apiJson(`/api/v1/chat/sessions/${sessionId}/sansad-mode/deactivate/`, {
+    method: "POST",
+  });
+}
+
+export async function updateSansadMode(
+  sessionId: string,
+): Promise<{ status: string }> {
+  return apiJson(`/api/v1/chat/sessions/${sessionId}/sansad-mode/update/`, {
+    method: "POST",
+  });
+}
+
 export async function cancelChatGeneration(sessionId: string): Promise<{ status: string }> {
   return apiJson(`/api/v1/chat/sessions/${sessionId}/cancel/`, {
     method: "POST",
@@ -103,7 +127,14 @@ export async function sendChatMessage(
 ): Promise<{ task_id: string; message_id: string }> {
   const payload =
     Array.isArray(rag)
-      ? { rag_collections: rag, rag_document_titles: [], custom_rag_context: "", custom_documents: [], user_role: "" }
+      ? {
+          rag_collections: rag,
+          rag_document_titles: [],
+          rag_document_ids: [],
+          custom_rag_context: "",
+          custom_documents: [],
+          user_role: "",
+        }
       : rag;
 
   return apiJson(`/api/v1/chat/sessions/${sessionId}/message/`, {
@@ -112,6 +143,7 @@ export async function sendChatMessage(
       content,
       rag_collections: payload.rag_collections,
       rag_document_titles: payload.rag_document_titles,
+      rag_document_ids: payload.rag_document_ids ?? [],
       custom_rag_context: payload.custom_rag_context,
       custom_documents: payload.custom_documents,
       user_role: payload.user_role ?? "",

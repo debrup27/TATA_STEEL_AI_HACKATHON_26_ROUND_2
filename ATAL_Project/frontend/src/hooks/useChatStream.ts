@@ -4,7 +4,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { connectWebSocket } from "@/lib/ws";
 import type { Citation } from "@/services/types";
 
-export type StreamPhase = "idle" | "waiting" | "rag" | "role" | "post_rag" | "thinking" | "answering";
+export type StreamPhase =
+  | "idle"
+  | "waiting"
+  | "guard"
+  | "guard_blocked"
+  | "rag"
+  | "role"
+  | "post_rag"
+  | "thinking"
+  | "answering";
 
 export interface UseChatStreamOptions {
   sessionId: string | null;
@@ -15,6 +24,9 @@ export interface UseChatStreamOptions {
   onError?: () => void;
   onCompacting?: () => void;
   onCompacted?: (payload?: { compacted_count: number; skipped?: boolean }) => void;
+  onSansadSyncing?: (payload?: { refresh?: boolean; replace?: boolean }) => void;
+  onSansadSynced?: (payload?: { updated_at?: string; preview?: string; refresh?: boolean; replace?: boolean; error?: string }) => void;
+  onSansadDeactivated?: () => void;
   timeoutMs?: number;
 }
 
@@ -27,6 +39,9 @@ export function useChatStream({
   onError,
   onCompacting,
   onCompacted,
+  onSansadSyncing,
+  onSansadSynced,
+  onSansadDeactivated,
   timeoutMs = 240_000,
 }: UseChatStreamOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
@@ -44,6 +59,9 @@ export function useChatStream({
   const onErrorRef = useRef(onError);
   const onCompactingRef = useRef(onCompacting);
   const onCompactedRef = useRef(onCompacted);
+  const onSansadSyncingRef = useRef(onSansadSyncing);
+  const onSansadSyncedRef = useRef(onSansadSynced);
+  const onSansadDeactivatedRef = useRef(onSansadDeactivated);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -54,7 +72,10 @@ export function useChatStream({
     onErrorRef.current = onError;
     onCompactingRef.current = onCompacting;
     onCompactedRef.current = onCompacted;
-  }, [onToken, onThinkToken, onDone, onCitations, onError, onCompacting, onCompacted]);
+    onSansadSyncingRef.current = onSansadSyncing;
+    onSansadSyncedRef.current = onSansadSynced;
+    onSansadDeactivatedRef.current = onSansadDeactivated;
+  }, [onToken, onThinkToken, onDone, onCitations, onError, onCompacting, onCompacted, onSansadSyncing, onSansadSynced, onSansadDeactivated]);
 
   const clearStreamTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -74,6 +95,14 @@ export function useChatStream({
     const ws = connectWebSocket(
       `/ws/chat/${sessionId}/`,
       (data) => {
+        if (data.type === "blocked" && typeof data.message === "string") {
+          clearStreamTimeout();
+          setAwaitingFirstToken(false);
+          setIsThinking(false);
+          setIsStreaming(false);
+          setStreamPhase("guard_blocked");
+          onTokenRef.current?.(data.message);
+        }
         if (data.type === "started") {
           clearStreamTimeout();
           setStreamPhase("waiting");
@@ -86,7 +115,9 @@ export function useChatStream({
         }
         if (data.type === "phase" && typeof data.phase === "string") {
           const phase = data.phase as string;
-          if (phase === "rag") setStreamPhase("rag");
+          if (phase === "guard") setStreamPhase("guard");
+          else if (phase === "guard_done") setStreamPhase("waiting");
+          else if (phase === "rag") setStreamPhase("rag");
           else if (phase === "role") setStreamPhase("role");
           else if (phase === "rag_done") setStreamPhase("post_rag");
           else if (phase === "thinking") {
@@ -118,16 +149,37 @@ export function useChatStream({
             skipped: Boolean(data.skipped),
           });
         }
+        if (data.type === "sansad_syncing") {
+          onSansadSyncingRef.current?.({
+            refresh: Boolean(data.refresh),
+            replace: Boolean(data.replace),
+          });
+        }
+        if (data.type === "sansad_synced") {
+          onSansadSyncedRef.current?.({
+            updated_at: data.updated_at as string | undefined,
+            preview: data.preview as string | undefined,
+            refresh: Boolean(data.refresh),
+            replace: Boolean(data.replace),
+            error: data.error as string | undefined,
+          });
+        }
+        if (data.type === "sansad_deactivated") {
+          onSansadDeactivatedRef.current?.();
+        }
         if (data.type === "citations" && Array.isArray(data.citations)) {
           onCitationsRef.current?.(data.citations as Citation[]);
         }
         if (data.type === "done") {
           clearStreamTimeout();
+          if (data.blocked) {
+            setStreamPhase("guard_blocked");
+          }
           setIsStreaming(false);
           setAwaitingFirstToken(false);
           setIsThinking(false);
-          setStreamPhase("idle");
           onDoneRef.current?.(data as Record<string, unknown>);
+          setStreamPhase("idle");
         }
       },
       () => {

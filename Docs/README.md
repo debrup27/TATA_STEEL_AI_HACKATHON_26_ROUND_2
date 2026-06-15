@@ -12,6 +12,8 @@ ATAL is an intelligent **Maintenance Wizard** for steel plant equipment. It unif
 
 | Document | Audience | Contents |
 |----------|----------|----------|
+| **[SANSAD_MANAS_SUITE_GUIDE.md](./SANSAD_MANAS_SUITE_GUIDE.md)** | Demo reviewers, judges | **In-depth** SANSAD + MANAS page/button reference |
+| **[../SYSTEM_ARCHITECTURE.md](../SYSTEM_ARCHITECTURE.md)** | Hackathon judges, architects | **Detailed** architecture with Mermaid diagrams (submission doc) |
 | **[USER_GUIDE.md](./USER_GUIDE.md)** | Plant engineers, supervisors, demo reviewers | Login, SANSAD hub, MANAS chat, workflows, roles |
 | **[API_DOCS.md](./API_DOCS.md)** | Integrators, backend developers | REST + WebSocket API reference |
 | **[Custom_docs.md](./Custom_docs.md)** | Hackathon judges, architects | Architecture, data flows, ML/RAG pipeline, assumptions *(required deliverable)* |
@@ -92,13 +94,9 @@ bash ATAL_Project/backend/scripts/download_models.sh    # ~6.5 GB BGE weights
 bash ATAL_Project/backend/scripts/download_corpus.sh    # OEM manuals, SOPs, ISO
 ```
 
-### 3. Pull Ollama models (first time)
+### 3. Start the stack (Ollama models pull automatically)
 
-```bash
-python ATAL_Project/backend/ollama_qwen.py serve --wait
-```
-
-### 4. Start the stack
+The `ollama-warmup` init container pulls `qwen3.5:9b` and `qwen3.5:0.8b` into volume `atal_ollama_data` on first boot (Compose creates the volume). Optional pre-pull: `bash ATAL_Project/backend/scripts/pull_ollama_models.sh`
 
 ```bash
 fish -c "docker compose up atal -d --build"
@@ -110,7 +108,7 @@ With GPU profile:
 fish -c "docker compose --profile gpu up atal -d --build"
 ```
 
-### 5. Verify deployment
+### 4. Verify deployment
 
 ```bash
 bash ATAL_Project/backend/scripts/verify-deploy.sh
@@ -118,7 +116,7 @@ bash ATAL_Project/backend/scripts/verify-deploy.sh
 
 Expected checks: Django `/health/`, Redis, Postgres, Celery, Ollama, Chroma collections.
 
-### 6. Open the application
+### 5. Open the application
 
 | URL | Purpose |
 |-----|---------|
@@ -127,7 +125,7 @@ Expected checks: Django `/health/`, Redis, Postgres, Celery, Ollama, Chroma coll
 | http://localhost:8000/health/ | Backend liveness |
 | http://localhost:8000/admin/ | Django admin (if enabled) |
 
-### 7. Log in
+### 6. Log in
 
 Demo accounts (created by backend entrypoint `create_demo_users`):
 

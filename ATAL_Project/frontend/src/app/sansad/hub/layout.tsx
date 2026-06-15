@@ -1,7 +1,12 @@
 "use client";
 
+import AuthGate from "@/components/AuthGate";
 import { HubManasNotifyProvider } from "./components/HubManasNotify";
 
 export default function SansadHubLayout({ children }: { children: React.ReactNode }) {
-  return <HubManasNotifyProvider>{children}</HubManasNotifyProvider>;
+  return (
+    <AuthGate>
+      <HubManasNotifyProvider>{children}</HubManasNotifyProvider>
+    </AuthGate>
+  );
 }

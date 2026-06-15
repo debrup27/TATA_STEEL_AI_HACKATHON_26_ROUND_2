@@ -183,6 +183,96 @@ class ChatCompactView(APIView):
         return Response({"status": "compacting"}, status=status.HTTP_202_ACCEPTED)
 
 
+class ChatSansadModeActivateView(APIView):
+    """
+    POST /api/v1/chat/sessions/<session_id>/sansad-mode/activate/
+    Harvest plant-wide SANSAD context via 0.8b and persist briefing on the session.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        import threading
+
+        from apps.agents.sansad_context_mode import activate_sansad_mode
+
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        sid = str(session.id)
+
+        def _run():
+            activate_sansad_mode(sid)
+
+        threading.Thread(target=_run, daemon=True, name=f"sansad-activate-{sid[:8]}").start()
+        return Response({"status": "syncing"}, status=status.HTTP_202_ACCEPTED)
+
+
+class ChatSansadModeDeactivateView(APIView):
+    """
+    POST /api/v1/chat/sessions/<session_id>/sansad-mode/deactivate/
+    Clear persistent SANSAD context mode for this chat session.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        from apps.agents.sansad_context_mode import deactivate_sansad_mode
+
+        try:
+            ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        deactivate_sansad_mode(str(session_id))
+        return Response({"status": "deactivated"})
+
+
+class ChatSansadModeUpdateView(APIView):
+    """
+    POST /api/v1/chat/sessions/<session_id>/sansad-mode/update/
+    Re-harvest plant context via 0.8b and replace the existing briefing.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        import threading
+
+        from apps.agents.sansad_context_mode import update_sansad_context
+
+        try:
+            session = ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        meta = session.session_metadata or {}
+        if not meta.get("sansad_mode"):
+            return Response(
+                {"error": "SANSAD mode is not active — use /sansad first"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sid = str(session.id)
+
+        def _run():
+            try:
+                update_sansad_context(sid)
+            except Exception as exc:
+                logger.exception("sansad update failed session=%s", sid)
+                from apps.agents.stream_registry import send_to_stream
+
+                send_to_stream(sid, {
+                    "type": "sansad_synced",
+                    "error": str(exc),
+                    "preview": "",
+                    "refresh": True,
+                    "replace": True,
+                })
+
+        threading.Thread(target=_run, daemon=True, name=f"sansad-update-{sid[:8]}").start()
+        return Response({"status": "syncing"}, status=status.HTTP_202_ACCEPTED)
+
+
 class ChatOptimizePromptView(APIView):
     """
     POST /api/v1/chat/optimize-prompt/
@@ -201,7 +291,7 @@ class ChatOptimizePromptView(APIView):
         user_role = (request.data.get("user_role") or "").strip()
 
         try:
-            optimized = optimize_maintenance_prompt(
+            result = optimize_maintenance_prompt(
                 draft,
                 has_rag_context=has_rag,
                 user_role=user_role,
@@ -212,7 +302,10 @@ class ChatOptimizePromptView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        return Response({"optimized": optimized, "draft": draft})
+        if result.get("action") == "block":
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result)
 
 
 class ChatMessageFeedbackView(APIView):
@@ -283,6 +376,7 @@ class ChatMessageView(APIView):
 
         rag_collections = request.data.get("rag_collections", [])
         rag_document_titles = request.data.get("rag_document_titles", [])
+        rag_document_ids = request.data.get("rag_document_ids", [])
         custom_rag_context = request.data.get("custom_rag_context", "")
         custom_documents = request.data.get("custom_documents", [])
         user_role = request.data.get("user_role", "")
@@ -293,6 +387,7 @@ class ChatMessageView(APIView):
             str(msg.id),
             rag_collections,
             rag_document_titles=rag_document_titles,
+            rag_document_ids=rag_document_ids,
             custom_rag_context=custom_rag_context,
             custom_documents=custom_documents,
             user_role=user_role,

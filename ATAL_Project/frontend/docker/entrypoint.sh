@@ -15,9 +15,14 @@ wait_backend_ready() {
   node /app/docker/check-backend-ready.mjs "$1"
 }
 
-if [ ! -x node_modules/.bin/jest ]; then
+# Host bind-mount hides image node_modules; anonymous volume may be empty on first run.
+if [ ! -x node_modules/.bin/next ] || [ ! -x node_modules/.bin/jest ]; then
   banner "ATAL Frontend — installing dependencies"
-  npm ci
+  if [ -f package-lock.json ]; then
+    npm ci || npm install
+  else
+    npm install
+  fi
 fi
 
 BACKEND_URL="${BACKEND_INTERNAL_URL:-http://django-backend:8000}"

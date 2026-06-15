@@ -32,11 +32,19 @@ export async function warmChatStack(): Promise<void> {
   }
 }
 
+export type OptimizePromptResult = {
+  action: "allow" | "block" | "steer";
+  optimized: string;
+  draft: string;
+  message?: string;
+  category?: string;
+};
+
 export async function optimizeMaintenancePrompt(
   draft: string,
   options?: { hasRagContext?: boolean; userRole?: string },
-): Promise<string> {
-  const res = await apiJson<{ optimized: string }>("/api/v1/chat/optimize-prompt/", {
+): Promise<OptimizePromptResult> {
+  const res = await apiJson<OptimizePromptResult>("/api/v1/chat/optimize-prompt/", {
     method: "POST",
     body: JSON.stringify({
       draft,
@@ -44,7 +52,13 @@ export async function optimizeMaintenancePrompt(
       user_role: options?.userRole ?? "",
     }),
   });
-  return (res.optimized || draft).trim();
+  return {
+    action: res.action ?? "allow",
+    optimized: (res.optimized || draft).trim(),
+    draft: res.draft ?? draft,
+    message: res.message,
+    category: res.category,
+  };
 }
 
 export async function submitChatMessageFeedback(
@@ -81,6 +95,7 @@ export const getPreloadedDocs = getLibraryDocuments;
 export interface RagMessagePayload {
   rag_collections: string[];
   rag_document_titles: string[];
+  rag_document_ids: string[];
   custom_rag_context: string;
   custom_documents: { name: string; text: string }[];
   /** Selected MANAS persona — tailors backend system prompt. */
@@ -131,6 +146,7 @@ export async function fetchLibraryDocumentFileUrl(documentId: string): Promise<s
 export function ragPayloadFromDocs(docs: RagDoc[]): RagMessagePayload {
   const collections: string[] = [];
   const documentTitles: string[] = [];
+  const documentIds: string[] = [];
   const customParts: string[] = [];
   const customDocuments: { name: string; text: string }[] = [];
 
@@ -144,6 +160,9 @@ export function ragPayloadFromDocs(docs: RagDoc[]): RagMessagePayload {
       continue;
     }
     documentTitles.push(doc.name);
+    if (doc.id) {
+      documentIds.push(doc.id);
+    }
     const dt = (doc.docType || doc.type || inferDocTypeFromName(doc.name)).toLowerCase();
     const coll = DOC_TYPE_TO_COLLECTION[dt] ?? "manual";
     collections.push(coll);
@@ -152,6 +171,7 @@ export function ragPayloadFromDocs(docs: RagDoc[]): RagMessagePayload {
   return {
     rag_collections: [...new Set(collections)],
     rag_document_titles: documentTitles,
+    rag_document_ids: documentIds,
     custom_rag_context: customParts.join("\n\n").slice(0, 12000),
     custom_documents: customDocuments,
     user_role: undefined,

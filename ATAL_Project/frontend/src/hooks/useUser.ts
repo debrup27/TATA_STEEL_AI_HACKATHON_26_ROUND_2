@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
-import { triggerPageTransition } from "../animations/PageTransition";
+import { useCallback, useSyncExternalStore } from "react";
+import { clearTokens } from "@/lib/api";
+import { triggerPageTransition } from "@/animations/PageTransition";
 
 export interface UserInfo {
   username: string;
@@ -28,9 +28,7 @@ function roleLabel(role: string): string {
   return map[role?.toLowerCase()] ?? role ?? "User";
 }
 
-export function readUserFromToken(): UserInfo | null {
-  if (typeof window === "undefined") return null;
-  const token = localStorage.getItem("atal_access");
+function parseUserFromToken(token: string | null): UserInfo | null {
   if (!token) return null;
   const payload = decodeJwtPayload(token);
   if (!payload) return null;
@@ -41,46 +39,57 @@ export function readUserFromToken(): UserInfo | null {
   return { username: rawUsername, role: roleLabel((payload.role as string) ?? "") };
 }
 
+// useSyncExternalStore requires a stable snapshot reference between reads.
+let cachedTokenKey: string | null | undefined;
+let cachedUserSnapshot: UserInfo | null = null;
+
+function getAuthSnapshot(): UserInfo | null {
+  if (typeof window === "undefined") return null;
+
+  const token = localStorage.getItem("atal_access");
+  if (token === cachedTokenKey) {
+    return cachedUserSnapshot;
+  }
+
+  cachedTokenKey = token;
+  cachedUserSnapshot = parseUserFromToken(token);
+  return cachedUserSnapshot;
+}
+
+export function readUserFromToken(): UserInfo | null {
+  return getAuthSnapshot();
+}
+
+function subscribeToAuthStore(onStoreChange: () => void): () => void {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener("user-state-change", onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener("user-state-change", onStoreChange);
+  };
+}
+
+const SERVER_AUTH_SNAPSHOT: UserInfo | null = null;
+
+function getAuthServerSnapshot(): UserInfo | null {
+  return SERVER_AUTH_SNAPSHOT;
+}
+
 export function useUser() {
-  const pathname = usePathname();
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const user = useSyncExternalStore(
+    subscribeToAuthStore,
+    getAuthSnapshot,
+    getAuthServerSnapshot,
+  );
 
-  const refreshUser = () => {
-    setUser(readUserFromToken());
-  };
+  const refreshUser = useCallback(() => {
+    window.dispatchEvent(new Event("user-state-change"));
+  }, []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      refreshUser();
-    }, 0);
-
-    // Listen to storage changes in other tabs
-    window.addEventListener("storage", refreshUser);
-    
-    // Listen to custom login/logout events in the same tab
-    window.addEventListener("user-state-change", refreshUser);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("storage", refreshUser);
-      window.removeEventListener("user-state-change", refreshUser);
-    };
-  }, [pathname]);
-
-  const logout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("atal_access");
-      localStorage.removeItem("atal_refresh");
-      setUser(null);
-      // Dispatch event to sync other mounted components instantly
-      window.dispatchEvent(new Event("user-state-change"));
-      // Defer the transition trigger to allow React state updates to settle
-      // and avoid race conditions that could leave the loading overlay stuck.
-      setTimeout(() => {
-        triggerPageTransition("/");
-      }, 0);
-    }
-  };
+  const logout = useCallback(() => {
+    clearTokens();
+    triggerPageTransition("/login");
+  }, []);
 
   return { user, refreshUser, logout };
 }

@@ -58,6 +58,7 @@ function PromptInputWithActions({
   triggerToast,
   injectPrompt,
   onInjectPromptConsumed,
+  sansadModeActive = false,
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
@@ -86,6 +87,8 @@ function PromptInputWithActions({
   /** When set, replaces the textarea value (e.g. after /prompt-optimizer). */
   injectPrompt?: string | null
   onInjectPromptConsumed?: () => void
+  /** True when /sansad mode is active on this session. */
+  sansadModeActive?: boolean
 }) {
   const [prompt, setPrompt] = useState("")
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -111,8 +114,8 @@ function PromptInputWithActions({
 
   const slashFilter = useMemo(() => getSlashFilter(prompt), [prompt])
   const slashSuggestions = useMemo(
-    () => (slashFilter !== null ? filterSlashCommands(slashFilter) : []),
-    [slashFilter],
+    () => (slashFilter !== null ? filterSlashCommands(slashFilter, sansadModeActive) : []),
+    [slashFilter, sansadModeActive],
   );
   const typedSlashCommand = useMemo(() => resolveSlashCommand(prompt), [prompt]);
   const activeSlashCommand = pendingCommand ?? typedSlashCommand;
@@ -124,22 +127,25 @@ function PromptInputWithActions({
     !slashMenuDismissed &&
     !typedSlashCommand;
 
+  const applySlashCommand = useCallback((cmd: ManasSlashCommand) => {
+    setPendingCommand(cmd);
+    setPrompt("");
+    setSlashMenuDismissed(true);
+  }, []);
+
   const handlePromptChange = useCallback((value: string) => {
+    const cmd = resolveSlashCommand(value);
+    if (cmd && value.trim().toLowerCase() === cmd.label) {
+      applySlashCommand(cmd);
+      return;
+    }
     setPrompt(value);
     const filter = getSlashFilter(value);
     if (filter !== null) {
       setSlashHighlight(0);
       setSlashMenuDismissed(false);
     }
-  }, []);
-
-  const applySlashCommand = useCallback((cmd: ManasSlashCommand) => {
-    setPendingCommand(cmd);
-    if (!cmd.requiresInput) {
-      setPrompt("");
-    }
-    setSlashMenuDismissed(true);
-  }, []);
+  }, [applySlashCommand]);
 
   const clearSlashCommand = useCallback(() => {
     setPendingCommand(null);
@@ -291,6 +297,17 @@ function PromptInputWithActions({
         }`}
       >
         <div className="flex flex-col">
+          {sansadModeActive && (
+            <div className="mx-3 mt-2 mb-0 flex items-center gap-2 rounded-xl border border-orange-200/80 bg-orange-50/90 px-3 py-1.5">
+              <Terminal size={14} className="text-orange-600 shrink-0" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-orange-800">
+                SANSAD linked
+              </span>
+              <span className="text-[10px] text-orange-700/70 font-mono">
+                plant briefing active · /update to refetch · refreshes every 5 messages
+              </span>
+            </div>
+          )}
           <div className="relative px-3 pt-2">
             <AnimatePresence>
               {showSlashMenu && (
@@ -305,7 +322,7 @@ function PromptInputWithActions({
                     <Slash size={12} className="text-orange-500 shrink-0" />
                     <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Commands</span>
                   </div>
-                  <ul className="p-1.5 flex flex-col gap-0.5 max-h-[200px] overflow-y-auto">
+                  <ul className="p-2 flex flex-col gap-1 max-h-[min(320px,42vh)] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-zinc-300/70 [&::-webkit-scrollbar-thumb]:rounded-full">
                     {slashSuggestions.map((cmd, idx) => (
                       <li key={cmd.name}>
                         <button
@@ -334,26 +351,28 @@ function PromptInputWithActions({
             <div
               className={`rounded-2xl transition-all duration-200 ${
                 activeSlashCommand
-                  ? "border border-orange-200/90 bg-gradient-to-br from-orange-50/90 to-amber-50/50 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+                  ? "border border-orange-200/90 bg-gradient-to-br from-orange-50/90 to-amber-50/50 px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] min-h-[132px]"
                   : isSlashMode
                     ? "border border-dashed border-orange-200/70 bg-orange-50/25 px-3 py-2"
                     : "border border-transparent"
               }`}
             >
               {activeSlashCommand && (
-                <div className="flex items-start gap-2.5 mb-2 pb-2 border-b border-orange-200/50">
-                  <div className="size-8 rounded-xl bg-orange-500/10 border border-orange-200/60 flex items-center justify-center shrink-0">
-                    <Terminal size={16} className="text-orange-600" />
+                <div className="flex items-start gap-3 mb-3 pb-3 border-b border-orange-200/50">
+                  <div className="size-10 rounded-xl bg-orange-500/10 border border-orange-200/60 flex items-center justify-center shrink-0">
+                    <Terminal size={18} className="text-orange-600" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-sm font-black text-orange-800">{activeSlashCommand.label}</span>
+                      <span className="font-mono text-base font-black text-orange-800">{activeSlashCommand.label}</span>
                       <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-orange-500/15 text-orange-700">
                         Command
                       </span>
                     </div>
-                    <p className="text-xs text-orange-900/70 mt-0.5 leading-snug">{activeSlashCommand.description}</p>
-                    <p className="text-[10px] text-orange-700/55 mt-1 font-mono">{activeSlashCommand.hint}</p>
+                    <p className="text-sm text-orange-900/75 mt-1 leading-snug">{activeSlashCommand.description}</p>
+                    <p className="text-[11px] text-orange-700/60 mt-1.5 font-mono leading-relaxed max-h-20 overflow-y-auto pr-1">
+                      {activeSlashCommand.hint}
+                    </p>
                   </div>
                   <button
                     type="button"

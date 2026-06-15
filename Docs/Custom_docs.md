@@ -4,6 +4,8 @@
 
 This document satisfies the problem statement **§9 Deliverables**: system architecture, technology stack, data and system flows, model design and reasoning pipeline, alerting and prediction logic, plus assumptions and limitations.
 
+> **Expanded reference:** [SYSTEM_ARCHITECTURE.md](../SYSTEM_ARCHITECTURE.md) in the repository root contains additional Mermaid diagrams and component-level detail.
+
 ---
 
 ## Document Control

@@ -2,6 +2,8 @@
 
 import React from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useUser } from "@/hooks";
 
 // Custom Flower SVG Component with configured coordinate paths
 const FlowerSVG: React.FC<{ color: "pink" | "red" | "yellow"; className?: string }> = ({ color, className }) => {
@@ -261,6 +263,7 @@ const AnimatedStars: React.FC<{ isNight: boolean }> = ({ isNight }) => {
 };
 
 export default function AtalFooter() {
+  const { user } = useUser();
   const [isNight, setIsNight] = React.useState(false);
   const [showDiscordModal, setShowDiscordModal] = React.useState(false);
 
@@ -336,6 +339,9 @@ export default function AtalFooter() {
             <h4 style={{ fontFamily: "var(--font-questrial), monospace" }} className={`font-mono text-xs uppercase tracking-widest font-semibold transition-colors duration-500 ${isNight ? "text-zinc-400" : "text-zinc-500"}`}>
               Others
             </h4>
+            <Link href={user ? "/sansad/hub" : "/login"} className={`text-sm hover:underline transition-all duration-300 ${isNight ? "text-zinc-300 hover:text-white" : "text-zinc-700 hover:text-zinc-900"}`}>
+              {user ? "Open Hub" : "Sign In"}
+            </Link>
             <a href="mailto:debrupsengupta289@gmail.com" className={`text-sm hover:underline transition-all duration-300 ${isNight ? "text-zinc-300 hover:text-white" : "text-zinc-700 hover:text-zinc-900"}`}>Contact Us</a>
             <a href="https://docs.google.com/forms/d/e/1FAIpQLSdpCbbXMgn0AwNZxZ76nidZGWMJfemvEQD1EBgS518Ewefz9A/viewform?usp=header" target="_blank" rel="noopener noreferrer" className={`text-sm hover:underline transition-all duration-300 ${isNight ? "text-zinc-300 hover:text-white" : "text-zinc-700 hover:text-zinc-900"}`}>Feedback</a>
             <button 

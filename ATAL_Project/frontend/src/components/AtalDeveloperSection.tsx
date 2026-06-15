@@ -6,6 +6,7 @@ import { RefreshCw, Send, ShieldAlert, AlertTriangle, CheckCircle } from "lucide
 import { triggerPageTransition } from "../animations/PageTransition";
 import { useMockChatSimulation, useMockTelemetryLogs } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
+import { getDemoManasPredictions } from "@/lib/landing-demo";
 import { fetchManasPredictions, type RulPredictionData } from "@/services/prediction";
 import {
   Steps,
@@ -283,7 +284,9 @@ function RulPanelPreview() {
   const [predictions, setPredictions] = useState<RulPredictionData[]>([]);
 
   useEffect(() => {
-    fetchManasPredictions().then(setPredictions).catch(() => setPredictions([]));
+    fetchManasPredictions()
+      .then(setPredictions)
+      .catch(() => setPredictions(getDemoManasPredictions()));
   }, []);
 
   const predIcons: React.ReactNode[] = [

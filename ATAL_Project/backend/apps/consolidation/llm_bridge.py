@@ -4,12 +4,9 @@ and receives a structured DecisionOutput.
 
 REQ-FUNCTIONAL-040/041, REQ-LLM-006. All inference is self-hosted via Ollama.
 No external API calls permitted (REQ-SECURITY-005).
-
-Ollama exposes an OpenAI-compatible /v1/chat/completions endpoint.
 """
 import json
 import logging
-import httpx
 from typing import Optional
 from django.conf import settings
 
@@ -52,30 +49,22 @@ def run_consolidation_llm(payload: dict) -> Optional[dict]:
 
 
 def _call_ollama(payload: dict) -> Optional[dict]:
+    from apps.agents.llm.client import invoke_raw
+
     user_content = (
         f"Analyze the following consolidated asset condition report and return "
         f"a DecisionOutput JSON:\n\n{json.dumps(payload, indent=2, default=str)}"
     )
 
-    with httpx.Client(timeout=300) as client:
-        resp = client.post(
-            f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
-            json={
-                "model": settings.OLLAMA_MODEL,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_content},
-                ],
-                "max_tokens": 4096,
-                "temperature": 0.1,
-                "stream": False,
-                "think": False,
-            },
-            headers={"Content-Type": "application/json"},
-        )
-        resp.raise_for_status()
-
-    text = resp.json()["choices"][0]["message"]["content"]
+    text = invoke_raw(
+        model_size="large",
+        system=SYSTEM_PROMPT,
+        user=user_content,
+        max_tokens=4096,
+        temperature=0.1,
+        skip_input_guard=True,
+        source="system",
+    )
     start = text.find("{")
     end = text.rfind("}") + 1
     if start >= 0 and end > start:

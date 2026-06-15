@@ -2,8 +2,16 @@
 
 import React from "react";
 import Grainient from "@/animations/Grainient";
+import { triggerPageTransition } from "@/animations/PageTransition";
+import { useUser } from "@/hooks";
 
 export default function AtalBottomBanner() {
+  const { user } = useUser();
+
+  const handleAuthCta = () => {
+    triggerPageTransition(user ? "/sansad/hub" : "/login");
+  };
+
   return (
     <div className="w-full flex flex-col items-center justify-center p-4 mt-8 mb-20 select-none">
       {/* Outer nested border wrapper with premium glassy styling */}
@@ -48,8 +56,12 @@ export default function AtalBottomBanner() {
             </h2>
 
             {/* Glassy, frosted sign up button */}
-            <button className="bg-white/20 hover:bg-white/35 text-slate-900 border border-white/50 backdrop-blur-md font-bold text-xs md:text-sm px-8 py-3.5 rounded-full shadow-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer">
-              Sign Up
+            <button
+              type="button"
+              onClick={handleAuthCta}
+              className="bg-white/20 hover:bg-white/35 text-slate-900 border border-white/50 backdrop-blur-md font-bold text-xs md:text-sm px-8 py-3.5 rounded-full shadow-md transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer"
+            >
+              {user ? "Open SANSAD Hub" : "Sign In"}
             </button>
           </div>
 

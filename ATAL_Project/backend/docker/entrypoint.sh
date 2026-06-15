@@ -18,18 +18,26 @@ chown -R appuser:appuser /model-artifacts /app/staticfiles /chroma_data 2>/dev/n
 # ── All subsequent steps run as appuser ───────────────────────────────────────
 RUN_AS="gosu appuser"
 
-# ── Test / one-off containers: migrate only, skip seeds & ML training ─────────
-if [ "${ATAL_ENTRYPOINT_LITE:-0}" = "1" ]; then
-    echo "[entrypoint] Lite mode — migrate only, then exec command."
+wait_for_postgres() {
+    echo "[entrypoint] Waiting for PostgreSQL (${POSTGRES_HOST:-postgres-db})..."
     until $RUN_AS python -c "
-import psycopg, os, sys
+import os, socket, sys
+import psycopg
+
+host = os.environ.get('POSTGRES_HOST', 'postgres-db')
+port = int(os.environ.get('POSTGRES_PORT', '5432'))
+dbname = os.environ.get('POSTGRES_DB', 'atal_db')
+user = os.environ.get('POSTGRES_USER', 'atal_user')
+password = os.environ.get('POSTGRES_PASSWORD', '')
 try:
+    socket.getaddrinfo(host, port)
     psycopg.connect(
-        host=os.environ.get('POSTGRES_HOST','postgres-db'),
-        port=os.environ.get('POSTGRES_PORT','5432'),
-        dbname=os.environ.get('POSTGRES_DB','atal_db'),
-        user=os.environ.get('POSTGRES_USER','atal_user'),
-        password=os.environ.get('POSTGRES_PASSWORD',''),
+        host=host,
+        port=port,
+        dbname=dbname,
+        user=user,
+        password=password,
+        connect_timeout=5,
     ).close()
     sys.exit(0)
 except Exception:
@@ -37,6 +45,39 @@ except Exception:
 "; do
         sleep 2
     done
+    echo "[entrypoint] PostgreSQL ready."
+}
+
+wait_for_redis() {
+    echo "[entrypoint] Waiting for Redis..."
+    until $RUN_AS python -c "
+import os, sys
+from urllib.parse import urlparse
+import redis
+
+url = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+parsed = urlparse(url)
+try:
+    client = redis.Redis(
+        host=parsed.hostname or 'redis',
+        port=parsed.port or 6379,
+        db=int((parsed.path or '/0').lstrip('/') or 0),
+        socket_connect_timeout=3,
+    )
+    client.ping()
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+"; do
+        sleep 2
+    done
+    echo "[entrypoint] Redis ready."
+}
+
+# ── Test / one-off containers: migrate only, skip seeds & ML training ─────────
+if [ "${ATAL_ENTRYPOINT_LITE:-0}" = "1" ]; then
+    echo "[entrypoint] Lite mode — migrate only, then exec command."
+    wait_for_postgres
     $RUN_AS python manage.py ensure_migrations
     echo "[entrypoint] Lite boot complete."
     exec "$@"
@@ -45,47 +86,15 @@ fi
 # ── Celery worker/beat: lightweight boot (django-backend runs full seed pipeline) ─
 if [ "${CELERY_LIGHT_ENTRYPOINT:-0}" = "1" ]; then
     echo "[entrypoint] Celery light mode — migrate only, then start worker/beat."
-    until $RUN_AS python -c "
-import psycopg, os, sys
-try:
-    psycopg.connect(
-        host=os.environ.get('POSTGRES_HOST','postgres-db'),
-        port=os.environ.get('POSTGRES_PORT','5432'),
-        dbname=os.environ.get('POSTGRES_DB','atal_db'),
-        user=os.environ.get('POSTGRES_USER','atal_user'),
-        password=os.environ.get('POSTGRES_PASSWORD',''),
-    ).close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-"; do
-        sleep 2
-    done
+    wait_for_postgres
+    wait_for_redis
     $RUN_AS python manage.py ensure_migrations
     echo "[entrypoint] Starting Celery process..."
-    touch "${READY_MARKER}"
     exec "$@"
 fi
 
 # ── Wait for PostgreSQL ────────────────────────────────────────────────────────
-echo "[entrypoint] Waiting for postgres..."
-until $RUN_AS python -c "
-import psycopg, os, sys
-try:
-    psycopg.connect(
-        host=os.environ.get('POSTGRES_HOST','postgres-db'),
-        port=os.environ.get('POSTGRES_PORT','5432'),
-        dbname=os.environ.get('POSTGRES_DB','atal_db'),
-        user=os.environ.get('POSTGRES_USER','atal_user'),
-        password=os.environ.get('POSTGRES_PASSWORD',''),
-    ).close()
-    sys.exit(0)
-except Exception:
-    sys.exit(1)
-"; do
-    sleep 2
-done
-echo "[entrypoint] PostgreSQL ready."
+wait_for_postgres
 
 # ── Wait for Ollama + verify models (pull only if missing) ───────────────────
 ollama_model_present() {
@@ -203,7 +212,7 @@ $RUN_AS python manage.py calibrate_sensors \
 # ── Optional RAG corpus ingest (off by default — user picks library docs in MANAS) ─
 if [ "${INGEST_CORPUS_ON_START:-0}" = "1" ]; then
     echo "[entrypoint] Ingesting RAG corpus (INGEST_CORPUS_ON_START=1)..."
-    $RUN_AS python manage.py ingest_corpus --sync --force \
+    $RUN_AS python manage.py ingest_corpus --sync \
         || echo "[entrypoint] WARNING: corpus ingestion failed — check logs."
     echo "[entrypoint] Seeding maintenance logs for RAG..."
     $RUN_AS python manage.py seed_maintenance_logs --sync \
@@ -285,6 +294,8 @@ if echo "$*" | grep -q "uvicorn\|gunicorn\|asgi"; then
     banner "ATAL Backend — smoke test suite"
     gosu appuser python manage.py run_smoke_tests \
         --skip-celery \
+        --skip-rag \
+        --skip-chat \
         $([ "${SKIP_OLLAMA_WAIT:-0}" = "1" ] && echo "--skip-ollama") \
         || echo "[entrypoint] WARNING: Some smoke tests failed — check logs."
     banner "ATAL Backend — smoke tests complete"

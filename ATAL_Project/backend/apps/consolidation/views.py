@@ -184,6 +184,7 @@ class BottleneckInsightView(APIView):
                 impact=impact,
                 recommendation=recommendation,
                 probable_fault=diag.get("probableFault", ""),
+                asset_type=asset.asset_type,
             )
         except Exception as exc:
             return Response({"error": f"insight unavailable: {exc}"}, status=503)

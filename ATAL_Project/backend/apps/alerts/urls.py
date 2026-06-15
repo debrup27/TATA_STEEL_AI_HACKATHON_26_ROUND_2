@@ -1,8 +1,9 @@
 from django.urls import path
-from apps.alerts.views import AlarmEventView, AlarmAcknowledgeView, ExternalAlertIngestView
+from apps.alerts.views import AlarmEventView, AlarmAcknowledgeView, ExternalAlertIngestView, LogInsightView
 
 urlpatterns = [
     path("", AlarmEventView.as_view()),
+    path("log-insight/", LogInsightView.as_view()),
     path("<uuid:pk>/acknowledge/", AlarmAcknowledgeView.as_view()),
     path("external/", ExternalAlertIngestView.as_view()),
 ]

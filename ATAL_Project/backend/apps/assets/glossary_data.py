@@ -8,7 +8,7 @@ GLOSSARY_ENTRIES = [
   {"term": "Slab Reheating Furnace", "shortForm": "SRF", "category": "Asset", "definition": "Thermal input stage reheating steel slabs before rolling.", "relatedAssets": ["SRF"]},
   {"term": "High-Pressure Descaler", "shortForm": "HHPD", "category": "Asset", "definition": "Removes mill scale from slab surface using high-pressure water jets.", "relatedAssets": ["HHPD"]},
   {"term": "Finishing Stands", "shortForm": "FS", "category": "Asset", "definition": "Rolling mill stands reducing thickness with high force and precision.", "relatedAssets": ["FS"]},
-  {"term": "Hydraulic Automatic Gauge Control", "shortForm": "HAGCC", "category": "Asset", "definition": "Hydraulic cylinders controlling strip thickness during rolling.", "relatedAssets": ["HAGCC"]},
+  {"term": "Hydraulic Automatic Gauge Control", "shortForm": "HAGCC", "category": "Asset", "definition": "Hydraulic AGC cylinders for closed-loop strip thickness control (±25 μm). Hysteresis deviation measures gap-control error vs command — valve wear, seal bypass, or oil contamination.", "relatedAssets": ["HAGCC"]},
   {"term": "Acid Pickling Tanks", "shortForm": "APT", "category": "Asset", "definition": "Surface treatment removing oxide scale before cold rolling.", "relatedAssets": ["APT"]},
   {"term": "Tandem Cold Mill Stands", "shortForm": "TCMS", "category": "Asset", "definition": "Multi-stand cold reduction mill achieving final gauge.", "relatedAssets": ["TCMS"]},
   {"term": "Continuous Galvanizing Pot", "shortForm": "CGP", "category": "Asset", "definition": "Molten zinc bath applying protective coating to steel strip.", "relatedAssets": ["CGP"]},

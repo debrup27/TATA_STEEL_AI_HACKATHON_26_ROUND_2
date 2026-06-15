@@ -88,7 +88,11 @@ def compute_factory_maintenance_snapshot(factory: Factory) -> dict:
     fh = FactoryHealthService.compute(factory)
     needs_attention = sum(1 for r in rows if r["rul_band"] != "ok" or r["risk_level"] in ("high", "critical"))
 
-    factory_label = f"Factory {factory.code}" if factory.code in ("F1", "F2") else factory.name
+    factory_label = (
+        f"Factory {factory.code[-1]}"
+        if factory.code in ("F1", "F2")
+        else factory.name
+    )
     worst = rows[0] if rows else None
 
     if worst and worst["risk_level"] in ("critical", "high"):

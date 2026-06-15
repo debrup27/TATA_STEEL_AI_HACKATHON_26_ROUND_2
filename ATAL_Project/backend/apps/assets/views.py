@@ -130,7 +130,7 @@ class HealthCheckView(APIView):
 
 
 class ReadyCheckView(APIView):
-    """Readiness probe — 503 until entrypoint bootstrap + smoke tests complete."""
+    """Readiness probe — 503 until bootstrap completes (marker file on disk)."""
 
     permission_classes = []
 
