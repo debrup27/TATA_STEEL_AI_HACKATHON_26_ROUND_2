@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 MAX_ITERATIONS = 4
 
 # ── Supervisor system prompt ──────────────────────────────────────────────────
-_SUPERVISOR_SYSTEM = """You are MANAS, the senior AI Maintenance Engineer for a Tata Steel plant.
+_SUPERVISOR_SYSTEM = """You are MANAS, the senior AI Maintenance Engineer for ATAL's Diagnostic.
 You receive a consolidated asset condition report and must:
 1. Analyse the sensor data, ML predictions, active alarms, and maintenance history.
 2. Produce a preliminary diagnosis and RCA.

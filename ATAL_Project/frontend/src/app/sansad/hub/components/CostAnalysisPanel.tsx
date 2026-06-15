@@ -8,6 +8,7 @@ import {
   type CostAnalysisResponse,
   type FactoryCostAnalysis,
 } from "@/services/costAnalysis";
+import PredictiveCostChart from "./PredictiveCostChart";
 
 const REFRESH_MS = 30_000;
 
@@ -119,9 +120,6 @@ function FactoryCostCard({ f }: { f: FactoryCostAnalysis }) {
           >
             <Info className="w-3.5 h-3.5" /> How?
           </button>
-          <span className="text-[9px] font-bold uppercase px-2 py-1 rounded-full bg-[#1b253c] text-white">
-            {f.recommended_label}
-          </span>
         </div>
       </div>
       {explain && <CostExplainerModal f={f} onClose={() => setExplain(false)} />}
@@ -225,6 +223,7 @@ export default function CostAnalysisPanel({ factoryId }: { factoryId?: string })
           </span>
         )}
       </div>
+      <PredictiveCostChart factories={factories} />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {factories.map((f) => (
           <FactoryCostCard key={f.factory_id} f={f} />

@@ -1,6 +1,7 @@
 import { apiJson } from "@/lib/api";
 import type { MaintenanceActionPlan } from "@/services/sansadOutputs";
 import { mapActionPlan, type BackendActionPlan } from "@/lib/mappers";
+import { normalizeGeneratedWorkOrder } from "@/lib/work-order-format";
 
 export interface PlanRegenerationStatus {
   active: boolean;
@@ -81,9 +82,17 @@ export async function generateWorkOrder(assetId: string): Promise<{
   work_order?: GeneratedWorkOrder;
   error?: string;
 }> {
-  return apiJson(`/api/v1/maintenance/work-orders/${assetId}/generate/`, {
+  const res = await apiJson<{
+    status: string;
+    work_order?: GeneratedWorkOrder;
+    error?: string;
+  }>(`/api/v1/maintenance/work-orders/${assetId}/generate/`, {
     method: "POST",
     body: "{}",
     cache: "no-store",
   });
+  if (res.work_order) {
+    return { ...res, work_order: normalizeGeneratedWorkOrder(res.work_order) };
+  }
+  return res;
 }

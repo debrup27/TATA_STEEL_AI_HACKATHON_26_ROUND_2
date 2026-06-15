@@ -37,11 +37,14 @@ class AlarmEventView(APIView):
     def get(self, request):
         qs = AlarmEvent.objects.select_related("asset").order_by("-created_at")
         asset_id = request.query_params.get("asset_id")
+        factory_id = request.query_params.get("factory_id")
         severity = request.query_params.get("severity")
         acknowledged = request.query_params.get("acknowledged")
 
         if asset_id:
             qs = qs.filter(asset_id=asset_id)
+        if factory_id:
+            qs = qs.filter(asset__factory_id=factory_id)
         if severity:
             qs = qs.filter(severity=severity)
         if acknowledged is not None:

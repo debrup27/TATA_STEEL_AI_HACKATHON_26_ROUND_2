@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { deferEffect } from "@/lib/defer-effect";
 import {
   fetchPlantSnapshot,
   type PlantSnapshot,
@@ -13,10 +14,13 @@ export function usePlantSnapshot(factoryId?: string, pollMs = HUB_TICK_INTERVAL 
   const [snapshot, setSnapshot] = useState<PlantSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const bootstrappedRef = useRef(false);
+  const factoryIdRef = useRef(factoryId);
 
   const reload = useCallback(
     async (silent = false) => {
-      if (!silent) setLoading(true);
+      const showLoading = !silent && !bootstrappedRef.current;
+      if (showLoading) setLoading(true);
       try {
         const snap = await fetchPlantSnapshot(factoryId);
         setSnapshot(snap);
@@ -27,7 +31,10 @@ export function usePlantSnapshot(factoryId?: string, pollMs = HUB_TICK_INTERVAL 
         if (!silent) setError(msg);
         return null;
       } finally {
-        if (!silent) setLoading(false);
+        if (!bootstrappedRef.current) {
+          bootstrappedRef.current = true;
+          setLoading(false);
+        }
       }
     },
     [factoryId],
@@ -38,7 +45,20 @@ export function usePlantSnapshot(factoryId?: string, pollMs = HUB_TICK_INTERVAL 
   const effectiveMs = anomalyActive ? Math.min(pollMs, 5000) : pollMs;
 
   useEffect(() => {
-    void reload();
+    const factoryChanged = factoryIdRef.current !== factoryId;
+    if (factoryChanged) {
+      factoryIdRef.current = factoryId;
+      bootstrappedRef.current = false;
+      deferEffect(() => {
+        setLoading(true);
+        setSnapshot(null);
+        setError(null);
+      });
+    }
+
+    deferEffect(() => {
+      void reload();
+    });
     const interval = setInterval(() => void reload(true), effectiveMs);
     const onRefresh = () => void reload(true);
     window.addEventListener(PLANT_SNAPSHOT_REFRESH_EVENT, onRefresh);
@@ -46,7 +66,7 @@ export function usePlantSnapshot(factoryId?: string, pollMs = HUB_TICK_INTERVAL 
       clearInterval(interval);
       window.removeEventListener(PLANT_SNAPSHOT_REFRESH_EVENT, onRefresh);
     };
-  }, [reload, effectiveMs]);
+  }, [reload, effectiveMs, factoryId]);
 
   const byId = useMemo(() => {
     const map = new Map<string, DiagnosticAsset>();

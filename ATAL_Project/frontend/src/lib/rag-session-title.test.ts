@@ -1,5 +1,4 @@
 import { buildRagSessionTitle, isGenericRagSessionTitle } from "@/lib/rag-session-title";
-import type { RagDoc } from "@/services/types";
 
 describe("rag-session-title", () => {
   it("uses document name for a single doc", () => {

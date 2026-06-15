@@ -74,13 +74,12 @@ def _ollama_chat_warm(model: str, *, keep_alive: str | None = None) -> bool:
 
 def warm_ollama_models(*, keep_alive: str | None = None) -> dict[str, bool]:
     """Load worker (small, fast) then supervisor (large) models into Ollama memory."""
-    results = {
+    return {
         settings.OLLAMA_SMALL_MODEL: _ollama_chat_warm(
             settings.OLLAMA_SMALL_MODEL, keep_alive=keep_alive
         ),
         settings.OLLAMA_MODEL: _ollama_chat_warm(settings.OLLAMA_MODEL, keep_alive=keep_alive),
     }
-    return results
 
 
 def warm_rag_models() -> dict[str, bool]:

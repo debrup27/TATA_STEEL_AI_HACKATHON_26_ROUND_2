@@ -258,6 +258,7 @@ export function mapDiagnosticAsset(d: BackendDiagnosticAsset) {
       status: s.status ?? "nominal",
     })),
     isNormalOperation: Boolean(d.isNormalOperation),
+    faultClass: typeof d.faultClass === "number" ? d.faultClass : undefined,
     anomalyActive: Boolean(d.anomalyActive),
     tripActive: Boolean(d.tripActive),
     faultInjected: Boolean(d.faultInjected),

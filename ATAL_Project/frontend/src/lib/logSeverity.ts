@@ -8,6 +8,8 @@ export function getLogSeverity(text: string): LogSeverity {
     upper.includes("CRITICAL") ||
     upper.includes("[TRIP]") ||
     upper.includes("TRIP") ||
+    upper.includes("[ABNORMALITY]") ||
+    upper.includes("ABNORMALITY") ||
     upper.includes("[HIGH]") ||
     /\bHIGH\b/.test(upper)
   ) {

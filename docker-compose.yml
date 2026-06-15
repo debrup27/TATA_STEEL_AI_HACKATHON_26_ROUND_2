@@ -52,31 +52,25 @@ x-django-env: &django-env
   SKIP_OLLAMA_WAIT: ${SKIP_OLLAMA_WAIT:-0}
   CELERY_CONCURRENCY: ${CELERY_CONCURRENCY:-2}
 
-# ── RAM budget (32 GB host) ──────────────────────────────────────────────────
-# ollama:          VRAM-resident (qwen3.5:9b Q4 ≈6GB + 0.8b ≈0.8GB + BGE≈1.7GB = ~8.5GB VRAM)
-#                  System RAM usage by ollama process: ~1 GB
-# django-backend:  BGE-M3 loaded once ≈1.7GB + app overhead ≈600MB  → 4 GB limit
-# celery-worker:   BGE-M3 + reranker loaded once ≈3.5GB + worker overhead → 8 GB limit
-# postgres-db:     shared_buffers default + WAL → 3 GB limit
-# redis:           maxmemory 512mb (set in command) → 768 MB limit
-# nginx + ui:      minimal → 1 GB combined
-# Total: ~18 GB committed headroom, leaves 14 GB free on 32 GB host.
+# ── RAM budget (30 GB host / 16 GB VRAM) ─────────────────────────────────────
+# Strategy: keep weights on GPU (Ollama + BGE); trim host-RAM caps on app services.
+# VRAM: qwen3.5:9b≈6GB + 0.8b≈0.8GB + BGE≈1.7GB + KV headroom ≈ 16GB total.
+# Host: ollama 10g | django 2.5g | celery 4g | postgres 2g | ui 2.5g | redis/nginx ≈ 1g
 x-mem-django: &mem-django
-  mem_limit: 4g
-  mem_reservation: 1g
+  mem_limit: 2.5g
+  mem_reservation: 512m
 
 x-mem-celery: &mem-celery
-  # ML inference is now a cheap deterministic DB pass (no pickled-model load on the hot path).
-  mem_limit: 6g
-  mem_reservation: 2g
+  mem_limit: 4g
+  mem_reservation: 1g
 
 services:
 
   postgres-db:
     image: timescale/timescaledb:latest-pg17
     restart: unless-stopped
-    mem_limit: 3g
-    mem_reservation: 512m
+    mem_limit: 2g
+    mem_reservation: 320m
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-atal_db}
       POSTGRES_USER: ${POSTGRES_USER:-atal_user}
@@ -112,12 +106,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # Ollama — always-on GPU service.
-  # VRAM budget: qwen3.5:9b Q4≈6GB + qwen3.5:0.8b≈0.8GB + BGE-M3≈1.7GB = ~8.5GB (within 16GB)
-  # keep_alive=-1 keeps both models resident indefinitely after first inference call.
+  # Ollama — GPU-resident models; host RAM only for mmap / decode buffers.
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
+    mem_limit: 10g
+    mem_reservation: 1536m
+    gpus: all
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -125,21 +120,11 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
-      # Bound VRAM: one model decode at a time (9B + 0.8B + BGE must coexist). Context window untouched.
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
+      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
     volumes:
       - ollama-data:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          memory: 2g
-        reservations:
-          memory: 512m
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     networks:
       - backend-net
     healthcheck:
@@ -316,8 +301,8 @@ services:
       context: ./ATAL_Project/frontend
       dockerfile: docker/Dockerfile.dev
     restart: unless-stopped
-    mem_limit: 4g
-    mem_reservation: 512m
+    mem_limit: 2.5g
+    mem_reservation: 320m
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
       BACKEND_INTERNAL_URL: http://django-backend:8000

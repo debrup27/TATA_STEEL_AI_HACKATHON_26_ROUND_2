@@ -189,6 +189,9 @@ export function getRandomStaticReply(): string {
   return "Processing your request…";
 }
 
-export function generateDemoReply(userMessage: string): string {
-  return `Received: ${userMessage.slice(0, 80)}`;
+export const MANAS_DEMO_LOGIN_REPLY =
+  "Hey, I'm Manas! This is just a preview — log in and open Manas Chat to talk to me with live plant data and RAG-backed answers.";
+
+export function generateDemoReply(): string {
+  return MANAS_DEMO_LOGIN_REPLY;
 }

@@ -54,8 +54,11 @@ const MAX_VISIBLE = 3;
 const ROTATE_INTERVAL_MS = 4500;
 
 /** Fallback alerts removed — canvas shows empty state when backend has no alerts. */
-/** Live system + predictive messages for all assets on the factory canvas, cycling every few seconds. */
-export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] {
+/** Live system + predictive messages for factory canvas nodes, scoped to the active factory. */
+export function useFactoryCanvasAlerts(
+  nodes: FlowNode[],
+  factoryCode?: "F1" | "F2",
+): CanvasAlertMessage[] {
   const [allMessages, setAllMessages] = useState<CanvasAlertMessage[]>([]);
   const [offset, setOffset] = useState(0);
   const offsetRef = useRef(0);
@@ -71,11 +74,26 @@ export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] 
     let cancelled = false;
 
     const load = async () => {
+      const [factories, assets] = await Promise.all([
+        apiList<{ id: string; code: string }>("/api/v1/factories/").catch(() => [] as { id: string; code: string }[]),
+        apiList<{ id: string; factory?: string }>("/api/v1/assets/").catch(() => [] as { id: string; factory?: string }[]),
+      ]);
+      const factoryId = factoryCode
+        ? factories.find((f) => f.code === factoryCode)?.id
+        : undefined;
+      const alertUrl = factoryId
+        ? `/api/v1/alerts/?limit=50&factory_id=${encodeURIComponent(factoryId)}`
+        : "/api/v1/alerts/?limit=50";
+
       const [alerts, reports] = await Promise.all([
-        apiList<NodeAlert>("/api/v1/alerts/?limit=50").catch(() => [] as NodeAlert[]),
+        apiList<NodeAlert>(alertUrl).catch(() => [] as NodeAlert[]),
         apiList<MaintenanceReportRow>("/api/v1/reports/?limit=30").catch(() => [] as MaintenanceReportRow[]),
       ]);
       if (cancelled) return;
+
+      const assetFactory = new Map(assets.map((a) => [a.id, a.factory]));
+      const inFactory = (assetId: string) =>
+        !factoryId || assetFactory.get(assetId) === factoryId;
 
       const next: CanvasAlertMessage[] = [];
 
@@ -93,7 +111,7 @@ export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] 
       }
 
       for (const r of reports) {
-        if (!assetIds.has(r.asset)) continue;
+        if (!assetIds.has(r.asset) || !inFactory(r.asset)) continue;
         const assetName = nameById.get(r.asset) ?? "Equipment";
 
         for (const action of r.immediate_actions ?? []) {
@@ -156,7 +174,7 @@ export function useFactoryCanvasAlerts(nodes: FlowNode[]): CanvasAlertMessage[] 
       cancelled = true;
       clearInterval(interval);
     };
-  }, [nodeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nodeKey, factoryCode]);
 
   // Rotate visible window independently of API refetch
   useEffect(() => {

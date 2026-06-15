@@ -8,10 +8,11 @@ import {
 } from "@/components/ai-components/prompt-input"
 import { SystemMessage } from "@/components/ai-components/system-message"
 import { Button } from "@/components/ui/button"
-import { ArrowUp, Brain, ChevronRight, Lightbulb, Plus, Sparkles, Slash, Square, Terminal, UserRound, X } from "lucide-react"
+import { ArrowUp, Brain, ChevronRight, Lightbulb, Plus, ScrollText, Sparkles, Slash, Square, Terminal, UserRound, X } from "lucide-react"
 import type React from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
+import { deferEffect } from "@/lib/defer-effect"
 import { TOAST_DURATION, DURATION_SLOW } from "@/lib/constants"
 import { MANAS_ROLES, manasRoleTag } from "@/lib/manas-roles"
 import {
@@ -44,6 +45,11 @@ function PromptInputWithActions({
   onContextClick,
   onClearContext,
   onConciergeClick,
+  hasHistoricalLogs = false,
+  historicalLogsCount = 0,
+  onHistoricalLogsClick,
+  onOpenHistoricalLogsPanel,
+  onClearHistoricalLogs,
   selectedRole = null,
   onRoleChange,
   contextEnabled = true,
@@ -66,6 +72,11 @@ function PromptInputWithActions({
   onContextClick?: () => void
   onClearContext?: () => void
   onConciergeClick?: () => void
+  hasHistoricalLogs?: boolean
+  historicalLogsCount?: number
+  onHistoricalLogsClick?: () => void
+  onOpenHistoricalLogsPanel?: () => void
+  onClearHistoricalLogs?: () => void
   selectedRole?: string | null
   onRoleChange?: (role: string | null) => void
   contextEnabled?: boolean
@@ -83,6 +94,18 @@ function PromptInputWithActions({
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashMenuDismissed, setSlashMenuDismissed] = useState(false)
   const [pendingCommand, setPendingCommand] = useState<ManasSlashCommand | null>(null)
+  const [appliedInjectPrompt, setAppliedInjectPrompt] = useState<string | null>(injectPrompt ?? null)
+
+  useEffect(() => {
+    if (!injectPrompt || injectPrompt === appliedInjectPrompt) return
+    deferEffect(() => {
+      setAppliedInjectPrompt(injectPrompt)
+      setPrompt(injectPrompt)
+      setPendingCommand(null)
+      setSlashMenuDismissed(false)
+      onInjectPromptConsumed?.()
+    })
+  }, [injectPrompt, appliedInjectPrompt, onInjectPromptConsumed])
 
   const toastTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
@@ -199,14 +222,6 @@ function PromptInputWithActions({
     setPendingCommand(null);
     setSlashMenuDismissed(false);
   }, [isLoading, pendingCommand, prompt, onSendMessage]);
-
-  useEffect(() => {
-    if (!injectPrompt) return;
-    setPrompt(injectPrompt);
-    setPendingCommand(null);
-    setSlashMenuDismissed(false);
-    onInjectPromptConsumed?.();
-  }, [injectPrompt, onInjectPromptConsumed]);
 
   useEffect(() => {
     if (!activeSlashCommand || activeSlashCommand.requiresInput) return;
@@ -445,6 +460,25 @@ function PromptInputWithActions({
                           </button>
                         )}
 
+                        {contextEnabled && (
+                          <button
+                            className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer ${
+                              hasHistoricalLogs
+                                ? "text-sky-700 bg-sky-500/10 hover:bg-sky-500/15"
+                                : "text-[#1b253c]/85 hover:bg-[#F7F4EC]/65 hover:text-[#1b253c]"
+                            }`}
+                            onClick={() => {
+                              onHistoricalLogsClick?.();
+                              setMenuOpen(false);
+                              setRolesOpen(false);
+                            }}
+                            type="button"
+                          >
+                            <ScrollText size={15} className={`shrink-0 ${hasHistoricalLogs ? "text-sky-600" : "text-[#1b253c]/50"}`} />
+                            Historical Logs
+                          </button>
+                        )}
+
                         <div className="relative">
                           <button
                             className={`group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 text-xs font-bold cursor-pointer w-full ${
@@ -540,6 +574,14 @@ function PromptInputWithActions({
                   onAdviceModeChange?.(false);
                   addToast("Advice disabled");
                 }} />
+              )}
+
+              {hasHistoricalLogs && (
+                <HistoricalLogsPill
+                  count={historicalLogsCount}
+                  onClick={onOpenHistoricalLogsPanel || (() => {})}
+                  onDismiss={onClearHistoricalLogs || (() => {})}
+                />
               )}
 
               {selectedRole && manasRoleTag(selectedRole) && (
@@ -703,6 +745,44 @@ function AdvicePill({ onDismiss }: { onDismiss: () => void }) {
         <X size={11.5} className="text-amber-700 shrink-0" strokeWidth={2.5} />
       </motion.span>
     </motion.button>
+  )
+}
+
+function HistoricalLogsPill({
+  count,
+  onClick,
+  onDismiss,
+}: {
+  count: number
+  onClick: () => void
+  onDismiss: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <motion.div
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-sky-200/70 bg-sky-50/90 text-[11px] font-bold text-sky-700 cursor-pointer overflow-hidden transition-all duration-200 shadow-3xs"
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      onClick={onClick}
+      animate={{ paddingRight: hovered ? 10 : 12 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
+      <ScrollText size={12} className="shrink-0 text-sky-600" />
+      <span>Historical Logs{count > 0 ? ` (${count})` : ""}</span>
+      <motion.button
+        type="button"
+        className="flex items-center justify-center overflow-hidden h-4 w-4 rounded-full hover:bg-sky-100/80 transition-colors"
+        onClick={(e) => {
+          e.stopPropagation()
+          onDismiss()
+        }}
+        animate={{ width: hovered ? 16 : 0, opacity: hovered ? 1 : 0, marginLeft: hovered ? 4 : 0 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+      >
+        <X size={11.5} className="text-sky-600 hover:text-sky-800 shrink-0" strokeWidth={2.5} />
+      </motion.button>
+    </motion.div>
   )
 }
 

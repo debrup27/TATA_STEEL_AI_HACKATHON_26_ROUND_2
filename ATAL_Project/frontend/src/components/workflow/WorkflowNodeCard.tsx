@@ -4,6 +4,8 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlertTriangle, GripHorizontal, ChevronDown, Activity, Clock, Wrench, ShieldAlert } from "lucide-react";
 import type { FlowNode } from "./types";
+import { faultClassLabel } from "@/lib/fault-class";
+import WorkOrderRaisedModal from "@/app/sansad/hub/components/WorkOrderRaisedModal";
 import WorkflowAddMenu from "./WorkflowAddMenu";
 import {
   CARD_HEIGHT_COLLAPSED,
@@ -75,6 +77,7 @@ export default function WorkflowNodeCard({
   allNodes,
   onToggleConnection,
 }: WorkflowNodeCardProps) {
+  const [woModalOpen, setWoModalOpen] = React.useState(false);
   const cardWidth = isExpanded ? CARD_WIDTH_EXPANDED : CARD_WIDTH_COLLAPSED;
   const cardHeight = isExpanded ? CARD_HEIGHT_EXPANDED : CARD_HEIGHT_COLLAPSED;
 
@@ -266,9 +269,14 @@ export default function WorkflowNodeCard({
                       {faultClass != null && (
                         <div>
                           <span className="text-[9px] font-bold text-zinc-400 uppercase block">Fault Class</span>
-                          <span className={`text-[13px] font-black tabular-nums ${faultClass > 0 ? "text-orange-500" : "text-zinc-800"}`}>
+                          <span className={`text-[12px] font-black leading-tight ${faultClass > 0 ? "text-orange-500" : "text-zinc-800"}`}>
                             {faultClass > 0 ? `Class ${faultClass}` : "None"}
                           </span>
+                          {faultClass > 0 ? (
+                            <span className="text-[9px] text-zinc-500 font-medium block mt-0.5 leading-snug">
+                              ({faultClassLabel(faultClass)})
+                            </span>
+                          ) : null}
                         </div>
                       )}
                     </div>
@@ -324,12 +332,17 @@ export default function WorkflowNodeCard({
                 )}
                 <button
                   type="button"
-                  onClick={() => alert("Maintenance work order ticket raised in system database.")}
+                  onClick={() => setWoModalOpen(true)}
                   className="panel-button flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-[10px] cursor-pointer"
                 >
                   Work Order
                 </button>
               </div>
+              <WorkOrderRaisedModal
+                open={woModalOpen}
+                assetName={node.title}
+                onClose={() => setWoModalOpen(false)}
+              />
             </motion.div>
           )}
         </div>

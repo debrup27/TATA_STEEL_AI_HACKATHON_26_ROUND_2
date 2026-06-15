@@ -13,7 +13,7 @@ from apps.agents.ollama_warmup import ollama_keep_alive_value
 
 logger = logging.getLogger(__name__)
 
-_DIAGNOSIS_SYSTEM = """You write probable fault diagnosis lines for the SANSAD diagnostics panel at Tata Steel.
+_DIAGNOSIS_SYSTEM = """You write probable fault diagnosis lines for the SANSAD diagnostics panel (ATAL's Diagnostic).
 
 Output exactly 1–2 plain sentences for a plant engineer. Explain the likely fault mechanism and WHY,
 citing specific sensor readings, ML fault class, health/RUL, and top root-cause factors from the context.

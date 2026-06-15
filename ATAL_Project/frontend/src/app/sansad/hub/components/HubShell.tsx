@@ -2,11 +2,12 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
 import UserPill from "@/components/UserPill";
 import VerticalMarquee from "./VerticalMarquee";
 import AnomalyTripControl from "./AnomalyTripControl";
+import SansadBackButton from "./SansadBackButton";
 
 interface HubShellProps {
   title: string;
@@ -16,16 +17,13 @@ interface HubShellProps {
   headerRight?: React.ReactNode;
 }
 
-function BackButton({ href }: { href: string }) {
+function ManasLink({ className = "" }: { className?: string }) {
   return (
-    <Link href={href} className="flex items-center select-none shrink-0">
-      <div
-        className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold"
-        style={{ fontFamily: "var(--font-pixeloid)" }}
-      >
-        <ArrowLeft className="w-0 h-5 text-white opacity-0 transition-all duration-300 ease-out group-hover/btn:w-5 group-hover/btn:opacity-100 shrink-0" />
-        <span className="text-xs uppercase tracking-wider">Back</span>
-      </div>
+    <Link
+      href="/manas/chat"
+      className={`group/link text-[10px] font-mono font-bold uppercase text-[#1b253c] hover:text-[#f97316] tracking-widest flex items-center gap-1 select-none whitespace-nowrap ${className}`}
+    >
+      Manas <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/link:rotate-45" />
     </Link>
   );
 }
@@ -52,9 +50,9 @@ export default function HubShell({
         className="min-h-screen bg-[#FAF9F5] px-4 pt-20 pb-12">
         <div className="max-w-lg mx-auto space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <BackButton href={backHref} />
+            <SansadBackButton href={backHref} />
             <div className="flex items-center gap-2 shrink-0">
-              <AnomalyTripControl />
+              <AnomalyTripControl compact />
               <UserPill
                 containerClassName="rounded-full p-1.5 bg-white inline-flex items-center justify-center shadow-sm w-[40px] h-[40px] group cursor-pointer relative"
                 className="w-full h-full"
@@ -81,25 +79,48 @@ export default function HubShell({
         <VerticalMarquee direction="down" side="right" text="ATAL" />
 
         <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5]">
-          <div className="shrink-0 border-b border-zinc-200 bg-[#FAF9F5] z-30 overflow-visible">
-            <div className="min-h-14 flex items-center justify-between gap-3 px-4 py-2">
-              <BackButton href={backHref} />
+          <div className="shrink-0 border-b border-zinc-200 bg-[#FAF9F5] z-30">
+            {/* Wide desktop — single header row */}
+            <div className="hidden min-[1360px]:flex w-full items-center gap-4 px-8 py-3">
+              <div className="shrink-0">
+                <SansadBackButton href={backHref} />
+              </div>
 
-              <div className="flex-1 text-center min-w-0 px-2 pointer-events-none">
+              <div className="flex-1 min-w-0 text-center pointer-events-none px-2">
                 <h1 className="text-lg font-black uppercase text-zinc-950 truncate" style={{ fontFamily: "var(--font-pixeloid)" }}>{title}</h1>
                 <p className="text-[10px] text-zinc-400 font-mono uppercase tracking-widest mt-0.5 truncate">{subtitle}</p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center justify-end gap-2">
                 {headerRight}
                 <AnomalyTripControl />
-                <Link href="/manas/chat" className="group/link text-[10px] font-mono font-bold uppercase text-[#1b253c] hover:text-[#f97316] tracking-widest flex items-center gap-1 select-none whitespace-nowrap">
-                  Manas <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover/link:rotate-45" />
-                </Link>
+                <ManasLink />
                 <UserPill
                   containerClassName="rounded-full p-1.5 bg-white inline-flex items-center justify-center shadow-sm w-[40px] h-[40px] group cursor-pointer relative"
                   className="w-full h-full"
                 />
+              </div>
+            </div>
+
+            {/* Compact desktop — title row + anomaly controls row */}
+            <div className="min-[1360px]:hidden px-4 lg:px-6 py-3 space-y-2.5">
+              <div className="flex items-center gap-3 min-w-0">
+                <SansadBackButton href={backHref} />
+                <div className="flex-1 min-w-0 text-center pointer-events-none px-1">
+                  <h1 className="text-base font-black uppercase text-zinc-950 truncate" style={{ fontFamily: "var(--font-pixeloid)" }}>{title}</h1>
+                  <p className="text-[9px] text-zinc-400 font-mono uppercase tracking-widest mt-0.5 truncate">{subtitle}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <ManasLink />
+                  <UserPill
+                    containerClassName="rounded-full p-1.5 bg-white inline-flex items-center justify-center shadow-sm w-[40px] h-[40px] group cursor-pointer relative"
+                    className="w-full h-full"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-100 pt-2.5">
+                {headerRight}
+                <AnomalyTripControl compact />
               </div>
             </div>
           </div>

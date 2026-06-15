@@ -13,27 +13,16 @@ interface ExpandedFileModalProps {
   onClose: () => void;
 }
 
-export default function ExpandedFileModal({ file, onClose }: ExpandedFileModalProps) {
+function ExpandedFileModalBody({ file, onClose }: { file: MessageFile; onClose: () => void }) {
+  const format = useMemo(() => messageFileFormat(file), [file]);
   const [loading, setLoading] = useState(false);
-  const [body, setBody] = useState("");
-  const [pdfUrl, setPdfUrl] = useState<string | undefined>();
+  const [body, setBody] = useState(() => (format === "pdf" ? "" : file.body?.trim() || ""));
+  const [pdfUrl, setPdfUrl] = useState<string | undefined>(file.pdfUrl);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const format = useMemo(
-    () => (file ? messageFileFormat(file) : "text"),
-    [file],
-  );
-
   useEffect(() => {
-    if (!file) return;
-
     let revokedUrl: string | undefined;
-    setBody(format === "pdf" ? "" : file.body?.trim() || "");
-    setPdfUrl(file.pdfUrl);
-    setTruncated(false);
-    setError(null);
-    setLoading(false);
 
     const run = async () => {
       if (format !== "pdf") {
@@ -78,8 +67,6 @@ export default function ExpandedFileModal({ file, onClose }: ExpandedFileModalPr
       if (revokedUrl) URL.revokeObjectURL(revokedUrl);
     };
   }, [file, format]);
-
-  if (!file) return null;
 
   const hasPdf = format === "pdf" && Boolean(pdfUrl);
   const hasImage = format === "image" && Boolean(file.pages?.length);
@@ -133,6 +120,17 @@ export default function ExpandedFileModal({ file, onClose }: ExpandedFileModalPr
         )
       )}
     </ModalShell>
+  );
+}
+
+export default function ExpandedFileModal({ file, onClose }: ExpandedFileModalProps) {
+  if (!file) return null;
+  return (
+    <ExpandedFileModalBody
+      key={`${file.documentId ?? file.name}-${file.pdfUrl ?? ""}`}
+      file={file}
+      onClose={onClose}
+    />
   );
 }
 

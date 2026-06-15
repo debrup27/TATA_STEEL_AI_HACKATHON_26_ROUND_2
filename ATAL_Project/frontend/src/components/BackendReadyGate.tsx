@@ -7,6 +7,7 @@ import {
   shouldSkipStartupSplash,
   storeBootId,
 } from "@/lib/backend-ready";
+import { deferEffect } from "@/lib/defer-effect";
 
 const DOT_SEQ = [1, 2, 3, 2] as const;
 const BACKEND_POLL_MS = 10_000;
@@ -30,7 +31,9 @@ function useRetryCountdown(active: boolean, intervalMs: number) {
 
   useEffect(() => {
     if (!active) return;
-    setSecondsLeft(intervalMs / 1000);
+    deferEffect(() => {
+      setSecondsLeft(intervalMs / 1000);
+    });
     const id = window.setInterval(() => {
       setSecondsLeft((s) => (s <= 1 ? intervalMs / 1000 : s - 1));
     }, 1000);

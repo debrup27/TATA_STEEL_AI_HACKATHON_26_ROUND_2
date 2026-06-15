@@ -13,8 +13,11 @@ import {
   type GeneratedWorkOrder,
 } from "@/services/actionPlans";
 import type { MaintenanceActionPlan } from "@/services/sansadOutputs";
-import { mapActionPlan, type BackendActionPlan } from "@/lib/mappers";
 import { riskLevelColor } from "@/services/sansadOutputs";
+import { mapActionPlan, type BackendActionPlan } from "@/lib/mappers";
+import { normalizeGeneratedWorkOrder } from "@/lib/work-order-format";
+import WorkOrderRaisedModal from "../components/WorkOrderRaisedModal";
+import { deferEffect } from "@/lib/defer-effect";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
 import HubMarkdown from "../components/HubMarkdown";
@@ -29,6 +32,7 @@ export default function MaintenanceActionsPage() {
   const [generating, setGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
   const [regen, setRegen] = useState<PlanRegenerationStatus | null>(null);
+  const [woModal, setWoModal] = useState<{ asset: string; id?: string; priority?: string } | null>(null);
   const [workOrders, setWorkOrders] = useState<Record<string, GeneratedWorkOrder>>({});
   const [woGenerating, setWoGenerating] = useState(false);
   const { byId: diagById } = usePlantSnapshot();
@@ -69,7 +73,9 @@ export default function MaintenanceActionsPage() {
   }, []);
 
   useEffect(() => {
-    void loadPlans();
+    deferEffect(() => {
+      void loadPlans();
+    });
   }, [loadPlans]);
 
   useEffect(() => {
@@ -139,7 +145,15 @@ export default function MaintenanceActionsPage() {
         if (res.status !== "complete" || !res.work_order) {
           throw new Error(res.error ?? "Work order generation failed");
         }
-        setWorkOrders((prev) => ({ ...prev, [assetId]: res.work_order! }));
+        setWorkOrders((prev) => ({
+          ...prev,
+          [assetId]: normalizeGeneratedWorkOrder(res.work_order!),
+        }));
+        setWoModal({
+          asset: plan?.asset ?? "Asset",
+          id: String(res.work_order.id),
+          priority: String(res.work_order.priority),
+        });
         return res.work_order;
       },
       {
@@ -384,7 +398,7 @@ export default function MaintenanceActionsPage() {
                 ? "bg-amber-50 text-amber-700 border-amber-200"
                 : "bg-emerald-50 text-emerald-700 border-emerald-200";
           return (
-            <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
+            <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6 mb-8">
               <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-emerald-600" />
@@ -444,6 +458,13 @@ export default function MaintenanceActionsPage() {
           );
         })()}
       </div>
+      <WorkOrderRaisedModal
+        open={woModal != null}
+        assetName={woModal?.asset}
+        workOrderId={woModal?.id}
+        priority={woModal?.priority}
+        onClose={() => setWoModal(null)}
+      />
     </HubShell>
   );
 }

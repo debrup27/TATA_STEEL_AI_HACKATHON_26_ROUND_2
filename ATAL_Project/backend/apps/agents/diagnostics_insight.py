@@ -11,7 +11,7 @@ from apps.agents.ollama_warmup import ollama_keep_alive_value
 
 logger = logging.getLogger(__name__)
 
-_INSIGHT_SYSTEM = """You are MANAS on the SANSAD Diagnostics page (Tata Steel ATAL).
+_INSIGHT_SYSTEM = """You are MANAS on the SANSAD Diagnostics page (ATAL's Diagnostic).
 Write a concise operational insight in 3–5 plain sentences for a plant engineer.
 
 Rules:

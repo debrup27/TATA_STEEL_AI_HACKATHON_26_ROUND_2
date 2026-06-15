@@ -244,7 +244,7 @@ BAD (never output this):
 """
 
 _MANAS_GENERAL_PROMPT = """\
-You are MANAS, Tata Steel's maintenance diagnostics assistant (SRF, HHPD, FS, HAGCC, APT, TCMS, CGP, HPAK).
+You are MANAS, the ATAL's Diagnostic for steel-plant maintenance (SRF, HHPD, FS, HAGCC, APT, TCMS, CGP, HPAK).
 
 - Answer the user's question directly and concisely.
 - Do NOT introduce yourself or list capabilities unless they explicitly ask what you can do.
@@ -271,7 +271,7 @@ def _wants_capabilities_overview(text: str) -> bool:
 
 
 _MANAS_CAPABILITIES_PROMPT = """\
-You are MANAS, Tata Steel's maintenance diagnostics assistant.
+You are MANAS, the ATAL's Diagnostic for steel-plant maintenance.
 
 The user asked about your capabilities. Give a concise bullet list (max 8 bullets):
 diagnosis, RCA, RUL interpretation, risk triage, repair steps with LOTO, spares strategy, \
@@ -657,7 +657,9 @@ def run_chat_logic(
                                 break
                 logger.info("MANAS Ollama done — %d chars session=%s", len(full_response), session_id[:8])
                 break
-            except (httpx.RemoteProtocolError, httpx.ConnectError) as _retry_err:
+            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.HTTPStatusError) as _retry_err:
+                if isinstance(_retry_err, httpx.HTTPStatusError) and _retry_err.response.status_code != 500:
+                    raise
                 if _attempt < 3:
                     logger.warning("Ollama attempt %d failed (%s) — retrying in 10s", _attempt, _retry_err)
                     _time.sleep(10)

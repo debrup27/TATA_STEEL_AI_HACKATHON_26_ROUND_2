@@ -34,7 +34,6 @@ import {
   cancelChatGeneration,
 } from "@/services/sessions";
 import {
-  getLibraryDocuments,
   ragPayloadFromDocs,
   warmChatStack,
   optimizeMaintenancePrompt,
@@ -42,11 +41,16 @@ import {
   applyStoppedGenerationContent,
 } from "@/services/chat";
 import { parseSlashCommandInput } from "@/lib/manas-slash-commands";
+import {
+  buildHistoricalLogsRagDocs,
+  countHistoricalLogDocs,
+} from "@/services/historicalLogsContext";
 import type { MessageFile, ChatSession, RagDoc, Citation } from "@/services/types";
 import { useChatStream } from "@/hooks";
 import { usePathname } from "next/navigation";
 import { parseManasChatSessionId, updateManasChatUrl } from "@/lib/manas-chat-path";
 import { parseManasDeepLinkParams } from "@/lib/manas-deep-link";
+import { deferEffect } from "@/lib/defer-effect";
 import { resolveSessionTitle } from "@/lib/mappers";
 
 // Import broken down modular components
@@ -93,6 +97,7 @@ export default function ManasChatPage() {
   const [selectedPreloadedDocs, setSelectedPreloadedDocs] = useState<string[]>([]);
   const [customDocs, setCustomDocs] = useState<RagDoc[]>([]);
   const [showRightPanel, setShowRightPanel] = useState(false);
+  const [contextPanelMode, setContextPanelMode] = useState<"docs" | "logs">("docs");
   const [isMounted, setIsMounted] = useState(false);
   const [triggerToast, setTriggerToast] = useState<string | null>(null);
   const [injectPrompt, setInjectPrompt] = useState<string | null>(null);
@@ -451,6 +456,12 @@ export default function ManasChatPage() {
     !isHydratingSession && (!activeSession || activeSession.messages.length === 0);
   const hasContext = !!(activeSession?.ragDocs && activeSession.ragDocs.length > 0);
   const contextCount = activeSession?.ragDocs ? activeSession.ragDocs.length : 0;
+  const historicalLogsCount = countHistoricalLogDocs(activeSession?.historicalLogDocs);
+  const hasHistoricalLogs = historicalLogsCount > 0;
+  const panelRagDocs =
+    contextPanelMode === "logs"
+      ? activeSession?.historicalLogDocs ?? []
+      : activeSession?.ragDocs ?? [];
   const lastMessage = activeSession?.messages[activeSession.messages.length - 1];
   const awaitingAssistantReply =
     lastMessage?.role === "assistant" && !lastMessage.content?.trim();
@@ -534,10 +545,12 @@ export default function ManasChatPage() {
     if (params.get("rag") !== "1") return;
     ragDeepLinkHandled.current = true;
 
-    navigateToChat(null, "replace");
-    setShowRagSelector(true);
-    setShowRightPanel(true);
-    setSelectedPreloadedDocs([]);
+    deferEffect(() => {
+      navigateToChat(null, "replace");
+      setShowRagSelector(true);
+      setShowRightPanel(true);
+      setSelectedPreloadedDocs([]);
+    });
   }, [isMounted, navigateToChat]);
 
   const sansadDeepLinkHandled = useRef(false);
@@ -742,15 +755,59 @@ export default function ManasChatPage() {
     setShowRagSelector(true);
   }, [activeSession]);
 
-  // Auto close Right Panel if context documents are cleared
+  const handleLoadHistoricalLogs = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      const docs = await buildHistoricalLogsRagDocs();
+      if (!docs.length) {
+        setTriggerToast("No historical dossiers available");
+        return;
+      }
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === activeSessionId ? { ...s, historicalLogDocs: docs } : s,
+        ),
+      );
+      setContextPanelMode("logs");
+      setShowRightPanel(true);
+      setTriggerToast(`Loaded ${docs.length} historical dossier${docs.length === 1 ? "" : "s"}`);
+    } catch {
+      setTriggerToast("Could not load historical dossiers");
+    }
+  }, [activeSessionId]);
+
+  const handleClearHistoricalLogs = useCallback(() => {
+    if (!activeSessionId) return;
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === activeSessionId ? { ...s, historicalLogDocs: undefined } : s,
+      ),
+    );
+    setShowRightPanel(false);
+    setTriggerToast("Historical logs cleared");
+  }, [activeSessionId]);
+
+  const handleOpenHistoricalLogsPanel = useCallback(() => {
+    setContextPanelMode("logs");
+    setShowRightPanel((prev) => !prev);
+  }, []);
+
+  const handleOpenDocsPanel = useCallback(() => {
+    setContextPanelMode("docs");
+    setShowRightPanel((prev) => !prev);
+  }, []);
+
+  // Auto close right panel when both doc types are cleared
   useEffect(() => {
-    if (!activeSession?.ragDocs || activeSession.ragDocs.length === 0) {
+    const hasDocs = (activeSession?.ragDocs?.length ?? 0) > 0;
+    const hasLogs = (activeSession?.historicalLogDocs?.length ?? 0) > 0;
+    if (!hasDocs && !hasLogs) {
       const timer = setTimeout(() => {
         setShowRightPanel(false);
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [activeSession?.ragDocs]);
+  }, [activeSession?.ragDocs, activeSession?.historicalLogDocs]);
 
   const handleCompactSession = useCallback(async (targetId: string) => {
     streamSessionRef.current = targetId;
@@ -806,7 +863,10 @@ export default function ManasChatPage() {
 
     let targetId = activeSessionId;
     const session = targetId ? sessions.find((s) => s.id === targetId) : null;
-    const ragNames = session?.ragDocs ?? [];
+    const ragNames = [
+      ...(session?.ragDocs ?? []),
+      ...(session?.historicalLogDocs ?? []),
+    ];
     const ragPayload = {
       ...ragPayloadFromDocs(ragNames),
       user_role: selectedRole ?? undefined,
@@ -1033,6 +1093,14 @@ export default function ManasChatPage() {
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id !== activeSessionId) return s;
+        const inLogs = s.historicalLogDocs?.some((d) => d.name === name);
+        if (inLogs) {
+          const updated = s.historicalLogDocs!.filter((d) => d.name !== name);
+          return {
+            ...s,
+            historicalLogDocs: updated.length > 0 ? updated : undefined,
+          };
+        }
         const updated = s.ragDocs ? s.ragDocs.filter((d) => d.name !== name) : [];
         return {
           ...s,
@@ -1264,14 +1332,23 @@ export default function ManasChatPage() {
                 isLoading={chatSim.isLoading}
                 hasContext={hasContext}
                 contextCount={contextCount}
-                onContextClick={() => setShowRightPanel((prev) => !prev)}
+                onContextClick={handleOpenDocsPanel}
                 onClearContext={() => {
                   setSessions((prev) =>
                     prev.map((s) => (s.id === activeSessionId ? { ...s, ragDocs: undefined } : s))
                   );
-                  setShowRightPanel(false);
+                  if (!activeSession?.historicalLogDocs?.length) {
+                    setShowRightPanel(false);
+                  } else {
+                    setContextPanelMode("logs");
+                  }
                 }}
                 onConciergeClick={handleOpenConciergeContext}
+                hasHistoricalLogs={hasHistoricalLogs}
+                historicalLogsCount={historicalLogsCount}
+                onHistoricalLogsClick={handleLoadHistoricalLogs}
+                onOpenHistoricalLogsPanel={handleOpenHistoricalLogsPanel}
+                onClearHistoricalLogs={handleClearHistoricalLogs}
                 selectedRole={selectedRole}
                 onRoleChange={handleRoleChange}
                 contextEnabled={contextEnabled}
@@ -1289,9 +1366,11 @@ export default function ManasChatPage() {
 
       {/* Right Sidebar for RAG Documents (Claude-style Right Pane) */}
       <AnimatePresence>
-        {activeSession && activeSession.ragDocs && activeSession.ragDocs.length > 0 && showRightPanel && (
+        {activeSession && panelRagDocs.length > 0 && showRightPanel && (
           <ContextPanel
-            ragDocs={activeSession.ragDocs}
+            ragDocs={panelRagDocs}
+            panelTitle={contextPanelMode === "logs" ? "Historical Logs" : "Context"}
+            showManageDocs={contextPanelMode === "docs"}
             onClose={() => setShowRightPanel(false)}
             onManageDocs={handleOpenConciergeContext}
             onRemoveDoc={handleRemoveDoc}

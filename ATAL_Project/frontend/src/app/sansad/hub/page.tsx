@@ -7,11 +7,12 @@ import { AnimatePresence } from "framer-motion";
 import ClickSpark from "../../../animations/ClickSpark";
 import UserPill from "@/components/UserPill";
 import AnomalyTripControl from "./components/AnomalyTripControl";
-import { HUB_TICK_INTERVAL } from "@/services/telemetry";
+import { LOG_STREAM_POLL_MS, LOG_STREAM_REVEAL_MS } from "@/services/telemetry";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
-import { useMockTelemetryLogs } from "@/hooks";
+import { useTelemetryLogs } from "@/hooks";
 import { useFactoryTickers } from "@/hooks/useFactoryTickers";
 import { useNotificationFeed } from "@/hooks/useNotificationFeed";
+import { FACTORY_DESCRIPTIONS } from "@/lib/factory-display";
 import type { LogEntry } from "@/services/types";
 
 import { SystemLogItem } from "./components/SystemLogItem";
@@ -38,16 +39,12 @@ export default function SansadMonitoringPage() {
   const { tickers: hubTickers } = useNotificationFeed(undefined, 30_000);
   const pillarTickers = hubTickers.length >= 2 ? hubTickers : EMPTY_TICKERS;
 
-  const [exhausterVibration, setExhausterVibration] = useState(0);
-  const [exhausterHealth, setExhausterHealth] = useState(0);
-  const [sinterFeO, setSinterFeO] = useState(0);
-  const [strandSpeed, setStrandSpeed] = useState(0);
-
   const [isLogStreamLive, setIsLogStreamLive] = useState(true);
-  const { logs: systemLogs, clear: clearSystemLogs, status: logStreamStatus } = useMockTelemetryLogs(
-    HUB_TICK_INTERVAL,
+  const { logs: systemLogs, clear: clearSystemLogs, status: logStreamStatus } = useTelemetryLogs(
+    LOG_STREAM_POLL_MS,
     25,
     isLogStreamLive,
+    { order: "asc", revealIntervalMs: LOG_STREAM_REVEAL_MS, instantInitialLoad: true },
   );
 
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
@@ -64,23 +61,6 @@ export default function SansadMonitoringPage() {
   }, []);
 
   useEffect(() => {
-    if (!snapAssets.length) return;
-    const f1 = snapAssets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? snapAssets[0];
-    const f2 = snapAssets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? snapAssets[1];
-    if (f1) {
-      setExhausterHealth(f1.health);
-      const vib = f1.sensors.find((s) => s.label.toLowerCase().includes("vib"));
-      if (vib) setExhausterVibration(parseFloat(vib.value) || 0);
-    }
-    if (f2) {
-      const feo = f2.sensors.find((s) => s.label.toLowerCase().includes("feo"));
-      const speed = f2.sensors.find((s) => s.label.toLowerCase().includes("strand") || s.label.toLowerCase().includes("speed"));
-      if (feo) setSinterFeO(parseFloat(feo.value) || 0);
-      if (speed) setStrandSpeed(parseFloat(speed.value) || 0);
-    }
-  }, [snapAssets]);
-
-  useEffect(() => {
     if (!isLogStreamLive || !systemLogContainerRef.current) return;
     systemLogContainerRef.current.scrollTop = systemLogContainerRef.current.scrollHeight;
   }, [systemLogs, isLogStreamLive]);
@@ -95,12 +75,7 @@ export default function SansadMonitoringPage() {
       className="relative min-h-screen w-full bg-[#FAF9F5] flex flex-col justify-start overflow-hidden select-none"
     >
       {isMobile ? (
-        <MobileMonitoringView
-          exhausterVibration={exhausterVibration}
-          exhausterHealth={exhausterHealth}
-          sinterFeO={sinterFeO}
-          strandSpeed={strandSpeed}
-        />
+        <MobileMonitoringView assets={snapAssets} />
       ) : (
         <div className="w-screen h-screen overflow-hidden bg-[#FAF9F5] relative flex select-none">
           <VerticalMarquee direction="up" side="left" text="SANSAD" />
@@ -147,7 +122,7 @@ export default function SansadMonitoringPage() {
                   <FactoryCard
                     href="/sansad/hub/horizon-foundry"
                     title={<>HORIZON<br />FOUNDRY</>}
-                    description="Coke Oven & By-Product Plant — extracts coke breeze, cleans COG, and feeds the blast furnace energy chain."
+                    description={FACTORY_DESCRIPTIONS.horizon}
                     logos={factory1Notifications}
                     speed={22}
                     heightClass="h-[48%]"
@@ -169,7 +144,7 @@ export default function SansadMonitoringPage() {
                   <FactoryCard
                     href="/sansad/hub/zephyr-sinter"
                     title={<>ZEPHYR<br />SINTER</>}
-                    description="Sintering Plant — agglomerates iron ore fines, monitors BTP position and belt FeO to optimise blast furnace burden."
+                    description={FACTORY_DESCRIPTIONS.zephyr}
                     logos={factory2Notifications}
                     speed={18}
                     heightClass="h-[48%]"

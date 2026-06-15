@@ -14,6 +14,7 @@ export interface DiagnosticAsset {
   rulDays: number | null;
   rulHours?: number | null;
   probableFault: string;
+  faultClass?: number;
   faultConfidence: number;
   rootCauses: { factor: string; weight: number; evidence: string }[];
   earlyWarning: string | null;

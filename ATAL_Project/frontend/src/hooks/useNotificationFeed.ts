@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { deferEffect } from "@/lib/defer-effect";
 import { fetchNotificationFeed, type NotificationFeed } from "@/services/notifications";
 import type { TickerItem } from "@/services/types";
 
@@ -54,7 +55,9 @@ export function useNotificationFeed(factoryId?: string, refreshMs = 30_000) {
   }, [factoryId]);
 
   useEffect(() => {
-    void refresh();
+    deferEffect(() => {
+      void refresh();
+    });
     const interval = setInterval(() => void refresh(), refreshMs);
     return () => clearInterval(interval);
   }, [refresh, refreshMs]);

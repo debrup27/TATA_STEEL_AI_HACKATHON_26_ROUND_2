@@ -37,9 +37,7 @@ export function SamvidhaanParetoChart({ data }: SamvidhaanParetoChartProps) {
     if (!points.length) return null;
     const xs = points.map((p) => p.pdm_savings_lakhs);
     const ys = points.map((p) => p.predicted_loss_lakhs);
-    const xMin = 0;
     const xMax = Math.max(...xs, 1) * 1.12;
-    const yMin = 0;
     const yMax = Math.max(...ys, 1) * 1.12;
 
     const plotW = W - PAD.left - PAD.right;

@@ -1,3 +1,14 @@
+import { assetSystemTag } from "@/lib/asset-system-tag";
+
+export const SYSTEM_EMIT_TAG = "SYSTEM EMIT";
+
+/** Replace legacy unknown/plant tags with canonical system-emit label. */
+export function normalizeSystemEmitTags(text: string): string {
+  return text
+    .replace(/\[UNKNOWN\]/gi, `[${SYSTEM_EMIT_TAG}]`)
+    .replace(/\[PLANT\]/gi, `[${SYSTEM_EMIT_TAG}]`);
+}
+
 const UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
@@ -81,32 +92,34 @@ export function formatReportLogText(report: {
   recommendations?: ReportRecommendation[];
   immediate_actions?: string[];
 }): string {
-  const assetLabel =
-    report.asset_name ??
-    (report.asset_code ? humanizeSensorName(report.asset_code) : "Equipment");
+  const tag = assetSystemTag({
+    code: report.asset_code,
+    name: report.asset_name,
+  });
 
   const recStep = report.recommendations?.find((r) => r?.step)?.step;
-  if (recStep) return recStep;
+  if (recStep) return normalizeSystemEmitTags(recStep);
 
   const action = report.immediate_actions?.find((a) => typeof a === "string" && a.trim());
-  if (action) return action;
+  if (action) return normalizeSystemEmitTags(action);
 
   const cleaned = report.diagnosis
     ? humanizeHealthScoreText(stripUuids(report.diagnosis))
     : "";
 
   if (cleaned && !cleaned.match(UUID_RE) && cleaned.length <= 140) {
-    return cleaned.replace(/^Asset\s+/i, `${assetLabel} `);
+    const withTag = cleaned.replace(/^Asset\s+/i, `[${tag}] `);
+    return normalizeSystemEmitTags(withTag);
   }
 
   const risk = (report.risk_level ?? "medium").toLowerCase();
   if (risk === "critical") {
-    return `${assetLabel} needs immediate attention — critical health detected`;
+    return normalizeSystemEmitTags(`[${tag}] needs immediate attention — critical health detected`);
   }
   if (risk === "high") {
-    return `${assetLabel} needs urgent maintenance review`;
+    return normalizeSystemEmitTags(`[${tag}] needs urgent maintenance review`);
   }
-  return `${assetLabel} — predictive maintenance review available`;
+  return normalizeSystemEmitTags(`[${tag}] — predictive maintenance review available`);
 }
 
 export function formatAlertSeverity(severity?: string): string {

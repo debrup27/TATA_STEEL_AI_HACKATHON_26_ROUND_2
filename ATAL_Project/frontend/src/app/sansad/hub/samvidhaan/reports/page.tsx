@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, FileText, Calendar, CheckCircle, Factory } from "lucide-react";
 import HubMarkdown from "../../components/HubMarkdown";
 import ClickSpark from "@/animations/ClickSpark";
 import { fetchSamvidhaanHistoricalReports } from "@/services/samvidhaanGraphs";
 import AnomalyTripControl from "../../components/AnomalyTripControl";
+import SamvidhaanTickerStrip from "../../components/SamvidhaanTickerStrip";
+import { historicalReportTickers } from "@/lib/samvidhaan-tickers";
 
 type ReportRow = Awaited<ReturnType<typeof fetchSamvidhaanHistoricalReports>>[number];
 
@@ -53,6 +55,11 @@ export default function ReportsPage() {
       item.asset.toLowerCase().includes(q)
     );
   });
+
+  const reportTickers = useMemo(
+    () => historicalReportTickers(items, loading),
+    [items, loading],
+  );
 
   return (
     <ClickSpark
@@ -105,10 +112,10 @@ export default function ReportsPage() {
           <div className="absolute left-[8vw] w-[84vw] h-full flex flex-col bg-[#FAF9F5] min-h-0">
             <div className="shrink-0 border-b border-zinc-200 select-none">
               <div className="w-full flex items-center justify-between px-8 py-3">
-                <div className="w-1/4 flex justify-start">
-                  <Link href="/sansad/hub/samvidhaan" className="flex items-center select-none">
+                <div className="w-1/4 flex justify-start min-w-[7.5rem]">
+                  <Link href="/sansad/hub/samvidhaan" className="flex items-center select-none shrink-0 w-[7.5rem]">
                     <div
-                      className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold"
+                      className="h-10 w-full px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold"
                       style={{ fontFamily: "var(--font-pixeloid)" }}
                     >
                       <ArrowLeft className="w-0 h-5 text-white opacity-0 transition-all duration-300 ease-out group-hover/btn:w-5 group-hover/btn:opacity-100 shrink-0" />
@@ -124,10 +131,11 @@ export default function ReportsPage() {
                     2 factory reports · 90-day ops context for MANAS intelligence
                   </span>
                 </div>
-                <div className="w-1/4 flex justify-end overflow-visible">
+                <div className="w-1/4 flex justify-end overflow-visible min-w-[7.5rem]">
                   <AnomalyTripControl />
                 </div>
               </div>
+              <SamvidhaanTickerStrip logos={reportTickers} className="px-8 pb-2" />
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto px-8 py-4 scrollbar-none [&::-webkit-scrollbar]:hidden">

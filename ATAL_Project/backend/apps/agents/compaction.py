@@ -72,7 +72,7 @@ def compact_history(session_id: str, *, force: bool = False) -> int:
     )
 
     _SUMMARY_SYSTEM = (
-        "You are summarising a steel-plant maintenance engineer conversation. "
+        "You are summarising a maintenance engineer conversation for the ATAL's Diagnostic. "
         "Produce a concise factual summary (under 400 words) covering: "
         "the equipment discussed, faults/issues identified, diagnoses made, "
         "recommended actions, and any key numeric values (sensor readings, "

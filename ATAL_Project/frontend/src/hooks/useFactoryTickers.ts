@@ -6,6 +6,8 @@ interface AlarmEvent {
   id: string;
   asset_name?: string;
   asset?: string;
+  asset_id?: string;
+  factory_id?: string;
   sensor_name?: string;
   alarm_type?: string;
   severity?: string;
@@ -19,6 +21,8 @@ interface MLPrediction {
   id: string;
   asset_name?: string;
   asset?: string;
+  asset_id?: string;
+  factory_id?: string;
   model_type?: string;
   prediction_output?: {
     rul_hours?: number;
@@ -86,26 +90,27 @@ export function useFactoryTickers(
 
   const refresh = useCallback(async () => {
     try {
-      const [alarms, preds, factories] = await Promise.all([
-        apiList<AlarmEvent>("/api/v1/alerts/?acknowledged=false&limit=20").catch(() => [] as AlarmEvent[]),
-        apiList<MLPrediction>("/api/v1/ml/predictions/?limit=20&order=-prediction_time").catch(() => [] as MLPrediction[]),
+      const [alarms, preds, factories, assets] = await Promise.all([
+        apiList<AlarmEvent>("/api/v1/alerts/?acknowledged=false&limit=40").catch(() => [] as AlarmEvent[]),
+        apiList<MLPrediction>("/api/v1/ml/predictions/?limit=40&order=-prediction_time").catch(() => [] as MLPrediction[]),
         apiList<{ id: string; code: string; name: string }>("/api/v1/factories/").catch(() => [] as { id: string; code: string; name: string }[]),
+        apiList<{ id: string; factory?: string }>("/api/v1/assets/").catch(() => [] as { id: string; factory?: string }[]),
       ]);
 
-      const f1Factory = factories.find(f => f.code === factory1Code);
-      const f2Factory = factories.find(f => f.code === factory2Code);
+      const f1Factory = factories.find((f) => f.code === factory1Code);
+      const f2Factory = factories.find((f) => f.code === factory2Code);
+      const assetFactory = new Map(assets.map((a) => [a.id, a.factory]));
 
-      // Filter alarms and predictions by factory (via asset lookup, best effort)
-      // Since we don't have factory_id on alerts directly, we split roughly
-      const half = Math.ceil(alarms.length / 2);
-      const alarms1 = alarms.slice(0, half);
-      const alarms2 = alarms.slice(half);
+      const belongsToFactory = (assetId?: string, factoryId?: string) => {
+        if (!factoryId) return false;
+        if (!assetId) return false;
+        return assetFactory.get(assetId) === factoryId;
+      };
 
-      const half2 = Math.ceil(preds.length / 2);
-      const preds1 = preds.slice(0, half2);
-      const preds2 = preds.slice(half2);
-
-      void f1Factory; void f2Factory; // IDs available for future filtering
+      const alarms1 = alarms.filter((a) => belongsToFactory(a.asset_id ?? a.asset, f1Factory?.id));
+      const alarms2 = alarms.filter((a) => belongsToFactory(a.asset_id ?? a.asset, f2Factory?.id));
+      const preds1 = preds.filter((p) => belongsToFactory(p.asset_id ?? p.asset, f1Factory?.id));
+      const preds2 = preds.filter((p) => belongsToFactory(p.asset_id ?? p.asset, f2Factory?.id));
 
       const items1 = [...buildAlarmTicker(alarms1), ...buildRulTicker(preds1)];
       const items2 = [...buildAlarmTicker(alarms2), ...buildRulTicker(preds2)];

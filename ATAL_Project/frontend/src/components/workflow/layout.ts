@@ -61,15 +61,44 @@ export function computeNodesBounds(nodes: FlowNode[]): NodesBounds {
   };
 }
 
-/** Pan offset so the node group's centroid sits at the viewport center. */
+/** Pan offset so the node group's centroid sits at the viewport center (transform-origin: 0 0). */
 export function computeCenterPan(
   bounds: NodesBounds,
   containerWidth: number,
   containerHeight: number,
   zoom = 1,
+  /** Shift content upward (px) to clear bottom overlays such as floating alerts. */
+  verticalBiasPx = 0,
 ): { x: number; y: number } {
   return {
     x: Math.round(containerWidth / 2 - bounds.centerX * zoom),
-    y: Math.round(containerHeight / 2 - bounds.centerY * zoom),
+    y: Math.round(containerHeight / 2 - bounds.centerY * zoom - verticalBiasPx),
   };
+}
+
+/** Reserve vertical space when system alerts stack at the canvas bottom (modal preview only). */
+export function computeAlertVerticalBias(alertCount: number): number {
+  if (alertCount <= 0) return 0;
+  return 24 + alertCount * 44;
+}
+
+/** Scale the pipeline to fit inside the viewport (modal preview). */
+export function computeFitZoom(
+  bounds: NodesBounds,
+  containerWidth: number,
+  containerHeight: number,
+  bottomReservePx = 0,
+  maxZoom = 1,
+): number {
+  if (bounds.maxX <= bounds.minX || bounds.maxY <= bounds.minY) return maxZoom;
+
+  const paddingX = 80;
+  const paddingY = 48;
+  const contentW = bounds.maxX - bounds.minX + paddingX * 2;
+  const usableH = Math.max(160, containerHeight - bottomReservePx);
+  const contentH = bounds.maxY - bounds.minY + paddingY * 2;
+
+  const zoomW = containerWidth / contentW;
+  const zoomH = usableH / contentH;
+  return Math.min(maxZoom, zoomW, zoomH);
 }

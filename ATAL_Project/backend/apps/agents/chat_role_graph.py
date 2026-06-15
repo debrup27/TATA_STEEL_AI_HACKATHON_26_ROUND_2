@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 _ROLE_SYSTEMS: dict[str, str] = {
     "technician": (
-        "You advise a field maintenance technician at Tata Steel. "
+        "You advise a field maintenance technician using the ATAL's Diagnostic. "
         "Given the user question and optional document excerpt, output 3–5 bullet points "
         "the main assistant should emphasize: hands-on repair steps, LOTO/safety, tooling, "
         "observable symptoms. Under 100 words. Bullets only, no greeting."
     ),
     "supervisor": (
-        "You advise a maintenance supervisor at Tata Steel. "
+        "You advise a maintenance supervisor using the ATAL's Diagnostic. "
         "Given the user question and optional document excerpt, output 3–5 bullet points "
         "for crew coordination, escalation criteria, downtime impact, and delegation. "
         "Under 100 words. Bullets only, no greeting."

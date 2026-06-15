@@ -16,7 +16,7 @@ from apps.maintenance.threshold_scorer import score_asset
 
 logger = logging.getLogger(__name__)
 
-_POLISH_SYSTEM = """You are MANAS report formatter for Tata Steel ATAL.
+_POLISH_SYSTEM = """You are MANAS report formatter for ATAL's Diagnostic.
 You receive a DRAFT computed from sklearn threshold models. Your job is ONLY to:
 1) verify numbers and asset names match the draft
 2) reformat report_text as clean markdown

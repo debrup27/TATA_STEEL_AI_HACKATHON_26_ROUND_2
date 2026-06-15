@@ -16,7 +16,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert industrial maintenance engineer specializing in steel manufacturing.
-You are analyzing a consolidated asset condition report from a Tata Steel plant.
+You are analyzing a consolidated asset condition report from an ATAL's Diagnostic plant deployment.
 
 CRITICAL RULES:
 1. Every numeric threshold you cite MUST appear verbatim in the provided ISO standard references.

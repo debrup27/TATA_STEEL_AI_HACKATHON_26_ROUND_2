@@ -4,23 +4,10 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Send, RefreshCw } from "lucide-react";
 import { triggerPageTransition } from "../animations/PageTransition";
-import {
-  Steps,
-  StepsContent,
-  StepsItem,
-  StepsTrigger,
-  StepsBar
-} from "./ai-components/steps";
-import { TextShimmerLoader } from "./ai-components/loader";
-import {
-  Source,
-  SourceContent,
-  SourceTrigger
-} from "./ai-components/source";
-import { useTelemetryCells, useMockChatSimulation } from "@/hooks";
+import { useTelemetryCells } from "@/hooks";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
 import { fetchManasPredictions, type RulPredictionData } from "@/services/prediction";
-import { SPRING_DEFAULT, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
+import { SPRING_DEFAULT } from "@/lib/constants";
 import SansadGrid from "@/components/SansadGrid";
 
 const DemoMessage = React.memo(function DemoMessage({ msg }: { msg: { role: string; content: string } }) {
@@ -68,35 +55,25 @@ export default function AtalDisplayModal() {
   ]);
   const [manasInput, setManasInput] = useState("");
 
-  const chatSim = useMockChatSimulation({
-    stepInterval: CHAT_SIM_OVERRIDE_STEP_INTERVAL,
-    extraDoneDelay: CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY,
-    onDone: () => {
-      setDemoMessages((prev) => {
-        const lastUserMsg = prev[prev.length - 1]?.content || "";
-        const reply = generateDemoReply(lastUserMsg);
-        return [...prev, { role: "assistant", content: reply }];
-      });
-    },
-  });
-
   const handleTabChange = (tabId: "atal_sansad" | "atal_manas") => {
     setActiveTab(tabId);
   };
 
   const handleSendDemoMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manasInput.trim() || chatSim.isLoading) return;
+    if (!manasInput.trim()) return;
     const userMsg = manasInput.trim();
-    setDemoMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setDemoMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMsg },
+      { role: "assistant", content: generateDemoReply() },
+    ]);
     setManasInput("");
-    chatSim.start();
   };
 
   const resetDemo = () => {
     setDemoMessages([getWelcomeMessage()]);
     setManasInput("");
-    chatSim.reset();
   };
 
   const tabs: TabItem[] = [
@@ -240,38 +217,6 @@ export default function AtalDisplayModal() {
                     {demoMessages.map((msg, i) => (
                       <DemoMessage key={i} msg={msg} />
                     ))}
-                    {chatSim.showProcessing && (
-                      <div className="max-w-[85%] self-start text-[11px]">
-                        <Steps defaultOpen>
-                          <StepsTrigger>
-                            <TextShimmerLoader
-                              text="Processing your request"
-                              size="sm"
-                            />
-                          </StepsTrigger>
-                          <StepsContent bar={<StepsBar />}>
-                            <div className="space-y-1 mt-1 font-medium">
-                              <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
-                                Parsing telemetry feeds
-                              </StepsItem>
-                              <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
-                                <Source>
-                                  <SourceTrigger label="datalake.atal" showFavicon />
-                                  <SourceContent
-                                    title="ATAL Diagnostic Lake"
-                                    description="Primary index for asset sensor feeds."
-                                  />
-                                </Source>{" "}
-                                referenced
-                              </StepsItem>
-                              <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
-                                Formulating diagnosis
-                              </StepsItem>
-                            </div>
-                          </StepsContent>
-                        </Steps>
-                      </div>
-                    )}
                   </div>
 
                   {/* Browser Input Bar */}
@@ -284,12 +229,11 @@ export default function AtalDisplayModal() {
                       value={manasInput}
                       onChange={(e) => setManasInput(e.target.value)}
                       placeholder="Ask Manas..."
-                      disabled={chatSim.isLoading}
-                      className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+                      className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
                     />
                     <button
                       type="submit"
-                      disabled={!manasInput.trim() || chatSim.isLoading}
+                      disabled={!manasInput.trim()}
                       className="p-2 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
                     >
                       <Send size={12} />

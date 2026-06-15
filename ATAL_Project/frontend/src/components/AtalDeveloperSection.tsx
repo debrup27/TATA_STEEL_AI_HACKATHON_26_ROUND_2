@@ -43,36 +43,24 @@ const DemoMessage = React.memo(function DemoMessage({ msg }: { msg: { role: stri
 function ManasPanelPreview() {
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
     getWelcomeMessage() as { role: "user" | "assistant"; content: string },
-    { role: "user", content: "AGC cylinder pressure dropped to 181 bar during rolling." },
   ]);
   const [input, setInput] = useState("");
 
-  const chatSim = useMockChatSimulation({
-    stepInterval: CHAT_SIM_OVERRIDE_STEP_INTERVAL,
-    extraDoneDelay: CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY,
-    onDone: () => {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1]?.content || "";
-        return [...prev, { role: "assistant", content: generateDemoReply(last) }];
-      });
-    },
-  });
-
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || chatSim.isLoading) return;
-    setMessages((prev) => [...prev, { role: "user", content: input.trim() }]);
+    if (!input.trim()) return;
+    const userMsg = input.trim();
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMsg },
+      { role: "assistant", content: generateDemoReply() },
+    ]);
     setInput("");
-    chatSim.start();
   };
 
   const reset = () => {
-    setMessages([
-      getWelcomeMessage() as { role: "user" | "assistant"; content: string },
-      { role: "user", content: "AGC cylinder pressure dropped to 181 bar during rolling." },
-    ]);
+    setMessages([getWelcomeMessage() as { role: "user" | "assistant"; content: string }]);
     setInput("");
-    chatSim.reset();
   };
 
   return (
@@ -93,22 +81,6 @@ function ManasPanelPreview() {
       {/* Messages */}
       <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-transparent [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:bg-black/10 [&::-webkit-scrollbar-thumb]:rounded-full">
         {messages.map((msg, i) => <DemoMessage key={i} msg={msg} />)}
-        {chatSim.showProcessing && (
-          <div className="max-w-[85%] self-start text-[11px]">
-            <Steps defaultOpen>
-              <StepsTrigger><TextShimmerLoader text="Processing your request" size="sm" /></StepsTrigger>
-              <StepsContent bar={<StepsBar />}>
-                <div className="space-y-1 mt-1 font-medium">
-                  <StepsItem status={chatSim.currentStep > 0 ? "complete" : "active"}>Parsing telemetry feeds</StepsItem>
-                  <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
-                    <Source><SourceTrigger label="datalake.atal" showFavicon /><SourceContent title="ATAL Diagnostic Lake" description="Primary index for asset sensor feeds." /></Source>{" "}referenced
-                  </StepsItem>
-                  <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>Formulating diagnosis</StepsItem>
-                </div>
-              </StepsContent>
-            </Steps>
-          </div>
-        )}
       </div>
 
       {/* Input */}
@@ -118,12 +90,11 @@ function ManasPanelPreview() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask Manas..."
-          disabled={chatSim.isLoading}
-          className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+          className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
         />
         <button
           type="submit"
-          disabled={!input.trim() || chatSim.isLoading}
+          disabled={!input.trim()}
           className="p-2 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
         >
           <Send size={12} />

@@ -248,7 +248,7 @@ export function applyPlantSnapshotToNodes(
       healthScore: score,
       rulHours,
       rulDays,
-      faultClass: diag.probableFault || node.faultClass,
+      faultClass: diag.faultClass ?? node.faultClass,
       statusColor: healthToColor(score, status),
       status: healthToFlowStatus(score, status),
     };
@@ -265,7 +265,7 @@ export function diagToNodePatch(diag: DiagnosticAsset): Partial<FlowNode> {
     rulDays:
       diag.rulDays ??
       (rulHours != null ? Math.max(1, Math.round(rulHours / 24)) : undefined),
-    faultClass: diag.probableFault,
+    faultClass: diag.faultClass,
     statusColor: healthToColor(diag.health, status),
     status: healthToFlowStatus(diag.health, status),
   };
@@ -395,12 +395,13 @@ export async function fetchFactoryWorkflowNodes(
     const health: BackendAssetHealth = diag
       ? {
           asset_id: asset.id,
+          name: asset.name,
           health_score: diag.health,
           rul_hours: diag.rulHours ?? null,
           status: snapshotHealthStatus(diag),
-          fault_classification: diag.probableFault || undefined,
+          fault_classification: diag.faultClass ?? undefined,
         }
-      : { asset_id: asset.id, health_score: 100, rul_hours: null, status: "healthy" };
+      : { asset_id: asset.id, name: asset.name, health_score: 100, rul_hours: null, status: "healthy" };
     const sensors = diag ? snapshotSensorsToFlow(diag.sensors) : [];
 
     const position = layout[asset.asset_type] ?? {

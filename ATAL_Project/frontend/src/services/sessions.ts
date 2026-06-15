@@ -1,7 +1,6 @@
 import { apiJson, apiList } from "@/lib/api";
 import {
   mapChatSession,
-  resolveSessionTitle,
   type BackendChatSession,
   type BackendChatMessage,
 } from "@/lib/mappers";

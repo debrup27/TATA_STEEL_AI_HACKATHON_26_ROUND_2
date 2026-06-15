@@ -11,11 +11,13 @@ function EquipmentPicker({
   value,
   disabled,
   onChange,
+  compact = false,
 }: {
   assets: DiagnosticAsset[];
   value: string;
   disabled?: boolean;
   onChange: (id: string) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -31,7 +33,7 @@ function EquipmentPicker({
   }, []);
 
   return (
-    <div ref={rootRef} className="relative min-w-[130px] max-w-[170px]">
+    <div ref={rootRef} className={`relative ${compact ? "min-w-[108px] max-w-[140px]" : "min-w-[130px] max-w-[170px]"}`}>
       <button
         type="button"
         disabled={disabled}
@@ -82,9 +84,9 @@ function EquipmentPicker({
   );
 }
 
-export default function AnomalyTripControl() {
+export default function AnomalyTripControl({ compact = false }: { compact?: boolean }) {
   const { assets, snapshot, loading } = usePlantSnapshot();
-  const [assetId, setAssetId] = useState("");
+  const [pickedAssetId, setPickedAssetId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,13 +109,11 @@ export default function AnomalyTripControl() {
     return worst?.id ?? assets[0]?.id ?? "";
   }, [assets, activeAssetId]);
 
-  useEffect(() => {
-    if (!assetId && defaultAssetId) setAssetId(defaultAssetId);
-  }, [assetId, defaultAssetId]);
-
-  useEffect(() => {
-    if (simulationActive && activeAssetId) setAssetId(activeAssetId);
-  }, [simulationActive, activeAssetId]);
+  const assetId = useMemo(() => {
+    if (simulationActive && activeAssetId) return activeAssetId;
+    if (pickedAssetId) return pickedAssetId;
+    return defaultAssetId;
+  }, [simulationActive, activeAssetId, pickedAssetId, defaultAssetId]);
 
   const runGenerate = async () => {
     if (!assetId || simulationActive || busy) return;
@@ -156,14 +156,17 @@ export default function AnomalyTripControl() {
 
   return (
     <div
-      className="relative z-[60] flex items-center gap-1.5 flex-nowrap pointer-events-auto"
+      className={`relative z-[60] flex items-center gap-1.5 pointer-events-auto ${
+        compact ? "flex-wrap justify-end" : "flex-nowrap"
+      }`}
       onClick={(e) => e.stopPropagation()}
     >
       <EquipmentPicker
         assets={assets}
         value={assetId}
         disabled={busy || simulationActive}
-        onChange={setAssetId}
+        onChange={setPickedAssetId}
+        compact={compact}
       />
 
       <button
@@ -181,7 +184,7 @@ export default function AnomalyTripControl() {
         }
       >
         {busy && !simulationActive ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-        Generate Abnormality
+        {compact ? "Generate" : "Generate Abnormality"}
       </button>
 
       <button

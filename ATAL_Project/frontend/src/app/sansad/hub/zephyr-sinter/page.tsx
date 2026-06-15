@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import SansadBackButton from "../components/SansadBackButton";
 import ClickSpark from "@/animations/ClickSpark";
 import NodeWorkflow from "@/components/NodeWorkflow";
 import AnomalyTripControl from "../components/AnomalyTripControl";
@@ -83,15 +83,7 @@ export default function ZephyrSinterPage() {
             <div className="w-full shrink-0 border-b border-zinc-200 select-none">
               <div className="w-full flex items-center justify-between px-8 py-3">
               <div className="w-1/4 flex justify-start">
-                <Link href="/sansad/hub" className="flex items-center select-none">
-                  <div 
-                    className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold" 
-                    style={{ fontFamily: "var(--font-pixeloid)" }}
-                  >
-                    <ArrowLeft className="w-0 h-5 text-white opacity-0 transition-all duration-300 ease-out group-hover/btn:w-5 group-hover/btn:opacity-100 shrink-0" />
-                    <span className="text-xs uppercase tracking-wider">Back</span>
-                  </div>
-                </Link>
+                <SansadBackButton href="/sansad/hub" />
               </div>
 
               {/* Center: Title and Subtitle */}

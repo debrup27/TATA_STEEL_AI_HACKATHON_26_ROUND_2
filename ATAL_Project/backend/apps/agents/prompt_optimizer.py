@@ -10,8 +10,7 @@ from apps.agents.ollama_warmup import ollama_keep_alive_value, OLLAMA_SMALL_LOCK
 
 logger = logging.getLogger(__name__)
 
-_OPTIMIZER_SYSTEM = """You rewrite user drafts into a single clear prompt for MANAS — a steel-plant \
-maintenance diagnostics assistant (Tata Steel ATAL).
+_OPTIMIZER_SYSTEM = """You rewrite user drafts into a single clear prompt for MANAS — the ATAL's Diagnostic for steel-plant maintenance.
 
 MANAS scope ONLY:
 - Equipment fault diagnosis, RCA, sensor/telemetry interpretation

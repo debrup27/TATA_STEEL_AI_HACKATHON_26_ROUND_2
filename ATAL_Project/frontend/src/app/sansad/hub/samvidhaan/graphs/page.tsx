@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
@@ -10,7 +10,10 @@ import {
   type FactoryMaintenanceSnapshot,
 } from "@/services/samvidhaanGraphs";
 import AnomalyTripControl from "../../components/AnomalyTripControl";
+import SamvidhaanTickerStrip from "../../components/SamvidhaanTickerStrip";
 import CostAnalysisPanel from "../../components/CostAnalysisPanel";
+import { deferEffect } from "@/lib/defer-effect";
+import { maintenanceGraphTickers } from "@/lib/samvidhaan-tickers";
 
 export default function GraphsPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -44,7 +47,9 @@ export default function GraphsPage() {
   }, []);
 
   useEffect(() => {
-    loadGraphs();
+    deferEffect(() => {
+      loadGraphs();
+    });
     const timer = setInterval(() => loadGraphs(true), SAMVIDHAAN_GRAPH_REFRESH_MS);
     return () => clearInterval(timer);
   }, [loadGraphs]);
@@ -52,6 +57,11 @@ export default function GraphsPage() {
   const nextRefresh = lastUpdated
     ? new Date(new Date(lastUpdated).getTime() + SAMVIDHAAN_GRAPH_REFRESH_MS)
     : null;
+
+  const graphTickers = useMemo(
+    () => maintenanceGraphTickers(factories, loading),
+    [factories, loading],
+  );
 
   return (
     <ClickSpark
@@ -119,7 +129,7 @@ export default function GraphsPage() {
                     PREDICTIVE MAINTENANCE
                   </h1>
                   <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mt-1">
-                    Predicted loss if no action vs PdM savings · per factory · ₹ lakh
+                    Predicted loss if no action vs Predictive Maintenance (PdM) savings · per factory · ₹ lakh
                     {nextRefresh ? ` · next ${nextRefresh.toLocaleTimeString()}` : ""}
                   </p>
                 </div>
@@ -137,6 +147,7 @@ export default function GraphsPage() {
                 </div>
               </div>
             </div>
+            <SamvidhaanTickerStrip logos={graphTickers} className="px-8" />
 
             <div className="flex-1 min-h-0 overflow-y-auto px-8 py-6">
               {error ? (

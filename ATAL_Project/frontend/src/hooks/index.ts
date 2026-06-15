@@ -1,5 +1,6 @@
 export { useTelemetryCells, useMockTelemetryCells } from "./useTelemetryCells";
 export { useTelemetryLogs, useMockTelemetryLogs } from "./useTelemetryLogs";
+export { useSystemLogTickers } from "./useSystemLogTickers";
 export { useChatStream, useMockChatSimulation } from "./useChatStream";
 export type { UseMockChatSimulationOptions } from "./useChatStream";
 export { useUser } from "./useUser";

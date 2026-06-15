@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
+import { Search, RefreshCw, AlertTriangle, ShieldAlert, CheckCircle } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
-import { useMockTelemetryLogs } from "@/hooks";
+import { LOG_STREAM_POLL_MS, LOG_STREAM_REVEAL_MS } from "@/services/telemetry";
+import { useTelemetryLogs } from "@/hooks";
+import SansadBackButton from "../components/SansadBackButton";
 import {
   buildLogModuleFilters,
   buildValidAssetModuleSet,
@@ -77,7 +79,12 @@ export default function LogsConsolePage() {
   const [activeLogForModal, setActiveLogForModal] = useState<LogEntry | null>(null);
   const [catalogAssets, setCatalogAssets] = useState<AssetAliasRow[]>([]);
 
-  const { logs, clear, status: logStreamStatus } = useMockTelemetryLogs(2500, 50, isLive);
+  const { logs, clear, status: logStreamStatus, metrics: streamMetrics } = useTelemetryLogs(
+    LOG_STREAM_POLL_MS,
+    80,
+    isLive,
+    { order: "desc", revealIntervalMs: LOG_STREAM_REVEAL_MS, instantInitialLoad: true },
+  );
 
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -116,11 +123,11 @@ export default function LogsConsolePage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Autoscroll watcher (only while live)
+  // Logs page: newest at top — keep viewport pinned to top when live.
   useEffect(() => {
     if (!isLive || !logContainerRef.current) return;
-    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-  }, [logs, isLive]);
+    logContainerRef.current.scrollTop = 0;
+  }, [logs.length, isLive]);
 
   const validModules = useMemo(
     () => buildValidAssetModuleSet(catalogAssets),
@@ -142,8 +149,24 @@ export default function LogsConsolePage() {
     return matchesModule && matchesSearch;
   });
 
-  const criticalLogsCount = logs.filter((log) => getLogSeverity(log.text) === "critical").length;
-  const warningLogsCount = logs.filter((log) => getLogSeverity(log.text) === "warning").length;
+  const metricsLogs =
+    activeModule === "ALL MODULES" && !debouncedSearchQuery.trim()
+      ? logs
+      : filteredLogs;
+
+  const consoleMetrics = useMemo(() => {
+    if (activeModule === "ALL MODULES" && !debouncedSearchQuery.trim()) {
+      return streamMetrics;
+    }
+    let critical = 0;
+    let warning = 0;
+    for (const log of metricsLogs) {
+      const sev = getLogSeverity(log.text);
+      if (sev === "critical") critical += 1;
+      else if (sev === "warning") warning += 1;
+    }
+    return { total: metricsLogs.length, critical, warning };
+  }, [activeModule, debouncedSearchQuery, metricsLogs, streamMetrics]);
 
   return (
     <ClickSpark
@@ -207,15 +230,7 @@ export default function LogsConsolePage() {
             <div className="w-full flex items-center justify-between px-8 py-3">
               {/* Left Side: Back Button */}
               <div className="w-1/4 flex justify-start">
-                <Link href="/sansad/hub" className="flex items-center select-none">
-                  <div 
-                    className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold" 
-                    style={{ fontFamily: "var(--font-pixeloid)" }}
-                  >
-                    <ArrowLeft className="w-0 h-5 text-white opacity-0 transition-all duration-300 ease-out group-hover/btn:w-5 group-hover/btn:opacity-100 shrink-0" />
-                    <span className="text-xs uppercase tracking-wider">Back</span>
-                  </div>
-                </Link>
+                <SansadBackButton href="/sansad/hub" />
               </div>
 
               {/* Center: Title and Subtitle */}
@@ -265,20 +280,22 @@ export default function LogsConsolePage() {
 
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500">Total Entries</span>
-                      <span className="text-sm font-bold font-mono text-zinc-800">{logs.length} Logged</span>
+                      <span className="text-sm font-bold font-mono text-zinc-800">
+                        {consoleMetrics.total} Logged
+                      </span>
                     </div>
 
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500">Critical Alarms</span>
-                      <span className={`text-sm font-bold font-mono ${criticalLogsCount > 0 ? "text-rose-600 font-extrabold" : "text-zinc-550"}`}>
-                        {criticalLogsCount} Active
+                      <span className={`text-sm font-bold font-mono ${consoleMetrics.critical > 0 ? "text-rose-600 font-extrabold" : "text-zinc-550"}`}>
+                        {consoleMetrics.critical} Active
                       </span>
                     </div>
 
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-500">Warnings</span>
-                      <span className={`text-sm font-bold font-mono ${warningLogsCount > 0 ? "text-amber-600 font-extrabold" : "text-zinc-550"}`}>
-                        {warningLogsCount} Total
+                      <span className={`text-sm font-bold font-mono ${consoleMetrics.warning > 0 ? "text-amber-600 font-extrabold" : "text-zinc-550"}`}>
+                        {consoleMetrics.warning} Total
                       </span>
                     </div>
                   </div>

@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import HubShell from "../components/HubShell";
-import CostAnalysisPanel from "../components/CostAnalysisPanel";
 import { useHubManasNotify } from "../components/HubManasNotify";
 import {
   fetchDiagnostics,
@@ -13,6 +12,7 @@ import {
 } from "@/services/diagnostics";
 import type { DiagnosticAsset } from "@/services/sansadOutputs";
 import { HUB_TICK_INTERVAL } from "@/services/telemetry";
+import { deferEffect } from "@/lib/defer-effect";
 import {
   Activity,
   AlertTriangle,
@@ -99,14 +99,20 @@ export default function DiagnosticsPage() {
   }, [mergeAsset]);
 
   useEffect(() => {
-    void loadAll().then((rows) => {
-      if (rows?.[0]) setActiveId(rows[0].id);
+    deferEffect(() => {
+      void loadAll().then((rows) => {
+        if (rows?.[0]) {
+          setActiveId((current) => current || rows[0].id);
+        }
+      });
     });
   }, [loadAll]);
 
   useEffect(() => {
     if (!activeId) return;
-    void loadActive(activeId);
+    deferEffect(() => {
+      void loadActive(activeId);
+    });
     const interval = setInterval(() => {
       void loadActive(activeId);
     }, HUB_TICK_INTERVAL);
@@ -129,7 +135,9 @@ export default function DiagnosticsPage() {
     );
   }, [assets, search]);
 
-  const asset = assets.find((a) => a.id === activeId) ?? filteredAssets[0] ?? assets[0];
+  const asset =
+    assets.find((a) => a.id === activeId) ??
+    (activeId ? undefined : filteredAssets[0] ?? assets[0]);
 
   const selectAsset = (id: string) => {
     setActiveId(id);
@@ -195,6 +203,17 @@ export default function DiagnosticsPage() {
     );
   }
 
+  if (!asset && activeId) {
+    return (
+      <HubShell title="Diagnostics & Prediction" subtitle="Loading component detail…">
+        <div className="flex-1 flex items-center justify-center text-zinc-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-mono uppercase">Refreshing selected asset</span>
+        </div>
+      </HubShell>
+    );
+  }
+
   if (!asset) {
     return (
       <HubShell title="Diagnostics & Prediction" subtitle="Fault diagnosis · root cause · RUL">
@@ -211,10 +230,6 @@ export default function DiagnosticsPage() {
   return (
     <HubShell title="Diagnostics & Prediction" subtitle="Live ML inference · RCA · RUL · cross-stage defects">
       <div className="flex flex-col gap-4 h-full min-h-0">
-      {/* Factory-level predictive cost analysis — loss-if-no-action vs PdM savings */}
-      <div className="shrink-0">
-        <CostAnalysisPanel />
-      </div>
       <div className="flex-1 min-h-0 flex gap-5">
         {/* Left — component list */}
         <div className="w-[30%] min-w-[240px] max-w-[320px] flex flex-col gap-3 shrink-0">

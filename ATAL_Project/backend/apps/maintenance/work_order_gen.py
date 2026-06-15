@@ -18,7 +18,7 @@ from apps.agents.ollama_warmup import ollama_keep_alive_value, OLLAMA_SMALL_LOCK
 logger = logging.getLogger(__name__)
 
 _WO_SYSTEM = """You are MANAS, drafting a formal maintenance WORK ORDER for a steel-plant asset \
-(Tata Steel ATAL). You receive the live condition feed (health, RUL, anomaly, probable fault, \
+(ATAL's Diagnostic). You receive the live condition feed (health, RUL, anomaly, probable fault, \
 criticality, spares). Produce a concrete, safe, actionable work order.
 
 Return ONLY valid JSON (no preamble, no markdown fences) with EXACTLY these keys:
@@ -93,6 +93,31 @@ def _gather_feed(asset) -> dict:
     }
 
 
+def _normalize_text_lines(items) -> list[str]:
+    out: list[str] = []
+    for item in items or []:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                out.append(text)
+        elif isinstance(item, dict):
+            if isinstance(item.get("step"), str):
+                out.append(item["step"].strip())
+            elif isinstance(item.get("action"), str):
+                out.append(item["action"].strip())
+            else:
+                part = item.get("part") or item.get("name") or "Part"
+                qty = item.get("qty", item.get("quantity"))
+                status = item.get("order_status") or item.get("status") or item.get("decision")
+                line = str(part)
+                if qty is not None:
+                    line += f" — qty {qty}"
+                if status:
+                    line += f" — {status}"
+                out.append(line)
+    return out
+
+
 def generate_work_order_sync(asset_id: str, *, user=None) -> dict:
     """Generate + persist a WorkOrder for the asset from live feeds. Returns the WO as a dict."""
     from apps.assets.models import Asset
@@ -138,13 +163,13 @@ def generate_work_order_sync(asset_id: str, *, user=None) -> dict:
         "description": (llm or {}).get("description")
         or f"Condition-based work order for {asset.name}: health {health:.0f}%, "
         f"RUL {rul if rul is not None else '—'}h, fault {'active' if fault else 'nominal'}.",
-        "recommended_actions": (llm or {}).get("recommended_actions")
+        "recommended_actions": _normalize_text_lines((llm or {}).get("recommended_actions"))
         or [
             "Apply LOTO and verify zero-energy state before intervention.",
             f"Inspect {feed['probable_fault'] or 'primary wear components'} against OEM limits.",
             "Replace/repair per findings; record measurements in the digital logbook.",
         ],
-        "spare_requirements": (llm or {}).get("spare_requirements") or order_parts,
+        "spare_requirements": _normalize_text_lines((llm or {}).get("spare_requirements")) or order_parts,
         "estimated_duration_hrs": float((llm or {}).get("estimated_duration_hrs") or (8 if fault else 4)),
         "safety_notes": (llm or {}).get("safety_notes") or "Follow plant LOTO (ISO 14118) and PPE SOP.",
     }

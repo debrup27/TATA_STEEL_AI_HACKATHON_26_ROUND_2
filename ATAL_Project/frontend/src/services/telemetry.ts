@@ -1,7 +1,9 @@
 import { apiJson, apiList, getAccessToken, ApiError } from "@/lib/api";
-import { createAssetAliasResolver, resolveLogModuleLabel } from "@/lib/assetAliases";
+import { createAssetAliasResolver, resolveLogModuleLabel, isUuid } from "@/lib/assetAliases";
+import { assetSystemTag } from "@/lib/asset-system-tag";
+import { formatLogTimeKolkata, logSortKey } from "@/lib/log-time";
 import { mapTelemetryCell } from "@/lib/mappers";
-import { formatAlertLogText, formatAlertSeverity, formatReportLogText } from "@/lib/systemLogFormat";
+import { formatAlertLogText, formatAlertSeverity, formatReportLogText, normalizeSystemEmitTags, SYSTEM_EMIT_TAG } from "@/lib/systemLogFormat";
 import type { TelemetryCell, LogEntry } from "./types";
 
 const FALLBACK_CELLS: TelemetryCell[] = [
@@ -110,12 +112,22 @@ export function tickExhausterHealth(val: number): number {
 }
 
 export const HUB_TICK_INTERVAL = 3500;
+/** System log stream — poll backend + drip new rows into the UI. */
+export const LOG_STREAM_POLL_MS = 6500;
+export const LOG_STREAM_REVEAL_MS = 1400;
 export const CELL_TICK_INTERVAL = 2000;
 
 function formatTime(iso?: string | null): string {
-  if (!iso) return new Date().toTimeString().slice(0, 8);
-  return iso.slice(11, 19) || new Date().toTimeString().slice(0, 8);
+  return formatLogTimeKolkata(iso);
 }
+
+type RawLogRow = {
+  id: number;
+  time: string;
+  sortAt: number;
+  module: string;
+  text: string;
+};
 
 export type AlertLogsFetchStatus = "ok" | "auth_required" | "error";
 
@@ -156,66 +168,99 @@ export async function fetchAlertLogsDetailed(limit = 50): Promise<AlertLogsResul
 
     const resolveModule = createAssetAliasResolver(assets);
 
-    const alertEntries: LogEntry[] = alerts
+    const resolveTag = (input: {
+      id?: string | null;
+      name?: string | null;
+      code?: string | null;
+    }): string => {
+      const catalogName = resolveLogModuleLabel(resolveModule, input);
+      const row = catalogName
+        ? assets.find((a) => a.id === input.id || a.name === catalogName)
+        : undefined;
+      if (catalogName) {
+        return assetSystemTag({
+          name: catalogName,
+          asset_type: row?.asset_type,
+          code: input.code ?? row?.asset_type,
+        });
+      }
+      if (input.name?.trim() && !isUuid(input.name)) {
+        return assetSystemTag({ name: input.name, code: input.code });
+      }
+      return SYSTEM_EMIT_TAG;
+    };
+
+    const alertEntries: RawLogRow[] = alerts
       .map((a, i) => {
-        const assetModule = resolveLogModuleLabel(resolveModule, {
+        const assetModule = resolveTag({
           id: a.asset_id,
           name: a.asset_name,
         });
-        if (!assetModule) return null;
         const sev = formatAlertSeverity(a.severity);
+        const created = a.created_at ?? null;
         return {
           id: 1000 + i,
-          time: formatTime(a.created_at),
+          time: formatTime(created),
+          sortAt: logSortKey(created),
           module: assetModule,
-          text: `[${sev}] ${formatAlertLogText(a)}`,
+          text: normalizeSystemEmitTags(`[${sev}] ${formatAlertLogText(a)}`),
         };
-      })
-      .filter((e): e is LogEntry => e !== null);
+      });
 
-    const eventEntries: LogEntry[] = events
+    const eventEntries: RawLogRow[] = events
       .map((e, i) => {
-        const assetModule = resolveLogModuleLabel(resolveModule, {
+        const assetModule = resolveTag({
           id: typeof e.asset === "string" ? e.asset : undefined,
           name: e.asset_name,
         });
-        if (!assetModule) return null;
         const eventLabel = e.event_type
           ? e.event_type.toUpperCase().replace(/_/g, " ")
           : "EVENT";
+        const created = e.completed_date ?? e.created_at ?? null;
         return {
           id: 2000 + i,
-          time: formatTime(e.completed_date ?? e.created_at),
+          time: formatTime(created),
+          sortAt: logSortKey(created),
           module: assetModule,
-          text: `[MAINT] ${eventLabel}: ${(e.description ?? "").slice(0, 100)}`,
+          text: normalizeSystemEmitTags(
+            `[MAINT] ${eventLabel}: ${(e.description ?? "").slice(0, 100)}`,
+          ),
         };
-      })
-      .filter((e): e is LogEntry => e !== null);
+      });
 
-    const reportEntries: LogEntry[] = reports
+    const reportEntries: RawLogRow[] = reports
       .map((r, i) => {
-        const assetModule = resolveLogModuleLabel(resolveModule, {
+        const assetModule = resolveTag({
           id: typeof r.asset === "string" ? r.asset : undefined,
           name: r.asset_name,
           code: r.asset_code,
         });
-        if (!assetModule) return null;
+        const created = r.created_at ?? null;
         return {
           id: 3000 + i,
-          time: formatTime(r.created_at),
+          time: formatTime(created),
+          sortAt: logSortKey(created),
           module: assetModule,
-          text: `[${(r.risk_level ?? "INFO").toUpperCase()}] ${formatReportLogText({
-            ...r,
-            asset_name: assetModule,
-          })}`,
+          text: normalizeSystemEmitTags(
+            `[${(r.risk_level ?? "INFO").toUpperCase()}] ${formatReportLogText({
+              ...r,
+              asset_code: assetModule === SYSTEM_EMIT_TAG ? undefined : assetModule,
+            })}`,
+          ),
         };
-      })
-      .filter((e): e is LogEntry => e !== null);
+      });
+
+    const merged = [...alertEntries, ...eventEntries, ...reportEntries].sort(
+      (a, b) => a.sortAt - b.sortAt,
+    );
+    const window = merged.slice(-limit);
 
     return {
-      entries: [...alertEntries, ...eventEntries, ...reportEntries]
-        .sort((a, b) => b.time.localeCompare(a.time))
-        .slice(0, limit),
+      entries: window.map((entry) => {
+          const { sortAt: _ignored, ...rest } = entry;
+          void _ignored;
+          return rest;
+        }),
       status: "ok",
     };
   } catch (err) {

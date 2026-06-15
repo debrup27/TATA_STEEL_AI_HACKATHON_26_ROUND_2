@@ -11,9 +11,22 @@ export function isUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
-/** Module labels that exist in the live asset catalog. */
+/** Module labels that exist in the live asset catalog (full names + asset-type codes). */
 export function buildValidAssetModuleSet(assets: AssetAliasRow[]): Set<string> {
-  return new Set(assets.map((a) => a.name.trim()).filter(Boolean));
+  const set = new Set<string>();
+  for (const a of assets) {
+    const name = a.name.trim();
+    if (name) {
+      set.add(name);
+      set.add(name.toUpperCase());
+    }
+    const code = a.asset_type?.trim();
+    if (code) {
+      set.add(code);
+      set.add(code.toUpperCase());
+    }
+  }
+  return set;
 }
 
 /**
@@ -81,7 +94,10 @@ export function buildLogModuleFilters(
 ): string[] {
   let unique = [...new Set(logModules.map((m) => m.trim()).filter(Boolean))];
   if (validModules && validModules.size > 0) {
-    unique = unique.filter((m) => validModules.has(m));
+    const filtered = unique.filter(
+      (m) => validModules.has(m) || validModules.has(m.toUpperCase()),
+    );
+    if (filtered.length > 0) unique = filtered;
   }
   unique.sort((a, b) => a.localeCompare(b));
   return ["ALL MODULES", ...unique];

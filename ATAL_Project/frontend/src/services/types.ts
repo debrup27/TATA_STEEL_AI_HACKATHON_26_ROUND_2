@@ -133,6 +133,8 @@ export interface ChatSession {
   /** Sidebar preview from list API before full history is loaded. */
   lastMessagePreview?: string;
   ragDocs?: RagDoc[];
+  /** Live system log stream (separate from concierge RAG docs). */
+  historicalLogDocs?: RagDoc[];
 }
 
 export interface TickerItem {

@@ -13,6 +13,8 @@ import DocumentPreviewModal from "./DocumentPreviewModal";
 
 interface ContextPanelProps {
   ragDocs: RagDoc[];
+  panelTitle?: string;
+  showManageDocs?: boolean;
   onClose: () => void;
   onManageDocs: () => void;
   onRemoveDoc: (name: string) => void;
@@ -84,6 +86,8 @@ function DocCard({
 
 export default function ContextPanel({
   ragDocs,
+  panelTitle = "Context",
+  showManageDocs = true,
   onClose,
   onManageDocs,
   onRemoveDoc,
@@ -179,10 +183,10 @@ export default function ContextPanel({
       <div className="flex items-center justify-between pb-4 border-b border-zinc-200 shrink-0 select-none">
         <div>
           <h3 className="text-sm font-black uppercase tracking-tight text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
-            Context Panel
+            {panelTitle}
           </h3>
           <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-black font-mono">
-            {ragDocs.length} Active Document{ragDocs.length !== 1 ? "s" : ""}
+            {ragDocs.length} {showManageDocs ? "Active Document" : "Historical Dossier"}{ragDocs.length !== 1 ? "s" : ""}
           </span>
         </div>
         <button
@@ -233,7 +237,7 @@ export default function ContextPanel({
           <div className="rounded-2xl border border-zinc-200/80 bg-white/50 overflow-hidden">
             <div className="px-3 py-2 bg-zinc-50/90 border-b border-zinc-100">
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-[#f97316]">
-                Your Uploads
+                {showManageDocs ? "Your Uploads" : "Historical Plant Dossiers"}
               </span>
               <span className="text-[9px] text-zinc-400 font-mono ml-2">{customDocs.length}</span>
             </div>
@@ -252,6 +256,7 @@ export default function ContextPanel({
         )}
       </div>
 
+      {showManageDocs && (
       <div className="pt-4 border-t border-zinc-200/60 shrink-0 select-none">
         <button
           onClick={onManageDocs}
@@ -261,6 +266,7 @@ export default function ContextPanel({
           <span>Manage Documents</span>
         </button>
       </div>
+      )}
     </div>
   );
 

@@ -43,7 +43,6 @@ export function prepareStreamingMarkdown(text: string): string {
 }
 
 const UNICODE_SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉";
-const UNICODE_SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾";
 const PROTECTED_SEGMENT =
   /(`[^`]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g;
 
@@ -104,11 +103,12 @@ export function normalizeTechnicalMarkdown(text: string): string {
   for (const [raw, math] of Object.entries(CHEM_UNICODE)) {
     t = t.split(raw).join(math);
   }
-  // Fix broken $…$ delimiter splits before touching well-formed math blocks.
   t = repairSplitChemistryMath(t);
+  t = repairFinishingStandNotation(t);
   t = mergeSplitMathSubscripts(t);
   return mapOutsideProtected(t, (segment) => {
     let s = segment;
+    s = repairStandRangeNotation(s);
     s = wrapUnicodeSubscriptFormulas(s);
     s = wrapScientificExpressions(s);
     s = wrapGreekUnicodeScripts(s);
@@ -204,6 +204,8 @@ function wrapUnicodeSuperscripts(s: string): string {
       if (full.includes("$")) return full;
       const exp = unicodeSupDigits(sup);
       if (!exp) return full;
+      // Finishing stand F¹ → subscript, not superscript
+      if (base === "F" && /^\d+$/.test(exp)) return `$F_{${exp}}$`;
       const latexBase = base === "μ" ? "\\mu" : base;
       return `$${latexBase}^{${exp}}$`;
     },
@@ -315,10 +317,33 @@ function fixMathBody(body: string): string {
   for (const [g, latex] of Object.entries(GREEK_TO_LATEX)) {
     out = out.split(g).join(latex);
   }
-  return out
+  out = out
+    .replace(/\bF\^\{?(\d)\}?/g, "F_{$1}")
+    .replace(/\bF\s*-\s*F(?:_\{?(\d)\}?)?/gi, (_, end?: string) =>
+      end ? `F_{1} - F_{${end}}` : "F_{1} - F_{7}",
+    )
     .replace(/((?:[A-Z][a-z]?)+)_(\d+)([A-Za-z]{0,4})/g, "$1_{$2}$3")
     .replace(/((?:[A-Z][a-z]?)+)(\d{1,2})(?![0-9a-zA-Z_])/g, "$1_{$2}")
     .replace(/(\\[a-z]+)_(\d+)/g, "$1_{$2}");
+  return out;
+}
+
+/** LLM often emits F^1 / F^7 (superscript) for finishing stands — should be subscripts. */
+function repairFinishingStandNotation(s: string): string {
+  let out = s;
+  // F¹ F⁷ unicode superscripts on stand letter
+  out = out.replace(/\bF([⁰¹²³⁴⁵⁶⁷⁸⁹]+)\b/g, (_, sup: string) => {
+    const d = unicodeSupDigits(sup);
+    return d ? `$F_{${d}}$` : `F${sup}`;
+  });
+  // $F^1$ $F^{7}$ inline math with caret superscripts
+  out = out.replace(/\$F\^\{?(\d)\}?\$/g, (_, d: string) => `$F_{${d}}$`);
+  // $F^1 - F^7$ or $F^1 through F^7$ inside one math span
+  out = out.replace(
+    /\$([^$]*F\^[\d{}]+[^$]*)\$/g,
+    (full, inner: string) => `$${fixMathBody(inner)}$`,
+  );
+  return out;
 }
 
 function normalizeTechnicalSegment(segment: string): string {
@@ -335,6 +360,27 @@ function normalizeTechnicalSegment(segment: string): string {
   s = wrapBareChemicalFormulas(s);
 
   return s;
+}
+
+function repairStandRangeNotation(s: string): string {
+  let out = s;
+  out = out.replace(
+    /\bF([₀₁₂₃₄₅₆₇₈₉]|\d)[\s–-]+F([₀₁₂₃₄₅₆₇₈₉]|\d)\b/gi,
+    (_, a: string, b: string) => {
+      const d1 = UNICODE_SUBSCRIPTS.includes(a) ? unicodeSubDigits(a) : a;
+      const d2 = UNICODE_SUBSCRIPTS.includes(b) ? unicodeSubDigits(b) : b;
+      return `$F_{${d1}}$–$F_{${d2}}$`;
+    },
+  );
+  out = out.replace(
+    /\$F\s*[-–]\s*F(?:_\{?(\d)\}?)?\$/gi,
+    (_, end?: string) => (end ? `$F_{1}$–$F_{${end}}$` : `$F_{1}$–$F_{7}$`),
+  );
+  out = out.replace(
+    /\$F\^(\d)\s*[-–]\s*F\^(\d)\$/g,
+    (_, a: string, b: string) => `$F_{${a}}$–$F_{${b}}$`,
+  );
+  return out;
 }
 
 function wrapUnicodeSubscriptFormulas(s: string): string {

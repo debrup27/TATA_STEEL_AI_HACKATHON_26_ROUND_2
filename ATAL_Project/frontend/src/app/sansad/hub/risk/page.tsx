@@ -6,7 +6,6 @@ import { useHubManasNotify } from "../components/HubManasNotify";
 import { fetchRiskAssets, fetchRiskBottleneckInsight } from "@/services/prediction";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
-import CostAnalysisPanel from "../components/CostAnalysisPanel";
 import type { RiskAsset } from "@/services/types";
 import type { RiskLevel } from "@/services/sansadOutputs";
 import { riskLevelColor } from "@/services/sansadOutputs";
@@ -183,8 +182,6 @@ export default function RiskPriorityPage() {
         ) : insight && insightTargetId === plantBottleneck.id ? (
           <InsightPanel title={`MANAS — ${insight.angle}`} text={insight.text} />
         ) : null}
-
-        <CostAnalysisPanel />
 
         <div className="grid grid-cols-12 gap-5">
           <div className="col-span-12 lg:col-span-5 bg-white border border-zinc-200 rounded-2xl overflow-hidden">

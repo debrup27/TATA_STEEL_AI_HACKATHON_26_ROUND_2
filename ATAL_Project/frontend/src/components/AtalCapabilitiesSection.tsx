@@ -9,7 +9,7 @@ const capabilities = [
     tag: "SANSAD",
     title: "Real-Time Telemetry",
     description:
-      "Live sensor streams from SRF, HHPD, Finishing Stands and 5 other assets. Anomaly flags surface within one tick — no polling delay.",
+      "Live sensor streams from SRF, HHPD, FS, HAGCC, APT, TCMS, CGP, and HPAK. Anomaly flags surface within one tick — no polling delay.",
     accent: "#3b82f6",
     icon: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

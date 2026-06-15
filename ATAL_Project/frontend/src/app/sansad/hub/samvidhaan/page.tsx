@@ -8,11 +8,13 @@ import ClickSpark from "@/animations/ClickSpark";
 import LogoLoop from "@/animations/LogoLoop";
 import NodeWorkflow from "@/components/NodeWorkflow";
 import BottomSplitCard from "./components/BottomSplitCard";
+import FactoryPreviewKpiList from "./components/FactoryPreviewKpiList";
 import AnomalyTripControl from "../components/AnomalyTripControl";
-import { useNotificationFeed } from "@/hooks/useNotificationFeed";
+import { useSystemLogTickers } from "@/hooks/useSystemLogTickers";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import { fetchPlantKpis } from "@/services/reports";
-import type { DiagnosticAsset } from "@/services/sansadOutputs";
+import { apiJson, apiList } from "@/lib/api";
+import { horizonKpis, zephyrKpis, type FactoryTelemetrySnapshot } from "@/lib/factory-display";
 
 const FALLBACK_TICKER = [{ text: "Awaiting live feed…", isSeparator: false }];
 
@@ -21,21 +23,16 @@ const FALLBACK_TICKER = [{ text: "Awaiting live feed…", isSeparator: false }];
 export default function SamvidhaanPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const { tickers: liveTickers } = useNotificationFeed(undefined, 30_000);
-  const sectionTickers = liveTickers.length >= 2 ? liveTickers : FALLBACK_TICKER;
+  const { tickers: liveTickers } = useSystemLogTickers(16, true);
+  const sectionTickers = liveTickers.length >= 1 ? liveTickers : FALLBACK_TICKER;
 
-  const [f1Asset, setF1Asset] = useState<DiagnosticAsset | null>(null);
-  const [f2Asset, setF2Asset] = useState<DiagnosticAsset | null>(null);
   const [plantKpis, setPlantKpis] = useState<{ avgRulH?: number; health?: number }>({});
-  const { assets: snapAssets } = usePlantSnapshot();
+  const [telemetryReady, setTelemetryReady] = useState(false);
+  const { assets: snapAssets, loading: snapLoading } = usePlantSnapshot();
+  const [f1Telemetry, setF1Telemetry] = useState<FactoryTelemetrySnapshot>();
+  const [f2Telemetry, setF2Telemetry] = useState<FactoryTelemetrySnapshot>();
 
   const [activeFactoryModal, setActiveFactoryModal] = useState<"f1" | "f2" | null>(null);
-
-  useEffect(() => {
-    if (!snapAssets.length) return;
-    setF1Asset(snapAssets.find((a) => a.factory.toLowerCase().includes("horizon")) ?? snapAssets[0] ?? null);
-    setF2Asset(snapAssets.find((a) => a.factory.toLowerCase().includes("zephyr")) ?? snapAssets[1] ?? null);
-  }, [snapAssets]);
 
   useEffect(() => {
     fetchPlantKpis()
@@ -48,6 +45,42 @@ export default function SamvidhaanPage() {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadTelemetry = async () => {
+      try {
+        const factories = await apiList<{ id: string; code: string }>("/api/v1/factories/");
+        const f1 = factories.find((f) => f.code === "F1");
+        const f2 = factories.find((f) => f.code === "F2");
+        const [t1, t2] = await Promise.all([
+          f1
+            ? apiJson<{ snapshot: FactoryTelemetrySnapshot }>(
+                `/api/v1/telemetry/snapshot/?factory=${f1.id}`,
+              ).catch(() => ({ snapshot: {} }))
+            : Promise.resolve({ snapshot: {} }),
+          f2
+            ? apiJson<{ snapshot: FactoryTelemetrySnapshot }>(
+                `/api/v1/telemetry/snapshot/?factory=${f2.id}`,
+              ).catch(() => ({ snapshot: {} }))
+            : Promise.resolve({ snapshot: {} }),
+        ]);
+        if (!cancelled) {
+          setF1Telemetry(t1.snapshot);
+          setF2Telemetry(t2.snapshot);
+          setTelemetryReady(true);
+        }
+      } catch {
+        if (!cancelled) setTelemetryReady(true);
+      }
+    };
+    void loadTelemetry();
+    const interval = setInterval(() => void loadTelemetry(), 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   const samvidhaanTickerLogos = [
     ...(plantKpis.health != null
       ? [{ text: `PLANT HEALTH: ${Math.round(plantKpis.health)}%`, isSeparator: false }, { text: "✦", isSeparator: true }]
@@ -58,11 +91,9 @@ export default function SamvidhaanPage() {
     ...sectionTickers,
   ];
 
-  const readSensor = (asset: DiagnosticAsset | null, match: RegExp) => {
-    const row = asset?.sensors.find((s) => match.test(s.label.toLowerCase()));
-    return row?.value?.replace(/[^\d.]/g, "") ?? "—";
-  };
-
+  const kpiReady = telemetryReady && (!snapLoading || snapAssets.length > 0);
+  const f1Kpis = kpiReady ? horizonKpis(snapAssets, f1Telemetry) : [];
+  const f2Kpis = kpiReady ? zephyrKpis(snapAssets, f2Telemetry) : [];
 
   // Drag coordinates for the 4 nodes
   const [nodes, setNodes] = useState({
@@ -438,7 +469,7 @@ export default function SamvidhaanPage() {
                 <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-teal-500/30 group-hover:text-teal-500 select-none font-bold transition-colors duration-300">+</div>
 
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
+                <div className="mb-4 flex shrink-0 items-start justify-between">
                   <div>
                     <h2 className="text-[18px] font-black text-zinc-950 uppercase tracking-tight leading-none">
                       HORIZON FOUNDRY
@@ -447,38 +478,13 @@ export default function SamvidhaanPage() {
                   <span className="text-[9px] font-mono font-bold text-teal-600 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">LIVE</span>
                 </div>
 
-                {/* Stats — full-height stacked rows */}
-                <div className="flex flex-col gap-2.5 flex-1 justify-center">
-                  <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
-                    <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Exhauster Vibration</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f1Asset, /vib/)}</span>
-                      <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">mm/s</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-rose-50 rounded-xl px-4 py-2.5 border border-rose-100">
-                    <span className="text-[9px] font-mono font-semibold text-rose-400 uppercase tracking-widest mb-1">Bearing RUL ⚠</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-rose-600 leading-none">
-                        {f1Asset?.rulHours != null ? Math.round(f1Asset.rulHours) : f1Asset?.rulDays != null ? Math.round(f1Asset.rulDays * 24) : "—"}
-                      </span>
-                      <span className="text-[13px] font-mono font-bold text-rose-400 mb-0.5">hours</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-emerald-50 rounded-xl px-4 py-2.5 border border-emerald-100">
-                    <span className="text-[9px] font-mono font-semibold text-emerald-500 uppercase tracking-widest mb-1">Cog Pressure</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[24px] font-mono font-extrabold text-emerald-700 leading-none">NOMINAL</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
-                    <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Sinter Temperature</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">1240</span>
-                      <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">°C</span>
-                    </div>
-                  </div>
-                </div>
+                {/* Stats — fixed card height; compact when 4 KPI rows */}
+                <FactoryPreviewKpiList
+                  kpis={f1Kpis}
+                  kpiReady={kpiReady}
+                  loadingText="Loading Horizon telemetry…"
+                  emptyText="No live telemetry for Horizon assets"
+                />
 
                 {/* Hover image overlay — factory.webp */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
@@ -516,7 +522,7 @@ export default function SamvidhaanPage() {
                 <div className="absolute bottom-2.5 right-2.5 font-mono text-[9px] text-amber-500/30 group-hover:text-amber-500 select-none font-bold transition-colors duration-300">+</div>
 
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
+                <div className="mb-4 flex shrink-0 items-start justify-between">
                   <div>
                     <h2 className="text-[18px] font-black text-zinc-950 uppercase tracking-tight leading-none">
                       ZEPHYR SINTER
@@ -525,39 +531,13 @@ export default function SamvidhaanPage() {
                   <span className="text-[9px] font-mono font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">LIVE</span>
                 </div>
 
-                {/* Stats — full-height stacked rows */}
-                <div className="flex flex-col gap-2.5 flex-1 justify-center">
-                  <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
-                    <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">FeO Content</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f2Asset, /feo/)}</span>
-                      <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">%</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
-                    <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Strand Speed</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">{readSensor(f2Asset, /strand|speed/)}</span>
-                      <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">m/min</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-amber-50 rounded-xl px-4 py-2.5 border border-amber-100">
-                    <span className="text-[9px] font-mono font-semibold text-amber-500 uppercase tracking-widest mb-1">Waste Fan RUL</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-amber-600 leading-none">
-                        {f2Asset?.rulHours != null ? Math.round(f2Asset.rulHours) : f2Asset?.rulDays != null ? Math.round(f2Asset.rulDays * 24) : "—"}
-                      </span>
-                      <span className="text-[13px] font-mono font-bold text-amber-400 mb-0.5">hours</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col bg-zinc-50 rounded-xl px-4 py-2.5 border border-zinc-100">
-                    <span className="text-[9px] font-mono font-semibold text-zinc-400 uppercase tracking-widest mb-1">Coke Rate</span>
-                    <div className="flex items-end gap-2">
-                      <span className="text-[32px] font-mono font-extrabold text-[#1b253c] leading-none">482</span>
-                      <span className="text-[13px] font-mono font-bold text-zinc-400 mb-0.5">kg/thm</span>
-                    </div>
-                  </div>
-                </div>
+                {/* Stats — fixed card height; compact when 4 KPI rows */}
+                <FactoryPreviewKpiList
+                  kpis={f2Kpis}
+                  kpiReady={kpiReady}
+                  loadingText="Loading Zephyr telemetry…"
+                  emptyText="No live telemetry for Zephyr assets"
+                />
 
                 {/* Hover image overlay — factory.webp */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-10 bg-white/95 rounded-2xl">
@@ -746,7 +726,7 @@ export default function SamvidhaanPage() {
 
                   {/* Node Workflow Graph Container */}
                   <div className="flex-grow w-full overflow-hidden relative">
-                    <NodeWorkflow initialFactory="horizon" hidePills={true} />
+                    <NodeWorkflow initialFactory="horizon" hidePills={true} reserveAlertSpace={true} />
                   </div>
 
                 </div>
@@ -775,7 +755,7 @@ export default function SamvidhaanPage() {
 
                   {/* Node Workflow Graph Container */}
                   <div className="flex-grow w-full overflow-hidden relative">
-                    <NodeWorkflow initialFactory="zephyr" hidePills={true} />
+                    <NodeWorkflow initialFactory="zephyr" hidePills={true} reserveAlertSpace={true} />
                   </div>
 
                 </div>

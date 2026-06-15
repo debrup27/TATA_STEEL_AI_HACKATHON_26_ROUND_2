@@ -103,6 +103,33 @@ describe("normalizeTechnicalMarkdown", () => {
   it("wraps caret exponents", () => {
     expect(normalizeTechnicalMarkdown("order 10^6 samples")).toContain("$10^{6}$");
   });
+
+  it("repairs finishing stand F^1 superscript to subscript", () => {
+    const out = normalizeTechnicalMarkdown(
+      "Finishing Stands $F^1$ through $F^7$ within FS scope",
+    );
+    expect(out).toContain("$F_{1}$");
+    expect(out).toContain("$F_{7}$");
+    expect(out).not.toContain("F^1");
+    expect(out).not.toContain("F^7");
+  });
+
+  it("repairs F¹ unicode superscript as stand subscript", () => {
+    expect(normalizeTechnicalMarkdown("stand F¹ and F⁷")).toContain("$F_{1}$");
+    expect(normalizeTechnicalMarkdown("stand F¹ and F⁷")).toContain("$F_{7}$");
+  });
+
+  it("repairs F₁–F₇ stand range", () => {
+    const out = normalizeTechnicalMarkdown("Finishing Stands F₁–F₇");
+    expect(out).toContain("$F_{1}$");
+    expect(out).toContain("$F_{7}$");
+  });
+
+  it("repairs broken $F - F$ range inside math", () => {
+    const out = normalizeTechnicalMarkdown("scope FS ($F - F_7$)");
+    expect(out).toContain("F_{1}");
+    expect(out).toContain("F_{7}");
+  });
 });
 
 describe("repairCollapsedMarkdownTables", () => {

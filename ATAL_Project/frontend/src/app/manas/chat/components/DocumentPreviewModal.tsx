@@ -19,7 +19,6 @@ export default function DocumentPreviewModal({
   title,
   body = "",
   pages = [],
-  fileType,
   loading = false,
   truncated = false,
   onClose,

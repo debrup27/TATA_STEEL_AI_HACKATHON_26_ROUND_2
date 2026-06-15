@@ -27,6 +27,8 @@ import {
   CARD_WIDTH_COLLAPSED,
   computeCenterPan,
   computeNodesBounds,
+  computeAlertVerticalBias,
+  computeFitZoom,
   NODE_LAYOUT_STEP,
   CANVAS_ORIGIN,
   CANVAS_EXTENT,
@@ -37,10 +39,16 @@ import {
 interface NodeWorkflowProps {
   initialFactory?: "horizon" | "zephyr";
   hidePills?: boolean;
+  /** Samvidhaan modal only — nudge nodes up for floating alerts. Full factory pages stay centered. */
+  reserveAlertSpace?: boolean;
   onBack?: () => void;
 }
 
-export default function NodeWorkflow({ initialFactory = "horizon", hidePills = false }: NodeWorkflowProps) {
+export default function NodeWorkflow({
+  initialFactory = "horizon",
+  hidePills = false,
+  reserveAlertSpace = false,
+}: NodeWorkflowProps) {
   const [activeFactory, setActiveFactory] = useState<"horizon" | "zephyr">(initialFactory);
   const [prevInitialFactory, setPrevInitialFactory] = useState(initialFactory);
   if (initialFactory !== prevInitialFactory) {
@@ -59,7 +67,8 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   });
 
   const nodes = factoryNodes[activeFactory];
-  const canvasAlerts = useFactoryCanvasAlerts(nodes);
+  const factoryCode = activeFactory === "horizon" ? "F1" : "F2";
+  const canvasAlerts = useFactoryCanvasAlerts(nodes, factoryCode);
 
   // setNodes helper to dynamically update the active factory
   const setNodes = useCallback((newNodes: FlowNode[] | ((prev: FlowNode[]) => FlowNode[])) => {
@@ -117,12 +126,16 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
   const panOffsetRef = useRef(panOffset);
   const zoomScaleRef = useRef(zoomScale);
   const nodesRef = useRef(nodes);
+  const canvasAlertsRef = useRef(canvasAlerts);
+  const reserveAlertSpaceRef = useRef(reserveAlertSpace);
 
   useEffect(() => {
     panOffsetRef.current = panOffset;
     zoomScaleRef.current = zoomScale;
     nodesRef.current = nodes;
-  }, [panOffset, zoomScale, nodes]);
+    canvasAlertsRef.current = canvasAlerts;
+    reserveAlertSpaceRef.current = reserveAlertSpace;
+  }, [panOffset, zoomScale, nodes, canvasAlerts, reserveAlertSpace]);
 
   // Load equipment nodes + sensor data from backend
   useEffect(() => {
@@ -230,7 +243,18 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     if (userMovedCanvasRef.current && !force) return;
     const { width, height } = containerRef.current.getBoundingClientRect();
     const bounds = computeNodesBounds(nodesRef.current);
-    setPanOffset(computeCenterPan(bounds, width, height, zoomScaleRef.current));
+    const alertBias = reserveAlertSpaceRef.current
+      ? computeAlertVerticalBias(canvasAlertsRef.current.length)
+      : 0;
+
+    let zoom = zoomScaleRef.current;
+    if (reserveAlertSpaceRef.current && (!userMovedCanvasRef.current || force)) {
+      zoom = computeFitZoom(bounds, width, height, alertBias);
+      zoomScaleRef.current = zoom;
+      setZoomScale(zoom);
+    }
+
+    setPanOffset(computeCenterPan(bounds, width, height, zoom, alertBias));
     setIsCanvasReady(true);
   }, []);
 
@@ -254,6 +278,12 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     return () => observer.disconnect();
   }, [activeFactory, nodes.length, workflowLoading, centerCanvas]);
 
+  // Nudge nodes upward in modal preview when alert stack grows.
+  useEffect(() => {
+    if (!reserveAlertSpace || !hasInitializedCenterRef.current || userMovedCanvasRef.current) return;
+    centerCanvas(true);
+  }, [reserveAlertSpace, canvasAlerts.length, centerCanvas]);
+
   // Enable transform transitions after the initial correct position paints
   React.useEffect(() => {
     if (!isCanvasReady) return;
@@ -268,7 +298,6 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
     } else if (type === "out") {
       setZoomScale((prev) => Math.max(prev - 0.1, 0.5));
     } else {
-      setZoomScale(1);
       userMovedCanvasRef.current = false;
       centerCanvas(true);
     }
@@ -587,7 +616,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
         <div className="flex bg-zinc-900/10 backdrop-blur-xs p-1.5 rounded-full items-center gap-1.5 min-w-[320px] mb-6 border border-black/5 shadow-2xs relative z-20 select-none mx-auto">
           {(["horizon", "zephyr"] as const).map((fac) => {
             const isActive = activeFactory === fac;
-            const label = fac === "horizon" ? "Horizon Foundry" : "Zephyr Core Plant";
+            const label = fac === "horizon" ? "Horizon Foundry" : "Zephyr Sinter";
             return (
               <button
                 key={fac}
@@ -619,7 +648,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
       {/* Main Flow Canvas Card Container */}
       <div 
         ref={containerRef}
-        className="w-full h-full flex-grow min-h-[500px] bg-[#FAF9F5] rounded-3xl border border-zinc-200/80 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing flex flex-col justify-end"
+        className="w-full h-full flex-grow min-h-[500px] bg-[#FAF9F5] rounded-3xl border border-zinc-200/80 shadow-2xl overflow-hidden relative cursor-grab active:cursor-grabbing"
         onMouseDown={handleCanvasMouseDown}
       >
         {/* SVG Dots Background Pattern */}
@@ -634,7 +663,7 @@ export default function NodeWorkflow({ initialFactory = "horizon", hidePills = f
 
         {/* Scalable & Pannable Viewport — overflow-visible so nodes/connectors above y=0 render */}
         <div 
-          className="absolute inset-0 z-10 origin-center select-none overflow-visible"
+          className="absolute inset-0 z-10 origin-top-left select-none overflow-visible"
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomScale})`,
             opacity: isCanvasReady ? 1 : 0,

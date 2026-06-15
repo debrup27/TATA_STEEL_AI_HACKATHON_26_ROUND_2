@@ -7,22 +7,9 @@ import { motion, useScroll, useTransform, useMotionValueEvent } from "framer-mot
 import ClickSpark from "../../animations/ClickSpark";
 import { Send, RefreshCw } from "lucide-react";
 import AtalFooter from "../../components/AtalFooter";
-import {
-  Steps,
-  StepsContent,
-  StepsItem,
-  StepsTrigger,
-  StepsBar
-} from "@/components/ai-components/steps";
-import { TextShimmerLoader } from "@/components/ai-components/loader";
-import {
-  Source,
-  SourceContent,
-  SourceTrigger
-} from "@/components/ai-components/source";
 import { getWelcomeMessage, generateDemoReply } from "@/services/chat";
-import { useMockChatSimulation, useUser } from "@/hooks";
-import { SPRING_SOFT, SPRING_MEDIUM, CHAT_SIM_OVERRIDE_STEP_INTERVAL, CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY } from "@/lib/constants";
+import { useUser } from "@/hooks";
+import { SPRING_SOFT, SPRING_MEDIUM } from "@/lib/constants";
 
 const DemoMessage = React.memo(function DemoMessage({ 
   msg, 
@@ -61,18 +48,6 @@ export default function ManasLandingPage() {
   const [inputText, setInputText] = useState("");
   const [isMobile, setIsMobile] = useState(false);
 
-  const chatSim = useMockChatSimulation({
-    stepInterval: CHAT_SIM_OVERRIDE_STEP_INTERVAL,
-    extraDoneDelay: CHAT_SIM_OVERRIDE_EXTRA_DONE_DELAY,
-    onDone: () => {
-      setDemoMessages((prev) => {
-        const lastUserMsg = prev[prev.length - 1]?.content || "";
-        const reply = generateDemoReply(lastUserMsg);
-        return [...prev, { role: "assistant", content: reply }];
-      });
-    },
-  });
-
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -84,17 +59,19 @@ export default function ManasLandingPage() {
 
   const handleSendDemoMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || chatSim.isLoading) return;
+    if (!inputText.trim()) return;
     const userMsg = inputText.trim();
-    setDemoMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setDemoMessages((prev) => [
+      ...prev,
+      { role: "user", content: userMsg },
+      { role: "assistant", content: generateDemoReply() },
+    ]);
     setInputText("");
-    chatSim.start();
   };
 
   const resetDemo = () => {
     setDemoMessages([getWelcomeMessage()]);
     setInputText("");
-    chatSim.reset();
   };
 
   // Scroll Progress Hooks (Desktop)
@@ -199,31 +176,6 @@ export default function ManasLandingPage() {
                 {demoMessages.map((msg, i) => (
                   <DemoMessage key={i} msg={msg} compact />
                 ))}
-                {chatSim.showProcessing && (
-                  <div className="max-w-[90%] self-start text-[9px]">
-                    <Steps defaultOpen>
-                      <StepsTrigger>
-                        <TextShimmerLoader
-                          text="Processing your request"
-                          size="sm"
-                        />
-                      </StepsTrigger>
-                      <StepsContent bar={<StepsBar />}>
-                        <div className="space-y-1 mt-0.5 font-medium">
-                          <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
-                            Parsing telemetry
-                          </StepsItem>
-                          <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
-                            Source referenced
-                          </StepsItem>
-                          <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
-                            Formulating diagnosis
-                          </StepsItem>
-                        </div>
-                      </StepsContent>
-                    </Steps>
-                  </div>
-                )}
               </div>
 
               {/* Input bar */}
@@ -236,12 +188,11 @@ export default function ManasLandingPage() {
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder="Ask Manas..."
-                  disabled={chatSim.isLoading}
-                  className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+                  className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-lg px-2.5 py-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <button
                   type="submit"
-                  disabled={!inputText.trim() || chatSim.isLoading}
+                  disabled={!inputText.trim()}
                   className="p-1 bg-zinc-950 text-white rounded-lg hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   <Send size={8} />
@@ -361,38 +312,6 @@ export default function ManasLandingPage() {
                         {demoMessages.map((msg, i) => (
                           <DemoMessage key={i} msg={msg} />
                         ))}
-                        {chatSim.showProcessing && (
-                          <div className="max-w-[85%] self-start text-[11px]">
-                            <Steps defaultOpen>
-                              <StepsTrigger>
-                                <TextShimmerLoader
-                                  text="Processing your request"
-                                  size="sm"
-                                />
-                              </StepsTrigger>
-                              <StepsContent bar={<StepsBar />}>
-                                <div className="space-y-1 mt-1 font-medium">
-                                  <StepsItem status={chatSim.currentStep > 0 ? "complete" : chatSim.currentStep === 0 ? "active" : "pending"}>
-                                    Parsing telemetry feeds
-                                  </StepsItem>
-                                  <StepsItem status={chatSim.currentStep > 1 ? "complete" : chatSim.currentStep === 1 ? "active" : "pending"}>
-                                    <Source>
-                                      <SourceTrigger label="datalake.atal" showFavicon />
-                                      <SourceContent
-                                        title="ATAL Diagnostic Lake"
-                                        description="Primary index for asset sensor feeds."
-                                      />
-                                    </Source>{" "}
-                                    referenced
-                                  </StepsItem>
-                                  <StepsItem status={chatSim.currentStep > 2 ? "complete" : chatSim.currentStep === 2 ? "active" : "pending"}>
-                                    Formulating diagnosis
-                                  </StepsItem>
-                                </div>
-                              </StepsContent>
-                            </Steps>
-                          </div>
-                        )}
                       </div>
 
                       {/* Browser Input Bar */}
@@ -405,12 +324,11 @@ export default function ManasLandingPage() {
                           value={inputText}
                           onChange={(e) => setInputText(e.target.value)}
                           placeholder="Ask Manas..."
-                          disabled={chatSim.isLoading}
-                          className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
+                          className="flex-1 bg-zinc-50 border border-zinc-200/80 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
                         />
                         <button
                           type="submit"
-                          disabled={!inputText.trim() || chatSim.isLoading}
+                          disabled={!inputText.trim()}
                           className="p-2.5 bg-zinc-950 text-white rounded-xl hover:bg-orange-500 transition-colors cursor-pointer disabled:opacity-40 disabled:hover:bg-zinc-950 shrink-0"
                         >
                           <Send size={14} />

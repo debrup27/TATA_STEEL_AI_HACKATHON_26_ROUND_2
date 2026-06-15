@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search, BookOpen, Loader2 } from "lucide-react";
 import ClickSpark from "@/animations/ClickSpark";
@@ -8,6 +8,8 @@ import { fetchGlossary, type GlossaryEntry } from "@/services/glossary";
 import { manasAskPath } from "@/lib/manas-deep-link";
 import { MessageCircle } from "lucide-react";
 import AnomalyTripControl from "../../components/AnomalyTripControl";
+import SamvidhaanTickerStrip from "../../components/SamvidhaanTickerStrip";
+import { glossaryLegendTickers } from "@/lib/samvidhaan-tickers";
 
 export default function LegendPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -52,6 +54,11 @@ export default function LegendPage() {
     );
   });
 
+  const legendTickers = useMemo(
+    () => glossaryLegendTickers(entries, loading),
+    [entries, loading],
+  );
+
   return (
     <ClickSpark
       sparkColor="#f97316"
@@ -85,6 +92,7 @@ export default function LegendPage() {
               <AnomalyTripControl />
             </div>
           </div>
+          <SamvidhaanTickerStrip logos={legendTickers} className="px-10 pb-2" />
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col px-10 py-6 gap-4 max-w-6xl mx-auto w-full">

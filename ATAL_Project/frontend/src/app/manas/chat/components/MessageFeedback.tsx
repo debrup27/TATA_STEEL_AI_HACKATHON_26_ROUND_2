@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 
 export function MessageFeedback({
@@ -12,21 +12,18 @@ export function MessageFeedback({
   disabled?: boolean;
   onRate: (rating: "up" | "down") => void;
 }) {
-  const [local, setLocal] = useState<"up" | "down" | undefined>(rating);
+  const [optimistic, setOptimistic] = useState<"up" | "down" | undefined>();
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    setLocal(rating);
-  }, [rating]);
+  const local = optimistic ?? rating;
 
   const handle = async (value: "up" | "down") => {
     if (disabled || busy || local === value) return;
     setBusy(true);
-    setLocal(value);
+    setOptimistic(value);
     try {
       await onRate(value);
     } catch {
-      setLocal(rating);
+      setOptimistic(undefined);
     } finally {
       setBusy(false);
     }

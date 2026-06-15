@@ -35,24 +35,31 @@ const MessageItem = React.memo(function MessageItem({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
-        className="flex justify-center my-1"
+        className="flex justify-center my-2 px-2"
       >
-        <div className="flex items-center gap-2 text-xs text-zinc-400 bg-zinc-100 border border-zinc-200/80 rounded-full px-3 py-1.5 max-w-sm text-center">
+        <div
+          className={`text-xs text-zinc-500 bg-zinc-50 border border-zinc-200/90 rounded-2xl px-4 py-3 max-w-2xl w-full text-left leading-relaxed ${
+            message.isCompacting ? "text-center" : ""
+          }`}
+        >
           {message.isCompacting ? (
-            <>
+            <div className="flex items-center justify-center gap-2">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
               </span>
               <span>Running context compaction…</span>
-            </>
+            </div>
           ) : (
-            <>
-              <svg className="w-3.5 h-3.5 text-zinc-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <span>{message.content}</span>
-            </>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <span>Context compaction</span>
+              </div>
+              <p className="text-sm text-zinc-600 whitespace-pre-wrap">{message.content}</p>
+            </div>
           )}
         </div>
       </motion.div>
