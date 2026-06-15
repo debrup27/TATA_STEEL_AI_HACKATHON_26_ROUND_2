@@ -110,13 +110,13 @@ const MessageItem = React.memo(function MessageItem({
           {showReasoning && (
             <Reasoning isStreaming={reasoningStreaming} defaultOpen={reasoningStreaming}>
               <ReasoningTrigger>View reasoning</ReasoningTrigger>
-              <ReasoningContent isStreaming={reasoningStreaming} markdown={!reasoningStreaming}>
+              <ReasoningContent isStreaming={reasoningStreaming} markdown>
                 {message.reasoning || ""}
               </ReasoningContent>
             </Reasoning>
           )}
           {(message.content || contentStreaming || !reasoningStreaming) &&
-            (message.content || message.citations?.length || contentStreaming ? (
+            (message.content || contentStreaming ? (
               <CitedMarkdown
                 content={message.content}
                 citations={message.citations}
@@ -125,6 +125,10 @@ const MessageItem = React.memo(function MessageItem({
                 onExpandFile={onExpandFile}
                 className="text-base md:text-[17px]"
               />
+            ) : !reasoningStreaming && showReasoning ? (
+              <p className="text-sm text-zinc-500 italic">
+                No answer text was returned — try again or turn off Deep Thinking.
+              </p>
             ) : null)}
           {message.id && onFeedback && message.content.trim() && !contentStreaming ? (
             <MessageFeedback

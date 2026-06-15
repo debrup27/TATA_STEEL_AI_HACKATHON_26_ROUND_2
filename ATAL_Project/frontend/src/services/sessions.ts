@@ -90,11 +90,17 @@ export async function compactChatSession(
   });
 }
 
+export async function cancelChatGeneration(sessionId: string): Promise<{ status: string }> {
+  return apiJson(`/api/v1/chat/sessions/${sessionId}/cancel/`, {
+    method: "POST",
+  });
+}
+
 export async function sendChatMessage(
   sessionId: string,
   content: string,
   rag: RagMessagePayload | string[] = [],
-  options?: { deepThinking?: boolean },
+  options?: { deepThinking?: boolean; adviceMode?: boolean },
 ): Promise<{ task_id: string; message_id: string }> {
   const payload =
     Array.isArray(rag)
@@ -111,6 +117,7 @@ export async function sendChatMessage(
       custom_documents: payload.custom_documents,
       user_role: payload.user_role ?? "",
       deep_thinking: options?.deepThinking ?? payload.deep_thinking ?? false,
+      advice_mode: options?.adviceMode ?? payload.advice_mode ?? false,
     }),
   });
 }

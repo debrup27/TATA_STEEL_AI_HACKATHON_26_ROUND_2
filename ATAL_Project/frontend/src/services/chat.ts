@@ -3,6 +3,16 @@ import type { Message, RagDoc } from "./types";
 
 const WELCOME_MESSAGE = "Hi! I am Manas. Ask me anything about ATAL's assets or diagnostics.";
 
+export const CHAT_GENERATION_STOPPED_MESSAGE = "Generation stopped.";
+
+export function applyStoppedGenerationContent(content: string, cancelled?: boolean): string {
+  if (!cancelled) return content;
+  const body = (content || "").trim();
+  if (!body) return CHAT_GENERATION_STOPPED_MESSAGE;
+  if (body.includes(CHAT_GENERATION_STOPPED_MESSAGE)) return content;
+  return `${body}\n\n*${CHAT_GENERATION_STOPPED_MESSAGE}*`;
+}
+
 export function getWelcomeMessage(): Message {
   return { role: "assistant", content: WELCOME_MESSAGE };
 }
@@ -77,6 +87,8 @@ export interface RagMessagePayload {
   user_role?: string;
   /** Enable Ollama extended thinking (streams reasoning before answer). */
   deep_thinking?: boolean;
+  /** Run 0.8b role advisory workers before 9b answer. */
+  advice_mode?: boolean;
 }
 
 const DOC_TYPE_TO_COLLECTION: Record<string, string> = {

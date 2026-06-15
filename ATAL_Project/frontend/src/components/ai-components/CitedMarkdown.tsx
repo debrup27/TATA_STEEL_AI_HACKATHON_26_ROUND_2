@@ -4,10 +4,11 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkMath from "remark-math";
+import remarkGfm from "remark-gfm";
 import rehypeKatex from "rehype-katex";
 import { Eye } from "lucide-react";
 import type { Citation, MessageFile, RagDoc } from "@/services/types";
-import { prepareStreamingMarkdown, normalizeTechnicalMarkdown } from "@/lib/markdown-stream";
+import { prepareStreamingMarkdown, normalizeTechnicalMarkdown, repairCollapsedMarkdownTables } from "@/lib/markdown-stream";
 import { loadCitationPreview, citationToMessageFile, citationPreviewToMessageFile } from "@/lib/citation-preview";
 import DocumentPreviewModal from "@/app/manas/chat/components/DocumentPreviewModal";
 import "katex/dist/katex.min.css";
@@ -184,7 +185,10 @@ function wrapCitations(
 }
 
 function HighlightedExcerpt({ text, active }: { text: string; active: boolean }) {
-  const rendered = useMemo(() => normalizeTechnicalMarkdown(text), [text]);
+  const rendered = useMemo(
+    () => repairCollapsedMarkdownTables(normalizeTechnicalMarkdown(text)),
+    [text],
+  );
   return (
     <div
       className={`mt-2.5 text-[12px] leading-relaxed rounded-lg px-3 py-2.5 border transition-all ${
@@ -196,12 +200,17 @@ function HighlightedExcerpt({ text, active }: { text: string; active: boolean })
       <span className="text-[9px] font-bold uppercase tracking-widest text-amber-700/80 block mb-1">
         Referenced passage
       </span>
-      <div className="[&_.katex]:text-[1em] [&_.katex]:leading-normal [&_.katex-display]:inline [&_.katex-display]:m-0">
+      <div className="overflow-x-auto [&_.katex]:text-[1em] [&_.katex]:leading-normal [&_.katex-display]:inline [&_.katex-display]:m-0 [&_table]:min-w-full [&_table]:text-[11px] [&_th]:border [&_th]:border-stone-200 [&_th]:bg-stone-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-stone-200 [&_td]:px-2 [&_td]:py-1">
         <ReactMarkdown
-          remarkPlugins={[remarkMath]}
+          remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
           components={{
-            p: ({ children }) => <span className="inline">{children}</span>,
+            p: ({ children }) => <p className="my-1">{children}</p>,
+            ul: ({ children }) => <ul className="list-disc ml-4 my-1 space-y-0.5">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal ml-4 my-1 space-y-0.5">{children}</ol>,
+            table: ({ children }) => (
+              <table className="my-2 border-collapse w-full">{children}</table>
+            ),
           }}
         >
           {rendered}
@@ -372,7 +381,7 @@ export function CitedMarkdown({
   const renderedContent = useMemo(() => {
     const base = streaming ? prepareStreamingMarkdown(content) : content;
     const stripped = stripOrphanCitationMarkers(base, citeMap);
-    return normalizeTechnicalMarkdown(stripped);
+    return repairCollapsedMarkdownTables(normalizeTechnicalMarkdown(stripped));
   }, [content, streaming, citeMap]);
 
   const referencedIndices = useMemo(
@@ -441,6 +450,16 @@ export function CitedMarkdown({
         </a>
       ),
       p: ({ children }) => <p className="my-1.5">{wrapCitations(children, citeCtx)}</p>,
+      table: ({ children }) => (
+        <div className="overflow-x-auto my-2">
+          <table className="min-w-full text-sm border border-stone-200 rounded-lg border-collapse">
+            {children}
+          </table>
+        </div>
+      ),
+      thead: ({ children }) => <thead className="bg-stone-50">{children}</thead>,
+      tbody: ({ children }) => <tbody>{children}</tbody>,
+      tr: ({ children }) => <tr className="border-b border-stone-200">{children}</tr>,
       td: ({ children }) => <td className="border border-stone-200 px-2 py-1">{children}</td>,
       th: ({ children }) => (
         <th className="border border-stone-200 bg-stone-50 px-2 py-1 text-left font-semibold">
@@ -458,7 +477,7 @@ export function CitedMarkdown({
     <div className={className}>
       <div className="leading-relaxed manas-markdown prose prose-zinc max-w-none prose-headings:font-bold prose-p:my-1.5 prose-li:my-0.5 prose-strong:font-bold [&_.katex]:text-[1.05em] [&_.katex]:leading-normal [&_.katex-display]:inline [&_.katex-display]:m-0 [&_p:has(.katex)]:leading-[1.65]">
         <ReactMarkdown
-          remarkPlugins={[remarkMath]}
+          remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
           components={markdownComponents}
         >

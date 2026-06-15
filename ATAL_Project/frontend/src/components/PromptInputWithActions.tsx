@@ -33,6 +33,8 @@ function genId() {
 function PromptInputWithActions({
   deepThinking,
   onDeepThinkingChange,
+  adviceMode = false,
+  onAdviceModeChange,
   onSendMessage,
   onStop,
   isLoading,
@@ -53,6 +55,8 @@ function PromptInputWithActions({
 }: {
   deepThinking: boolean
   onDeepThinkingChange: (v: boolean) => void
+  adviceMode?: boolean
+  onAdviceModeChange?: (v: boolean) => void
   onSendMessage: (message: string) => void
   onStop?: () => void
   isLoading: boolean
@@ -512,16 +516,31 @@ function PromptInputWithActions({
                 </AnimatePresence>
               </div>
 
-              <PromptInputAction tooltip="Advice (coming soon)">
+              <PromptInputAction tooltip={adviceMode ? "Advice on — 0.8b role briefing before answer" : "Advice — role briefing via 0.8b workers"}>
                 <button
-                  className="h-9 px-4 rounded-full border border-[#1b253c]/15 text-[#1b253c]/55 hover:border-amber-200 hover:text-amber-700 hover:bg-amber-50/30 flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer text-sm font-semibold"
+                  className={`h-9 px-4 rounded-full border flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer text-sm font-semibold ${
+                    adviceMode
+                      ? "border-amber-300 bg-amber-50/80 text-amber-800"
+                      : "border-[#1b253c]/15 text-[#1b253c]/55 hover:border-amber-200 hover:text-amber-700 hover:bg-amber-50/30"
+                  }`}
                   type="button"
-                  onClick={() => addToast("Advice mode — coming soon")}
+                  onClick={() => {
+                    const next = !adviceMode;
+                    onAdviceModeChange?.(next);
+                    addToast(next ? "Advice enabled" : "Advice disabled");
+                  }}
                 >
-                  <Lightbulb size={18} />
+                  <Lightbulb size={18} className={adviceMode ? "text-amber-600" : undefined} />
                   Advice
                 </button>
               </PromptInputAction>
+
+              {adviceMode && (
+                <AdvicePill onDismiss={() => {
+                  onAdviceModeChange?.(false);
+                  addToast("Advice disabled");
+                }} />
+              )}
 
               {selectedRole && manasRoleTag(selectedRole) && (
                 <RolePill
@@ -656,6 +675,32 @@ function DeepThinkingPill({ onDismiss }: { onDismiss: () => void }) {
         transition={{ duration: 0.15, ease: "easeOut" }}
       >
         <X size={11.5} className="text-orange-600 hover:text-orange-855 shrink-0" strokeWidth={2.5} />
+      </motion.span>
+    </motion.button>
+  )
+}
+
+function AdvicePill({ onDismiss }: { onDismiss: () => void }) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <motion.button
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-200/70 bg-amber-50/90 text-[11px] font-bold text-amber-800 cursor-pointer overflow-hidden transition-all duration-200 shadow-3xs"
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      onClick={onDismiss}
+      animate={{ paddingRight: hovered ? 10 : 12 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      type="button"
+    >
+      <Lightbulb size={12} className="shrink-0 text-amber-600" />
+      <span>Advice</span>
+      <motion.span
+        className="flex items-center justify-center overflow-hidden"
+        animate={{ width: hovered ? 16 : 0, opacity: hovered ? 1 : 0, marginLeft: hovered ? 4 : 0 }}
+        transition={{ duration: 0.15, ease: "easeOut" }}
+      >
+        <X size={11.5} className="text-amber-700 shrink-0" strokeWidth={2.5} />
       </motion.span>
     </motion.button>
   )

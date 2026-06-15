@@ -15,6 +15,58 @@ from asgiref.sync import async_to_sync
 
 logger = logging.getLogger(__name__)
 
+_STOPPED_MESSAGE = "Generation stopped."
+
+_DEEP_THINKING_ADDENDUM = """
+[Deep reasoning mode]
+Use the thinking channel for private chain-of-thought. Then you MUST write a complete user-facing answer in the response body (not in thinking).
+The response body must directly answer the user's question in at least 2 sentences. Never finish with an empty response body.
+"""
+
+
+def _extract_answer_from_reasoning(reasoning: str) -> str:
+    """Salvage user-facing text when Ollama leaves message.content empty after think=true."""
+    text = (reasoning or "").strip()
+    if not text:
+        return ""
+    lower = text.lower()
+    for marker in ("**answer:**", "**final answer:**", "## answer", "in summary,", "to summarize,"):
+        if marker in lower:
+            idx = lower.index(marker)
+            tail = text[idx:].split("\n\n")[0]
+            for m in ("**Answer:**", "**Final answer:**", "## Answer", "In summary,", "To summarize,"):
+                tail = tail.replace(m, "").replace(m.lower(), "")
+            cleaned = tail.strip(" :#-*")
+            if len(cleaned) > 30:
+                return cleaned
+    paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) > 50]
+    if paragraphs:
+        return paragraphs[-1]
+    return text[:2500]
+
+
+def _finalize_deep_thinking_response(content: str, reasoning: str) -> tuple[str, str]:
+    body = (content or "").strip()
+    think = (reasoning or "").strip()
+    if body:
+        return body, think
+    if think:
+        salvaged = _extract_answer_from_reasoning(think)
+        if salvaged:
+            return salvaged, think
+    return body, think
+
+
+def _stopped_content(text: str, *, cancelled: bool) -> str:
+    body = (text or "").strip()
+    if not cancelled:
+        return text or ""
+    if not body:
+        return _STOPPED_MESSAGE
+    if _STOPPED_MESSAGE in body:
+        return text
+    return f"{body}\n\n*{_STOPPED_MESSAGE}*"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -251,8 +303,14 @@ def _build_manas_system_prompt(
         prompt += (
             "\n\n## Role Advisory (from 0.8b workers — tailor your answer)\n"
             f"{role_advisory}\n"
-            "Follow the role lenses above; do not describe MANAS or list all plant assets."
+            "Follow the role lenses above when choosing emphasis (hands-on steps vs crew coordination). "
+            "Do not describe MANAS or list all plant assets."
         )
+        if citations:
+            prompt += (
+                " When citing document excerpts, keep [n] markers and apply the role lens to how you "
+                "phrase procedures and escalation — still ground every fact in the excerpts."
+            )
     if not citations:
         prompt += _sansad_context_addendum(session)
         try:
@@ -262,6 +320,10 @@ def _build_manas_system_prompt(
         except Exception:
             pass
     return prompt
+
+
+def _deep_thinking_system_addendum(deep_thinking: bool) -> str:
+    return _DEEP_THINKING_ADDENDUM if deep_thinking else ""
 
 
 class _CancelledStream(Exception):
@@ -277,6 +339,7 @@ def run_chat_logic(
     custom_rag_context: str = "",
     custom_documents: list | None = None,
     user_role: str = "",
+    advice_mode: bool = False,
     deep_thinking: bool = False,
 ) -> dict:
     """
@@ -334,6 +397,10 @@ def run_chat_logic(
             except Exception as _e:
                 logger.warning("channel_layer fallback failed: %s", _e)
 
+    def _raise_if_cancelled() -> None:
+        if is_cancelled(session_id):
+            raise _CancelledStream()
+
     try:
         arm_stream(session_id)
         session = ChatSession.objects.select_related("user").get(id=session_id)
@@ -352,14 +419,14 @@ def run_chat_logic(
 
         if has_rag_request:
             _send({"type": "phase", "phase": "rag"})
-            if is_cancelled(session_id):
-                raise _CancelledStream()
+            _raise_if_cancelled()
 
         if titles:
             try:
                 raw_docs += retrieve_by_document_titles(user_content, titles)
             except Exception as _e:
                 logger.warning("retrieve_by_document_titles failed: %s", _e)
+            _raise_if_cancelled()
 
         if rag_collections or titles:
             try:
@@ -380,8 +447,10 @@ def run_chat_logic(
                         seen.add(key)
             except Exception as _e:
                 logger.warning("retrieve_for_collections failed: %s", _e)
+            _raise_if_cancelled()
 
         raw_docs += _custom_docs_to_raw(custom_documents, custom_text)
+        _raise_if_cancelled()
 
         if not raw_docs and titles:
             try:
@@ -465,6 +534,7 @@ def run_chat_logic(
                 _send({"type": "citations", "citations": citations})
 
         logger.info("MANAS RAG done — %d docs, %d snippets, session=%s", len(raw_docs), len(snippets), session_id[:8])
+        _raise_if_cancelled()
 
         # ── Build message history ──────────────────────────────────────────
         all_history = list(
@@ -478,6 +548,7 @@ def run_chat_logic(
         ]
         if should_compact(history_for_estimate):
             compact_history(session_id)
+        _raise_if_cancelled()
 
         history = list(
             ChatMessage.objects.filter(session=session)
@@ -496,16 +567,21 @@ def run_chat_logic(
         role_advisory = ""
         from apps.agents.chat_role_graph import resolve_manas_roles, run_role_advisory
 
-        manas_roles = resolve_manas_roles(user_role, session.user)
+        manas_roles = resolve_manas_roles(user_role, advice_mode=advice_mode)
         if manas_roles:
             _send({"type": "phase", "phase": "role"})
-            if is_cancelled(session_id):
-                raise _CancelledStream()
-            rag_snippet = rag_context[:1200] if citations else ""
+            _raise_if_cancelled()
+            rag_snippet = rag_context[:2000] if (citations or has_rag_request) else ""
             try:
                 role_advisory = run_role_advisory(user_content, manas_roles, rag_snippet)
             except Exception as exc:
                 logger.warning("role_advisory_graph failed: %s", exc)
+            _raise_if_cancelled()
+
+        if manas_roles:
+            import time as _time
+
+            _time.sleep(1.5)
 
         system_prompt = _build_manas_system_prompt(
             rag_context=rag_context,
@@ -513,7 +589,7 @@ def run_chat_logic(
             user_content=user_content,
             role_advisory=role_advisory,
             session=session,
-        )
+        ) + _deep_thinking_system_addendum(deep_thinking)
 
         if is_cancelled(session_id):
             raise _CancelledStream()
@@ -528,7 +604,7 @@ def run_chat_logic(
         import time as _time
 
         ollama_url = f"{settings.OLLAMA_BASE_URL}/api/chat"
-        predict_budget = 1536 if deep_thinking else (1200 if citations else 2048)
+        predict_budget = 4096 if deep_thinking else (1200 if citations else 2048)
         rag_temperature = 0.1 if citations else 0.2
         if deep_thinking:
             _send({"type": "phase", "phase": "thinking"})
@@ -588,10 +664,14 @@ def run_chat_logic(
                 else:
                     raise
 
+        if deep_thinking:
+            full_response, full_reasoning = _finalize_deep_thinking_response(
+                full_response, full_reasoning,
+            )
+
         # ── Persist assistant message ──────────────────────────────────────
         cancelled = is_cancelled(session_id)
-        if cancelled and not full_response.strip():
-            full_response = "*(Response stopped.)*"
+        full_response = _stopped_content(full_response, cancelled=cancelled)
 
         assistant_msg = ChatMessage.objects.create(
             session=session,
@@ -616,7 +696,7 @@ def run_chat_logic(
         return {"status": "ok", "message_id": str(assistant_msg.id)}
 
     except _CancelledStream:
-        partial = full_response.strip() or "*(Response stopped.)*"
+        partial = _stopped_content(full_response, cancelled=True)
         msg_id = None
         if session is not None:
             try:
@@ -663,6 +743,7 @@ def start_chat_thread(
     custom_rag_context: str = "",
     custom_documents: list | None = None,
     user_role: str = "",
+    advice_mode: bool = False,
     deep_thinking: bool = False,
 ) -> threading.Thread:
     """Spawn a daemon thread to run the chat pipeline outside Celery."""
@@ -674,6 +755,7 @@ def start_chat_thread(
             "custom_rag_context": custom_rag_context,
             "custom_documents": custom_documents,
             "user_role": user_role,
+            "advice_mode": advice_mode,
             "deep_thinking": deep_thinking,
         },
         daemon=True,

@@ -188,16 +188,17 @@ export function useChatStream({
     return false;
   }, [sessionId]);
 
-  const cancel = useCallback(() => {
+  const cancel = useCallback((sessionIdOverride?: string | null) => {
+    const sid = sessionIdOverride ?? sessionId;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "cancel" }));
+      wsRef.current.send(JSON.stringify({ type: "cancel", session_id: sid }));
     }
     clearStreamTimeout();
     setIsStreaming(false);
     setAwaitingFirstToken(false);
     setIsThinking(false);
     setStreamPhase("idle");
-  }, [clearStreamTimeout]);
+  }, [clearStreamTimeout, sessionId]);
 
   return {
     isStreaming,

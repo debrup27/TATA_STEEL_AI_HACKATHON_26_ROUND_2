@@ -11,31 +11,45 @@ logger = logging.getLogger(__name__)
 
 
 def _call_small_model(system: str, user: str) -> str:
-    """Call qwen3.5:0.8b via Ollama. Returns generated text."""
+    """Call qwen3.5:0.8b via Ollama native /api/chat (qwen3.5 breaks on /v1 for 0.8b)."""
+    import time
     import httpx
     from django.conf import settings
+    from apps.agents.ollama_warmup import ollama_keep_alive_value
 
-    url = f"{settings.OLLAMA_BASE_URL}/v1/chat/completions"
+    url = f"{settings.OLLAMA_BASE_URL}/api/chat"
     payload = {
         "model": settings.OLLAMA_SMALL_MODEL,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "max_tokens": 512,
-        "temperature": 0.2,
         "stream": False,
         "think": False,
-        "keep_alive": settings.OLLAMA_KEEP_ALIVE,
+        "keep_alive": ollama_keep_alive_value(),
+        "options": {"num_predict": 512, "temperature": 0.2},
     }
-    try:
-        with httpx.Client(timeout=60) as client:
-            resp = client.post(url, json=payload, headers={"Content-Type": "application/json"})
-            resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
-    except Exception as exc:
-        logger.error("small_model_error model=%s error=%s", settings.OLLAMA_SMALL_MODEL, str(exc))
-        raise
+    last_exc: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            with httpx.Client(timeout=90) as client:
+                resp = client.post(url, json=payload)
+                resp.raise_for_status()
+            content = (resp.json().get("message") or {}).get("content") or ""
+            return content.strip()
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "small_model_error attempt=%d model=%s error=%s",
+                attempt,
+                settings.OLLAMA_SMALL_MODEL,
+                exc,
+            )
+            if attempt < 3:
+                time.sleep(3 * attempt)
+    assert last_exc is not None
+    logger.error("small_model_error model=%s error=%s", settings.OLLAMA_SMALL_MODEL, last_exc)
+    raise last_exc
 
 
 def _run_worker(worker_name: str, user_prompt: str, system_prompt: str) -> str:

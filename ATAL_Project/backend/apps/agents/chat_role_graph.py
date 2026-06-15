@@ -8,7 +8,6 @@ the 9b supervisor prompt. Direct chat with no role skips this entirely.
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -52,15 +51,20 @@ class RoleAdvisoryState(TypedDict, total=False):
     combined: str
 
 
-def resolve_manas_roles(user_role: str, django_user) -> list[str]:
-    """Map UI / auth role to 0.8b worker personas. Admin gets both lenses."""
-    key = (user_role or "").strip().lower().replace(" ", "_").replace("-", "_")
-    if not key and django_user is not None:
-        key = (getattr(django_user, "role", "") or "").strip().lower()
-    if key == "admin":
+def resolve_manas_roles(user_role: str, *, advice_mode: bool = False) -> list[str]:
+    """
+    Map explicit UI choices to 0.8b worker personas.
+    Never infers role from Django User.role — only runs when role or advice is selected.
+    """
+    role_key = (user_role or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if not advice_mode and not role_key:
+        return []
+    if role_key == "admin":
         return ["technician", "supervisor"]
-    if key in _ROLE_SYSTEMS:
-        return [key]
+    if role_key in _ROLE_SYSTEMS:
+        return [role_key]
+    if advice_mode:
+        return ["technician", "supervisor"]
     return []
 
 
@@ -68,7 +72,10 @@ def _advise_one_role(role: str, user_question: str, rag_snippet: str) -> tuple[s
     system = _ROLE_SYSTEMS[role]
     user = f"User question:\n{user_question[:1500]}"
     if rag_snippet.strip():
-        user += f"\n\nDocument excerpt (reference only):\n{rag_snippet[:1000]}"
+        user += (
+            f"\n\nLoaded document excerpt (use for role-specific emphasis — cite facts from here):\n"
+            f"{rag_snippet[:2000]}"
+        )
     try:
         text = _call_small_model(system, user)
         if text and len(text.strip()) > 20:
@@ -84,15 +91,13 @@ def _workers_node(state: RoleAdvisoryState) -> dict:
         return {"advisories": {}, "combined": ""}
 
     advisories: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=min(len(roles), 2)) as pool:
-        futures = [
-            pool.submit(_advise_one_role, role, state.get("user_question", ""), state.get("rag_snippet", ""))
-            for role in roles
-        ]
-        for fut in futures:
-            role, text = fut.result()
-            if text:
-                advisories[role] = text
+    # Sequential — parallel 0.8b calls can crash Ollama when 9b is resident
+    for role in roles:
+        role_key, text = _advise_one_role(
+            role, state.get("user_question", ""), state.get("rag_snippet", ""),
+        )
+        if text:
+            advisories[role_key] = text
 
     return {"advisories": advisories}
 

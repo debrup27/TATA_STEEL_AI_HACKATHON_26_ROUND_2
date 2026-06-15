@@ -31,8 +31,16 @@ import {
   sendChatMessage,
   compactChatSession,
   deleteSessionRemote,
+  cancelChatGeneration,
 } from "@/services/sessions";
-import { getLibraryDocuments, ragPayloadFromDocs, warmChatStack, optimizeMaintenancePrompt, submitChatMessageFeedback } from "@/services/chat";
+import {
+  getLibraryDocuments,
+  ragPayloadFromDocs,
+  warmChatStack,
+  optimizeMaintenancePrompt,
+  submitChatMessageFeedback,
+  applyStoppedGenerationContent,
+} from "@/services/chat";
 import { parseSlashCommandInput } from "@/lib/manas-slash-commands";
 import type { MessageFile, ChatSession, RagDoc, Citation } from "@/services/types";
 import { useChatStream } from "@/hooks";
@@ -70,6 +78,12 @@ export default function ManasChatPage() {
       return isManasRoleId(saved) ? saved : null;
     }
     return null;
+  });
+  const [adviceMode, setAdviceMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("manas_advice_mode") === "true";
+    }
+    return false;
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedFile, setExpandedFile] = useState<MessageFile | null>(null);
@@ -233,11 +247,13 @@ export default function ManasChatPage() {
             const msgs = [...session.messages];
             const last = msgs[msgs.length - 1];
             if (last?.role === "assistant") {
-              const updated: typeof last = error && !last.content
-                ? { ...last, content: "⚠️ " + error }
-                : last;
+              const baseContent =
+                error && !last.content
+                  ? "⚠️ " + error
+                  : applyStoppedGenerationContent(last.content, p?.cancelled);
               const withMeta = {
-                ...updated,
+                ...last,
+                content: baseContent,
                 ...(messageId ? { id: messageId } : {}),
                 ...(citations?.length ? { citations } : {}),
               };
@@ -429,7 +445,7 @@ export default function ManasChatPage() {
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) || null : null;
   const isHydratingSession =
     Boolean(activeSessionId && isBackendSessionId(activeSessionId)) &&
-    !hydratedSessionIds[activeSessionId] &&
+    Boolean(activeSessionId && !hydratedSessionIds[activeSessionId]) &&
     (!activeSession || activeSession.messages.length === 0);
   const showHero =
     !isHydratingSession && (!activeSession || activeSession.messages.length === 0);
@@ -471,6 +487,13 @@ export default function ManasChatPage() {
     setDeepThinking(val);
     if (typeof window !== "undefined") {
       localStorage.setItem("manas_deep_thinking", String(val));
+    }
+  }, []);
+
+  const handleAdviceModeChange = useCallback((val: boolean) => {
+    setAdviceMode(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("manas_advice_mode", String(val));
     }
   }, []);
 
@@ -787,6 +810,7 @@ export default function ManasChatPage() {
     const ragPayload = {
       ...ragPayloadFromDocs(ragNames),
       user_role: selectedRole ?? undefined,
+      advice_mode: adviceMode || undefined,
     };
 
     if (!targetId || !isBackendSessionId(targetId)) {
@@ -861,7 +885,7 @@ export default function ManasChatPage() {
       if (!wsReady) {
         throw new ApiError(503, "Live chat connection not ready — try again in a moment.");
       }
-      await sendChatMessage(targetId, messageText, ragPayload, { deepThinking });
+      await sendChatMessage(targetId, messageText, ragPayload, { deepThinking, adviceMode });
     } catch (err) {
       const detail =
         err instanceof ApiError
@@ -887,11 +911,31 @@ export default function ManasChatPage() {
       );
       chatSim.reset();
     }
-  }, [activeSessionId, sessions, chatSim, selectedRole, deepThinking, handleCompactSession]);
+  }, [activeSessionId, sessions, chatSim, selectedRole, adviceMode, deepThinking, handleCompactSession]);
 
   const handleStopGeneration = useCallback(() => {
-    chatSim.cancel();
-  }, [chatSim]);
+    const targetId = streamSessionRef.current ?? activeSessionId;
+    chatSim.cancel(targetId);
+    if (targetId) {
+      void cancelChatGeneration(targetId).catch(() => {});
+      setSessions((prev) =>
+        prev.map((session) => {
+          if (session.id !== targetId) return session;
+          const msgs = [...session.messages];
+          const last = msgs[msgs.length - 1];
+          if (last?.role === "assistant") {
+            msgs[msgs.length - 1] = {
+              ...last,
+              content: applyStoppedGenerationContent(last.content, true),
+            };
+          }
+          return { ...session, messages: msgs };
+        }),
+      );
+    }
+    streamSessionRef.current = null;
+    thinkingSessionIdRef.current = null;
+  }, [activeSessionId, chatSim]);
 
   const handleMessageFeedback = useCallback(
     async (messageId: string, rating: "up" | "down") => {
@@ -1135,7 +1179,7 @@ export default function ManasChatPage() {
                                 : "Processing document"}
                             </StepsItem>
                           )}
-                          {selectedRole && (
+                          {(selectedRole || adviceMode) && (
                             <StepsItem
                               status={
                                 chatSim.streamPhase === "role"
@@ -1144,12 +1188,15 @@ export default function ManasChatPage() {
                                       chatSim.streamPhase === "thinking" ||
                                       chatSim.streamPhase === "answering"
                                     ? "complete"
-                                    : chatSim.streamPhase === "rag"
-                                      ? "pending"
-                                      : "pending"
+                                    : "pending"
                               }
                             >
-                              Role advisory ({manasRoleLabel(selectedRole) ?? selectedRole})
+                              Role advisory
+                              {selectedRole
+                                ? ` (${manasRoleLabel(selectedRole) ?? selectedRole})`
+                                : adviceMode
+                                  ? " (both lenses)"
+                                  : ""}
                             </StepsItem>
                           )}
                           <StepsItem
@@ -1210,6 +1257,8 @@ export default function ManasChatPage() {
               <PromptInputWithActions
                 deepThinking={deepThinking}
                 onDeepThinkingChange={handleDeepThinkingChange}
+                adviceMode={adviceMode}
+                onAdviceModeChange={handleAdviceModeChange}
                 onSendMessage={handleSendMessage}
                 onStop={handleStopGeneration}
                 isLoading={chatSim.isLoading}

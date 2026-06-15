@@ -114,6 +114,29 @@ class ChatSessionDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ChatCancelView(APIView):
+    """POST /api/v1/chat/sessions/<session_id>/cancel/ — stop in-flight generation."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        try:
+            ChatSession.objects.get(id=session_id, user=request.user)
+        except ChatSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        try:
+            from apps.agents.stream_registry import request_cancel
+
+            request_cancel(str(session_id))
+        except Exception as exc:
+            logger.warning("chat cancel failed session=%s err=%s", session_id, exc)
+            return Response(
+                {"error": "could not cancel stream"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"status": "cancelled"})
+
+
 class ChatWarmupView(APIView):
     """
     POST /api/v1/chat/warmup/
@@ -263,6 +286,7 @@ class ChatMessageView(APIView):
         custom_rag_context = request.data.get("custom_rag_context", "")
         custom_documents = request.data.get("custom_documents", [])
         user_role = request.data.get("user_role", "")
+        advice_mode = bool(request.data.get("advice_mode", False))
         deep_thinking = bool(request.data.get("deep_thinking", False))
         t = start_chat_thread(
             str(session.id),
@@ -272,6 +296,7 @@ class ChatMessageView(APIView):
             custom_rag_context=custom_rag_context,
             custom_documents=custom_documents,
             user_role=user_role,
+            advice_mode=advice_mode,
             deep_thinking=deep_thinking,
         )
         return Response({"task_id": t.name, "message_id": str(msg.id)}, status=status.HTTP_202_ACCEPTED)
