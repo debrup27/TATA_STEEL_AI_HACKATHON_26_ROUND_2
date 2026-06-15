@@ -33,16 +33,20 @@ export function usePlantSnapshot(factoryId?: string, pollMs = HUB_TICK_INTERVAL 
     [factoryId],
   );
 
+  // While any abnormality is active, poll at 5 s to match the backend rapid-degrade loop.
+  const anomalyActive = Boolean(snapshot?.anomaly_flags?.any_anomaly_active);
+  const effectiveMs = anomalyActive ? Math.min(pollMs, 5000) : pollMs;
+
   useEffect(() => {
     void reload();
-    const interval = setInterval(() => void reload(true), pollMs);
+    const interval = setInterval(() => void reload(true), effectiveMs);
     const onRefresh = () => void reload(true);
     window.addEventListener(PLANT_SNAPSHOT_REFRESH_EVENT, onRefresh);
     return () => {
       clearInterval(interval);
       window.removeEventListener(PLANT_SNAPSHOT_REFRESH_EVENT, onRefresh);
     };
-  }, [reload, pollMs]);
+  }, [reload, effectiveMs]);
 
   const byId = useMemo(() => {
     const map = new Map<string, DiagnosticAsset>();

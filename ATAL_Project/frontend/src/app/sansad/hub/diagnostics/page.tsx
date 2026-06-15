@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, RefreshCw } from "lucide-react";
 import HubShell from "../components/HubShell";
+import CostAnalysisPanel from "../components/CostAnalysisPanel";
 import { useHubManasNotify } from "../components/HubManasNotify";
 import {
   fetchDiagnostics,
@@ -44,33 +45,8 @@ function PanelCard({ children, className = "" }: { children: React.ReactNode; cl
   );
 }
 
-function InsightPanel({
-  title,
-  text,
-  loading,
-}: {
-  title: string;
-  text?: string;
-  loading?: boolean;
-}) {
-  if (loading) {
-    return (
-      <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3 flex items-center gap-2 text-orange-700">
-        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-        <p className="text-[10px] font-bold uppercase tracking-wider">Generating MANAS insight…</p>
-      </div>
-    );
-  }
-  if (!text?.trim()) return null;
-  return (
-    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3">
-      <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
-      <p className="text-xs text-zinc-800 mt-1.5 leading-relaxed" style={{ fontFamily: "var(--font-questrial)" }}>
-        {text}
-      </p>
-    </div>
-  );
-}
+// MANAS insight card with pop-out modal (shared) — handles long responses that overflow inline.
+import InsightPanel from "../components/ManasInsightPanel";
 
 function formatRul(asset: DiagnosticAsset): { value: string; unit: string } {
   if (asset.rulHours != null && asset.rulHours > 0) return { value: asset.rulHours.toFixed(0), unit: "hours" };
@@ -234,6 +210,11 @@ export default function DiagnosticsPage() {
 
   return (
     <HubShell title="Diagnostics & Prediction" subtitle="Live ML inference · RCA · RUL · cross-stage defects">
+      <div className="flex flex-col gap-4 h-full min-h-0">
+      {/* Factory-level predictive cost analysis — loss-if-no-action vs PdM savings */}
+      <div className="shrink-0">
+        <CostAnalysisPanel />
+      </div>
       <div className="flex-1 min-h-0 flex gap-5">
         {/* Left — component list */}
         <div className="w-[30%] min-w-[240px] max-w-[320px] flex flex-col gap-3 shrink-0">
@@ -463,6 +444,7 @@ export default function DiagnosticsPage() {
             </PanelCard>
           </div>
         </div>
+      </div>
       </div>
     </HubShell>
   );

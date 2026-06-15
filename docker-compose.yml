@@ -66,7 +66,8 @@ x-mem-django: &mem-django
   mem_reservation: 1g
 
 x-mem-celery: &mem-celery
-  mem_limit: 8g
+  # ML inference is now a cheap deterministic DB pass (no pickled-model load on the hot path).
+  mem_limit: 6g
   mem_reservation: 2g
 
 services:
@@ -124,6 +125,9 @@ services:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+      # Bound VRAM: one model decode at a time (9B + 0.8B + BGE must coexist). Context window untouched.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-3}
     volumes:
       - ollama-data:/root/.ollama
     deploy:

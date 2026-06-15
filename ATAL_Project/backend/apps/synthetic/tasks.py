@@ -16,8 +16,9 @@ from django.utils import timezone as dj_tz
 
 logger = logging.getLogger(__name__)
 
-# Campaign hours added per 30-second batch (demo speed: ~48h/day real time)
-CAMPAIGN_ADVANCE_PER_BATCH = 2.0   # hours per batch
+# Campaign hours added per live batch. Kept small so always-on telemetry doesn't saturate
+# short-life assets (HPAK/HHPD) — real degradation is driven by the abnormality toggle.
+CAMPAIGN_ADVANCE_PER_BATCH = 0.25   # hours per batch
 
 GENERATOR_MAP = {
     "SRF": "apps.synthetic.generators.srf.SRFSyntheticGenerator",
@@ -264,11 +265,8 @@ def generate_batch(self, asset_id: str, n_samples: int = 100, **gen_kwargs):
             except Exception as ml_exc:
                 logger.warning("ml_inference_trigger_failed error=%s", str(ml_exc))
 
-            try:
-                from apps.consolidation.tasks import run_consolidation
-                run_consolidation.apply_async(args=[str(asset.id)], queue="default")
-            except Exception as cons_exc:
-                logger.warning("consolidation_trigger_failed error=%s", str(cons_exc))
+            # No Celery consolidation here — the LLM must never run inside a Celery worker.
+            # Human-readable regen is handled inline (anomaly_trip intelligence-regen thread).
 
         logger.info(
             "synthetic_batch asset=%s rows=%d fault_events=%d campaign_h=%.1f",
@@ -279,6 +277,72 @@ def generate_batch(self, asset_id: str, n_samples: int = 100, **gen_kwargs):
     except Exception as exc:
         logger.error("synthetic_batch_error asset_id=%s error=%s", asset_id, str(exc))
         raise
+
+
+def generate_readings_sync(asset, n_samples: int = 20) -> int:
+    """Synchronous synthetic generation for one asset using its CURRENT campaign + fault state.
+
+    Used by the abnormality rapid-degrade loop (no Celery). Reads campaign state, generates a
+    batch with campaign-aware fault kwargs, persists readings, refreshes the twin, evaluates
+    thresholds inline. Does NOT advance campaign_hours or trigger any cascade — the caller owns
+    the degradation schedule. Returns rows written.
+    """
+    from apps.assets.models import SensorDefinition
+    from apps.telemetry.models import SensorReading
+    from apps.synthetic.models import SyntheticGenerationRun
+    import math
+
+    campaign = _get_campaign_state(asset)
+    gen_kwargs = _build_gen_kwargs(
+        asset.asset_type,
+        campaign["campaign_hours"],
+        campaign["fault_injected"],
+        campaign["fault_type"] or "general",
+    )
+    gen_cls = _import_generator(GENERATOR_MAP[asset.asset_type])
+    gen = gen_cls()
+    output = gen.generate(n_samples=n_samples, start_time=datetime.now(tz=timezone.utc), **gen_kwargs)
+
+    sensor_map = {s.sensor_name: s for s in SensorDefinition.objects.filter(asset=asset)}
+    bulk = []
+    for sample in output.samples:
+        if math.isnan(sample.value):
+            continue
+        sdef = sensor_map.get(sample.sensor_name)
+        if not sdef:
+            continue
+        bulk.append(SensorReading(
+            time=sample.timestamp,
+            asset=asset,
+            sensor_def=sdef,
+            value=sample.value,
+            quality_flag=sample.quality_flag,
+            source=SensorReading.Source.SYNTHETIC,
+            condition_type=sample.condition_type or "",
+        ))
+    SensorReading.objects.bulk_create(bulk, batch_size=500, ignore_conflicts=True)
+
+    SyntheticGenerationRun.objects.create(
+        asset=asset,
+        generator_name=gen_cls.__name__,
+        rows_generated=len(bulk),
+        fault_events_injected=len(output.fault_events),
+        completed_at=dj_tz.now(),
+    )
+
+    try:
+        from apps.twins.engine import TwinStateEngine
+        TwinStateEngine.update(str(asset.id))
+    except Exception as exc:
+        logger.warning("sync_twin_update_failed asset_id=%s error=%s", asset.id, str(exc))
+
+    try:
+        from apps.alerts.tasks import evaluate_thresholds
+        evaluate_thresholds(str(asset.id))  # inline, not .apply_async
+    except Exception as exc:
+        logger.warning("sync_alert_eval_failed asset_id=%s error=%s", asset.id, str(exc))
+
+    return len(bulk)
 
 
 @shared_task(name="apps.synthetic.orchestrate_all")

@@ -27,8 +27,33 @@ def _steps_from_report(report: MaintenanceReport) -> list[dict]:
   return steps
 
 
+def _order_decision(stock_qty: int, reorder_level: int) -> str:
+  """Decide whether to raise a procurement order: order when at/below the reorder level."""
+  if stock_qty <= 0:
+    return "order"
+  if reorder_level and stock_qty <= reorder_level:
+    return "order"
+  return "in_stock"
+
+
 def _spares_for_asset(asset: Asset, report: MaintenanceReport | None) -> list[dict]:
   ensure_asset_spares(asset)
+  # DB stock lookup by part name so LLM-strategy parts can be enriched with real on-hand quantity.
+  db_by_name = {s.part_name: s for s in SparesPart.objects.filter(asset=asset)}
+
+  def _row(part_name: str, qty: int, lead_days: int, stock_qty: int | None, reorder: int) -> dict:
+    sq = int(stock_qty if stock_qty is not None else 0)
+    decision = _order_decision(sq, reorder)
+    return {
+      "part": part_name,
+      "qty": qty,
+      "leadDays": lead_days,
+      "stockQty": sq,
+      "reorderLevel": int(reorder or 0),
+      "orderDecision": decision,          # "order" | "in_stock"
+      "inStock": decision == "in_stock",  # kept for back-compat
+    }
+
   strategy = (report.spare_strategy if report else {}) or {}
   if isinstance(strategy, str):
     strategy = {"strategy": strategy, "parts": []}
@@ -36,33 +61,34 @@ def _spares_for_asset(asset: Asset, report: MaintenanceReport | None) -> list[di
   if parts:
     out = []
     for p in parts:
-      if isinstance(p, dict):
-        out.append({
-          "part": p.get("part_name") or p.get("part") or "Part",
-          "qty": int(p.get("qty") or p.get("quantity") or 1),
-          "leadDays": int(p.get("lead_time_days") or p.get("leadDays") or 0),
-          "inStock": bool(p.get("in_stock", p.get("inStock", True))),
-        })
+      if not isinstance(p, dict):
+        continue
+      name = p.get("part_name") or p.get("part") or "Part"
+      db = db_by_name.get(name)
+      stock_qty = (
+        p.get("quantity_in_stock")
+        if p.get("quantity_in_stock") is not None
+        else (db.quantity_in_stock if db else (0 if not p.get("in_stock", True) else 1))
+      )
+      reorder = db.reorder_level if db else int(p.get("reorder_level") or 0)
+      out.append(_row(
+        name,
+        int(p.get("qty") or p.get("quantity") or 1),
+        int(p.get("lead_time_days") or p.get("leadDays") or (db.lead_time_days if db else 0)),
+        stock_qty,
+        reorder,
+      ))
     if out:
       return out
+
   db_rows = list(SparesPart.objects.filter(asset=asset)[:6])
   if db_rows:
     return [
-      {
-        "part": s.part_name,
-        "qty": 1,
-        "leadDays": s.lead_time_days,
-        "inStock": s.quantity_in_stock > 0,
-      }
+      _row(s.part_name, 1, s.lead_time_days, s.quantity_in_stock, s.reorder_level)
       for s in db_rows
     ]
   return [
-    {
-      "part": p["part_name"],
-      "qty": 1,
-      "leadDays": p["lead_time_days"],
-      "inStock": (p.get("quantity_in_stock") or 0) > 0,
-    }
+    _row(p["part_name"], 1, p["lead_time_days"], p.get("quantity_in_stock") or 0, p.get("reorder_level") or 0)
     for p in catalog_for_asset(asset)[:4]
   ]
 
@@ -88,7 +114,7 @@ def build_action_plan(asset: Asset) -> dict:
       report_type=MaintenanceReport.ReportType.MAINTENANCE,
       title__startswith="Maintenance Plan —",
     )
-    .order_by("-created_at")
+    .order_by("-created_at", "-id")
     .first()
   )
   if not report:
@@ -144,6 +170,7 @@ def build_action_plan(asset: Asset) -> dict:
     "optimizedPlanSummary": summary or "Predictive maintenance plan — regenerate if fields are empty.",
     "workOrderId": str(wo.id) if wo else None,
     "reportId": str(report.id) if report else None,
+    "generatedAt": report.created_at.isoformat() if report else None,
   }
 
 

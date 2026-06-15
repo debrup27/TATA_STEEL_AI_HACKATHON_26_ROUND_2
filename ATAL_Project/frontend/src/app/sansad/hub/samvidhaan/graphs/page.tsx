@@ -9,8 +9,8 @@ import {
   SAMVIDHAAN_GRAPH_REFRESH_MS,
   type FactoryMaintenanceSnapshot,
 } from "@/services/samvidhaanGraphs";
-import { SamvidhaanMaintenanceSnapshot } from "../components/SamvidhaanMaintenanceSnapshot";
 import AnomalyTripControl from "../../components/AnomalyTripControl";
+import CostAnalysisPanel from "../../components/CostAnalysisPanel";
 
 export default function GraphsPage() {
   const [isMobile, setIsMobile] = useState(false);
@@ -116,10 +116,10 @@ export default function GraphsPage() {
 
                 <div className="flex-1 text-center px-4">
                   <h1 className="text-3xl font-black uppercase text-zinc-950" style={{ fontFamily: "var(--font-questrial)" }}>
-                    MAINTENANCE SNAPSHOTS
+                    PREDICTIVE MAINTENANCE
                   </h1>
                   <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mt-1">
-                    Factory 1 (Horizon) &amp; Factory 2 (Zephyr) · health &amp; life-left bars · refresh 10 min
+                    Predicted loss if no action vs PdM savings · per factory · ₹ lakh
                     {nextRefresh ? ` · next ${nextRefresh.toLocaleTimeString()}` : ""}
                   </p>
                 </div>
@@ -146,10 +146,9 @@ export default function GraphsPage() {
                   Loading maintenance snapshots…
                 </p>
               ) : (
-                <div className="max-w-6xl mx-auto grid grid-cols-1 gap-8">
-                  {factories.map((factory) => (
-                    <SamvidhaanMaintenanceSnapshot key={factory.factory_id} data={factory} />
-                  ))}
+                <div className="max-w-6xl mx-auto flex flex-col gap-8">
+                  {/* Predictive maintenance graphs — loss-if-no-action vs PdM savings per factory */}
+                  <CostAnalysisPanel />
                 </div>
               )}
             </div>

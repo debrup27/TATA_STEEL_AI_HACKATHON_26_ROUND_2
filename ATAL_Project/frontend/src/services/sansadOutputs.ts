@@ -50,11 +50,20 @@ export interface MaintenanceActionPlan {
   immediateActions: string[];
   steps: { order: number; action: string; safety: string; duration: string }[];
   longTermMonitoring: string[];
-  spares: { part: string; qty: number; leadDays: number; inStock: boolean }[];
+  spares: {
+    part: string;
+    qty: number;
+    leadDays: number;
+    inStock: boolean;
+    stockQty?: number;
+    reorderLevel?: number;
+    orderDecision?: "order" | "in_stock";
+  }[];
   optimizedPlanSummary: string;
   assetId?: string;
   workOrderId?: string;
   reportId?: string;
+  generatedAt?: string;
 }
 
 export interface MaintenanceReport {

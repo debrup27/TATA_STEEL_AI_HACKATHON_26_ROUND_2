@@ -1,5 +1,10 @@
 from django.urls import path
-from apps.consolidation.views import BottleneckScoreView, BottleneckInsightView, PlantKPIView
+from apps.consolidation.views import (
+    BottleneckScoreView,
+    BottleneckInsightView,
+    PlantKPIView,
+    PlantCostAnalysisView,
+)
 from apps.assets.plant_snapshot_views import PlantSnapshotView
 
 urlpatterns = [
@@ -7,4 +12,5 @@ urlpatterns = [
     path("bottleneck-score/", BottleneckScoreView.as_view()),
     path("bottleneck-score/<uuid:asset_id>/insight/", BottleneckInsightView.as_view()),
     path("kpis/", PlantKPIView.as_view()),
+    path("cost-analysis/", PlantCostAnalysisView.as_view()),
 ]

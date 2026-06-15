@@ -5,6 +5,7 @@ import logging
 import random
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone as dj_timezone
 
 from apps.assets.diagnostics_service import build_diagnostic
 from apps.assets.models import Asset
@@ -66,12 +67,76 @@ def _queue_synthetic_and_ml(asset: Asset) -> None:
     except Exception as exc:
         logger.warning("trip intelligence regen failed asset=%s err=%s", asset.id, exc)
 
-    try:
-        from apps.consolidation.tasks import run_consolidation
+    # NOTE: no Celery consolidation here — that ran the LLM inside a Celery worker.
+    # Human-readable regen is handled by the inline intelligence-regen thread above; the
+    # rapid-degrade loop (spawned in trigger_anomaly_trip) drives the live 5 s recompute.
 
-        run_consolidation.apply_async(args=[str(asset.id)])
-    except Exception as exc:
-        logger.warning("trip consolidation failed asset=%s err=%s", asset.id, exc)
+
+def _rapid_degrade_loop(asset_id: str, fault_type: str, ticks: int = 18, interval_s: float = 5.0) -> None:
+    """Drive visible rapid degradation every `interval_s` for ~`ticks` cycles (no Celery).
+
+    Each tick: aggressively advance campaign_hours, regenerate synthetic data (fault-aware) inline,
+    recompute the authoritative deterministic state, write twin + MLPrediction, broadcast telemetry.
+    Stops early if the fault is cleared (toggle off). All pages polling the snapshot see health
+    fall, anomaly rise and RUL collapse in real time.
+    """
+    import time
+
+    import django.db
+    from apps.assets.models import Asset
+    from apps.twins.models import AssetTwinState
+    from apps.ml.models import MLPrediction
+    from apps.ml.deterministic import compute_asset_state
+    from apps.synthetic.tasks import CAMPAIGN_MAX, generate_readings_sync
+
+    try:
+        asset = Asset.objects.get(id=asset_id)
+    except Asset.DoesNotExist:
+        return
+
+    cmax = float(CAMPAIGN_MAX.get(asset.asset_type, 5000.0))
+    step = cmax * 0.02  # ~2% of life per tick → fast, visible collapse
+
+    for _ in range(ticks):
+        try:
+            twin = AssetTwinState.objects.filter(asset=asset).first()
+            state = dict(twin.state or {}) if twin else {}
+            # Stop only on an explicit clear (toggle off sets _reset_requested). We must NOT rely on
+            # _fault_injected, because the live synthetic beat one-shot-clears that flag every ~10s.
+            if state.get("_reset_requested"):
+                break
+
+            # Re-assert the fault each tick so the synthetic beat's one-shot clear can't truncate the
+            # degradation — the abnormality stays active until the user clears it.
+            state["_fault_injected"] = True
+            state["_fault_type"] = fault_type
+            state["_campaign_hours"] = min(round(float(state.get("_campaign_hours") or 0.0) + step, 2), cmax * 0.99)
+            twin.state = state
+            twin.save(update_fields=["state", "updated_at"])
+
+            generate_readings_sync(asset, n_samples=12)
+
+            consolidated = compute_asset_state(asset)
+            MLPrediction.objects.create(
+                asset=asset,
+                model=None,
+                input_features={},
+                prediction_output=consolidated,
+                confidence=consolidated.get("fault_confidence"),
+            )
+            twin.health_score = consolidated["health_score"]
+            twin.save(update_fields=["health_score", "updated_at"])
+
+            try:
+                from apps.telemetry.tasks import broadcast_cells
+                broadcast_cells()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.warning("rapid_degrade_tick_failed asset=%s err=%s", asset_id, exc)
+        finally:
+            django.db.close_old_connections()
+        time.sleep(interval_s)
 
 
 def _create_trip_alarm(asset: Asset, fault_type: str) -> AlarmEvent:
@@ -141,6 +206,18 @@ def trigger_anomaly_trip(asset_id: str | None = None, fault_type: str | None = N
     report = _ensure_abnormal_report(asset, alarm, fault_type)
     _queue_synthetic_and_ml(asset)
 
+    # Spawn the live 5 s rapid-degrade loop (no Celery) — guard against duplicates per asset.
+    import threading
+
+    loop_name = f"rapid-degrade-{str(asset.id)[:8]}"
+    if not any(t.name == loop_name for t in threading.enumerate()):
+        threading.Thread(
+            target=_rapid_degrade_loop,
+            args=(str(asset.id), fault_type),
+            daemon=True,
+            name=loop_name,
+        ).start()
+
     diag = build_diagnostic(asset)
     return {
         "status": "trip_queued",
@@ -181,11 +258,12 @@ def clear_anomaly_trip(asset_id: str | None = None) -> dict:
         twin.state = state
         twin.health_score = 100.0
         twin.save(update_fields=["state", "health_score", "updated_at"])
-        AlarmEvent.objects.filter(
-            asset=asset,
-            alarm_type=SIMULATED_ALARM_TYPE,
-            acknowledged=False,
-        ).update(acknowledged=True)
+        # Ack ALL unacked alarms for the asset — not just the simulated_trip marker. The rapid
+        # degrade loop fires real sensor-threshold alarms each tick; if those linger unacked they
+        # keep active_alerts>=3 and cap RUL low after the fault is cleared (stale-state bug).
+        AlarmEvent.objects.filter(asset=asset, acknowledged=False).update(
+            acknowledged=True, resolved_at=dj_timezone.now()
+        )
         cleared += 1
 
     return {"status": "cleared", "assets_updated": cleared}

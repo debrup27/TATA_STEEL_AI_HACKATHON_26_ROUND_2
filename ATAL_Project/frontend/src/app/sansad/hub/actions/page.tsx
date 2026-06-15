@@ -5,16 +5,20 @@ import HubShell from "../components/HubShell";
 import { useHubManasNotify } from "../components/HubManasNotify";
 import {
   fetchActionPlans,
+  fetchActionPlan,
   fetchPlanRegenerationStatus,
   triggerQuickPlanRegenerate,
+  generateWorkOrder,
   type PlanRegenerationStatus,
+  type GeneratedWorkOrder,
 } from "@/services/actionPlans";
 import type { MaintenanceActionPlan } from "@/services/sansadOutputs";
+import { mapActionPlan, type BackendActionPlan } from "@/lib/mappers";
 import { riskLevelColor } from "@/services/sansadOutputs";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
 import HubMarkdown from "../components/HubMarkdown";
-import { CheckCircle2, ClipboardList, Eye, Wrench, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, ClipboardList, Eye, Wrench, Loader2, RefreshCw, FileText, ShieldAlert, Clock } from "lucide-react";
 
 export default function MaintenanceActionsPage() {
   const { runManasCall } = useHubManasNotify();
@@ -25,22 +29,44 @@ export default function MaintenanceActionsPage() {
   const [generating, setGenerating] = useState(false);
   const [genStatus, setGenStatus] = useState<string | null>(null);
   const [regen, setRegen] = useState<PlanRegenerationStatus | null>(null);
+  const [workOrders, setWorkOrders] = useState<Record<string, GeneratedWorkOrder>>({});
+  const [woGenerating, setWoGenerating] = useState(false);
   const { byId: diagById } = usePlantSnapshot();
 
   const loadPlans = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const { plans: rows, regeneration } = await fetchActionPlans();
-      setPlans(rows);
+      setPlans((prev) => {
+        if (!prev.length) return rows;
+        return rows.map((incoming) => {
+          const existing = prev.find(
+            (p) => p.assetId === incoming.assetId || p.id === incoming.id,
+          );
+          if (!existing?.generatedAt || !incoming.generatedAt) return incoming;
+          return existing.generatedAt > incoming.generatedAt ? existing : incoming;
+        });
+      });
       setRegen(regeneration);
-      if (rows[0] && !planId) setPlanId(rows[0].id);
+      setPlanId((current) => current || rows[0]?.id || "");
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load action plans");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [planId]);
+  }, []);
+
+  const applyPlanUpdate = useCallback((updated: MaintenanceActionPlan) => {
+    setPlans((prev) => {
+      const idx = prev.findIndex((p) => p.assetId === updated.assetId || p.id === updated.id);
+      if (idx < 0) return [...prev, updated];
+      const next = [...prev];
+      next[idx] = updated;
+      return next;
+    });
+    setPlanId(updated.id);
+  }, []);
 
   useEffect(() => {
     void loadPlans();
@@ -74,8 +100,11 @@ export default function MaintenanceActionsPage() {
         if (result.status !== "complete") {
           throw new Error(result.error ?? "Plan generation failed");
         }
-        await loadPlans(true);
-        return result;
+        const refreshed = result.plan
+          ? mapActionPlan(result.plan as BackendActionPlan)
+          : await fetchActionPlan(assetId);
+        applyPlanUpdate(refreshed);
+        return refreshed;
       },
       {
         pendingDetail: "MANAS is regenerating the maintenance plan…",
@@ -87,7 +116,38 @@ export default function MaintenanceActionsPage() {
     } else {
       setGenStatus("Plan generation failed");
     }
+    // The inline LLM regen can outlast the HTTP response (proxy/fetch timeout) even though the
+    // backend writes the new report. Always re-pull the authoritative plan so the refreshed
+    // report shows up regardless of how the request resolved.
+    try {
+      const refreshed = await fetchActionPlan(assetId);
+      applyPlanUpdate(refreshed);
+      if (!ok) setGenStatus(null);
+    } catch {
+      /* keep prior state */
+    }
     setGenerating(false);
+  };
+
+  const handleScheduleWorkOrder = async () => {
+    if (!assetId) return;
+    setWoGenerating(true);
+    await runManasCall(
+      `Work order — ${plan?.asset ?? "asset"}`,
+      async () => {
+        const res = await generateWorkOrder(assetId);
+        if (res.status !== "complete" || !res.work_order) {
+          throw new Error(res.error ?? "Work order generation failed");
+        }
+        setWorkOrders((prev) => ({ ...prev, [assetId]: res.work_order! }));
+        return res.work_order;
+      },
+      {
+        pendingDetail: "MANAS is drafting the work order from live condition feeds…",
+        successDetail: "Work order requested — see the new section below",
+      },
+    );
+    setWoGenerating(false);
   };
 
   if (loading && !plans.length) {
@@ -157,7 +217,7 @@ export default function MaintenanceActionsPage() {
           </div>
         )}
 
-        <div className="bg-white border border-zinc-200 rounded-2xl p-6">
+        <div key={plan.reportId ?? plan.id} className="bg-white border border-zinc-200 rounded-2xl p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${riskLevelColor(plan.riskLevel)}`}>
@@ -167,6 +227,11 @@ export default function MaintenanceActionsPage() {
                 {plan.asset}
               </h2>
               <p className="text-xs text-zinc-500">{plan.factory}</p>
+              {plan.generatedAt ? (
+                <p className="text-[10px] font-mono text-zinc-400 mt-1">
+                  Plan generated {new Date(plan.generatedAt).toLocaleString()}
+                </p>
+              ) : null}
               <AssetLiveSummary asset={liveAsset} />
               <AssetSensorPills asset={liveAsset} className="mt-3" />
             </div>
@@ -177,22 +242,33 @@ export default function MaintenanceActionsPage() {
                 </HubMarkdown>
               </div>
               {assetId && (
-                <button
-                  type="button"
-                  disabled={generating}
-                  onClick={() => void handleGenerate()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-[#1b253c] text-white hover:bg-orange-500 disabled:opacity-50 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
-                  {generating ? "Generating…" : "Regenerate plan"}
-                </button>
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <button
+                    type="button"
+                    disabled={generating}
+                    onClick={() => void handleGenerate()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-[#1b253c] text-white hover:bg-orange-500 disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} />
+                    {generating ? "Generating…" : "Regenerate plan"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={woGenerating}
+                    onClick={() => void handleScheduleWorkOrder()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 cursor-pointer"
+                  >
+                    <FileText className={`w-3.5 h-3.5 ${woGenerating ? "animate-pulse" : ""}`} />
+                    {woGenerating ? "Drafting…" : "Schedule work order"}
+                  </button>
+                </div>
               )}
               {genStatus && <p className="text-[10px] font-mono text-zinc-400">{genStatus}</p>}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-5">
+        <div key={`${plan.reportId ?? plan.id}-grid`} className="grid grid-cols-12 gap-5">
           <div className="col-span-12 lg:col-span-4 bg-white border border-zinc-200 rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-4">
               <CheckCircle2 className="w-5 h-5 text-orange-500" />
@@ -263,31 +339,110 @@ export default function MaintenanceActionsPage() {
                 <thead>
                   <tr className="text-[10px] uppercase text-zinc-400 border-b border-zinc-100">
                     <th className="text-left py-2">Part</th>
-                    <th className="text-center py-2">Qty</th>
+                    <th className="text-center py-2">Req. Qty</th>
+                    <th className="text-center py-2">In Stock</th>
                     <th className="text-center py-2">Lead</th>
-                    <th className="text-right py-2">Stock</th>
+                    <th className="text-right py-2">Decision</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {plan.spares.map((s) => (
-                    <tr key={s.part} className="border-b border-zinc-50">
-                      <td className="py-2.5 font-medium text-zinc-800">{s.part}</td>
-                      <td className="text-center py-2.5">{s.qty}</td>
-                      <td className="text-center py-2.5 font-mono text-xs">{s.leadDays}d</td>
-                      <td className="text-right py-2.5">
-                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          s.inStock ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-                        }`}>
-                          {s.inStock ? "Yes" : "Order"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {plan.spares.map((s) => {
+                    const order = (s.orderDecision ?? (s.inStock ? "in_stock" : "order")) === "order";
+                    const stockQty = s.stockQty ?? (s.inStock ? 1 : 0);
+                    return (
+                      <tr key={s.part} className="border-b border-zinc-50">
+                        <td className="py-2.5 font-medium text-zinc-800">{s.part}</td>
+                        <td className="text-center py-2.5">{s.qty}</td>
+                        <td className={`text-center py-2.5 font-mono tabular-nums ${stockQty <= 0 ? "text-rose-600 font-bold" : "text-zinc-700"}`}>
+                          {stockQty}
+                          {s.reorderLevel ? <span className="text-[9px] text-zinc-400"> /{s.reorderLevel}</span> : null}
+                        </td>
+                        <td className="text-center py-2.5 font-mono text-xs">{s.leadDays}d</td>
+                        <td className="text-right py-2.5">
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                            order ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
+                          }`}>
+                            {order ? "Order" : "In stock"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
           </div>
         </div>
+
+        {assetId && workOrders[assetId] && (() => {
+          const wo = workOrders[assetId];
+          const prioColor = wo.priority.startsWith("1")
+            ? "bg-rose-50 text-rose-700 border-rose-200"
+            : wo.priority.startsWith("2")
+              ? "bg-orange-50 text-orange-700 border-orange-200"
+              : wo.priority.startsWith("3")
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200";
+          return (
+            <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-emerald-600" />
+                  <h2 className="text-sm font-black uppercase text-[#1b253c]">Work Order Requested</h2>
+                  <span className="text-[9px] font-mono uppercase text-zinc-400">
+                    MANAS-drafted · {new Date(wo.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${prioColor}`}>
+                    {wo.priority}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">
+                    {wo.status}
+                  </span>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-black text-[#1b253c]" style={{ fontFamily: "var(--font-questrial)" }}>
+                {wo.title}
+              </h3>
+              <p className="text-sm text-zinc-600 mt-1">{wo.description}</p>
+
+              <div className="grid grid-cols-12 gap-5 mt-4">
+                <div className="col-span-12 lg:col-span-7">
+                  <h4 className="text-[10px] font-black uppercase text-zinc-400 mb-2">Recommended Actions</h4>
+                  <ol className="space-y-1.5">
+                    {wo.recommendedActions.map((a, i) => (
+                      <li key={`${a}-${i}`} className="flex gap-2 text-sm text-zinc-700">
+                        <span className="text-emerald-600 font-bold shrink-0">{i + 1}.</span>{a}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="col-span-12 lg:col-span-5 space-y-3">
+                  <div>
+                    <h4 className="text-[10px] font-black uppercase text-zinc-400 mb-2">Spare Requirements</h4>
+                    <ul className="space-y-1">
+                      {wo.spareRequirements.map((s, i) => (
+                        <li key={`${s}-${i}`} className="text-xs text-zinc-600 flex gap-2">
+                          <ClipboardList className="w-3.5 h-3.5 text-sky-500 shrink-0 mt-0.5" />{s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="flex items-center gap-1 text-zinc-600">
+                      <Clock className="w-3.5 h-3.5 text-zinc-400" /> {wo.estimatedDurationHrs}h est.
+                    </span>
+                  </div>
+                  <div className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {wo.safetyNotes}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </HubShell>
   );

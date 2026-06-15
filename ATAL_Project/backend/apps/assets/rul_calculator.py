@@ -1,4 +1,4 @@
-"""Unified RUL estimation — health/criticality-led, simulation-capped at 300 h."""
+"""Unified RUL estimation — health/criticality-led, simulation band [30, 600] h."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -10,8 +10,10 @@ from apps.ml.models import MLPrediction
 from apps.telemetry.models import SensorReading
 from apps.twins.models import AssetTwinState
 
-# Demo/simulation ceiling — no asset may report more than 300 h RUL.
-SIM_MAX_RUL_HOURS = 300.0
+# Demo/simulation band — RUL reported within [30, 600] h for healthy/degrading assets.
+# Only true imminent failure (health<=5 or fault injected) may drop below the 30 h floor.
+SIM_MAX_RUL_HOURS = 600.0
+SIM_MIN_RUL_HOURS = 30.0
 
 _CAMPAIGN_MAX = {
     "SRF": 8000, "HHPD": 6000, "FS": 12000, "HAGCC": 5000,
@@ -20,10 +22,10 @@ _CAMPAIGN_MAX = {
 
 # Process-criticality caps (problem §5.2 — critical-path assets cannot defer long).
 _CRIT_RUL_CEILING: dict[str, float] = {
-    "critical": 96.0,
-    "high": 168.0,
-    "medium": 228.0,
-    "low": 300.0,
+    "critical": 120.0,
+    "high": 280.0,
+    "medium": 450.0,
+    "low": 600.0,
 }
 
 _CRIT_WEIGHT: dict[str, float] = {
@@ -55,28 +57,33 @@ def _criticality(asset: Asset) -> str:
 def _health_rul_cap(health_score: float, crit: str) -> float:
     """Monotonic: low health → low RUL; critical assets have a lower ceiling."""
     hs = min(max(float(health_score), 0.0), 100.0) / 100.0
-    crit_ceiling = min(SIM_MAX_RUL_HOURS, _CRIT_RUL_CEILING.get(crit, 228.0))
+    crit_ceiling = min(SIM_MAX_RUL_HOURS, _CRIT_RUL_CEILING.get(crit, 450.0))
     # Non-linear — unhealthy assets lose RUL quickly (matches threshold_scorer training).
     return crit_ceiling * (hs ** 1.35)
 
 
-def _ml_rul_hours(asset: Asset, health_cap: float) -> float | None:
-    pred = (
-        MLPrediction.objects.filter(asset=asset, model__model_type="rul_predictor")
-        .order_by("-prediction_time")
-        .first()
-    )
-    if not pred:
-        pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
-    if not pred:
+def _ml_rul_hours(asset: Asset, health_cap: float, anomaly: float) -> float | None:
+    """Sanity-gated pickled-ML RUL fallback.
+
+    Accept the ML value ONLY if it is fresh (≤5 min), genuinely from a pickled model
+    (source == "ml_model"), plausible (0 < rul ≤ health_cap), and not contradicting a live
+    anomaly (don't trust a long ML RUL when anomaly is high). Otherwise return None → pure physics.
+    """
+    pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
+    if not pred or not pred.prediction_time:
+        return None
+    # Freshness gate — stale ML is ignored.
+    if (timezone.now() - pred.prediction_time) > timedelta(minutes=5):
         return None
     out = pred.prediction_output or {}
+    # Only the sanity-checked raw pickled-ML value is trusted as a fallback signal.
     raw = None
-    if out.get("rul_hours") is not None:
-        raw = _clamp_rul(out["rul_hours"], ceiling=health_cap)
-    elif out.get("rul_days") is not None:
-        raw = _clamp_rul(float(out["rul_days"]) * 24.0, ceiling=health_cap)
-    if raw is None or health_cap <= 0:
+    if out.get("_ml_rul_raw") is not None:
+        raw = _clamp_rul(out["_ml_rul_raw"], ceiling=health_cap)
+    if raw is None or raw <= 0 or health_cap <= 0:
+        return None
+    # Contradiction gate — high anomaly + long ML RUL is implausible.
+    if anomaly >= 0.6:
         return None
     return min(raw, health_cap)
 
@@ -172,7 +179,6 @@ def compute_rul(asset: Asset, *, health_score: float | None = None) -> dict:
     campaign_mod = 0.30 + 0.70 * life_frac
 
     health_cap = _health_rul_cap(hs, crit)
-    ml_rul = _ml_rul_hours(asset, health_cap)
 
     last_pred = MLPrediction.objects.filter(asset=asset).order_by("-prediction_time").first()
     pred_out = last_pred.prediction_output if last_pred else {}
@@ -180,6 +186,9 @@ def compute_rul(asset: Asset, *, health_score: float | None = None) -> dict:
     if anomaly > 1.0:
         anomaly = anomaly / 100.0
     anomaly = min(max(anomaly, 0.0), 1.0)
+
+    # Sanity-gated pickled-ML fallback (needs anomaly for the contradiction check).
+    ml_rul = _ml_rul_hours(asset, health_cap, anomaly)
 
     stress = _sensor_stress_factor(asset)
     fault_injected = bool(twin_state.get("_fault_injected"))
@@ -209,6 +218,12 @@ def compute_rul(asset: Asset, *, health_score: float | None = None) -> dict:
         active_alerts=active_alerts,
     )
     rul_hours = max(0.0, _clamp_rul(rul_hours) or 0.0)
+
+    # Floor: degrading assets never report below 30 h UNLESS truly imminent
+    # (zero-ish health or active fault) — those keep their low early-warning value (§5.1).
+    imminent = fault_injected or hs <= 5
+    if not imminent:
+        rul_hours = max(rul_hours, SIM_MIN_RUL_HOURS)
 
     return {
         "rul_hours": rul_hours,

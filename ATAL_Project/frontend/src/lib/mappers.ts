@@ -95,10 +95,19 @@ export interface BackendActionPlan {
   immediateActions: string[];
   steps: { order: number; action: string; safety: string; duration: string }[];
   longTermMonitoring: string[];
-  spares: { part: string; qty: number; leadDays: number; inStock: boolean }[];
+  spares: {
+    part: string;
+    qty: number;
+    leadDays: number;
+    inStock: boolean;
+    stockQty?: number;
+    reorderLevel?: number;
+    orderDecision?: "order" | "in_stock";
+  }[];
   optimizedPlanSummary: string;
   workOrderId?: string | null;
   reportId?: string | null;
+  generatedAt?: string | null;
 }
 
 export interface BackendMaintenanceEvent {
@@ -272,6 +281,7 @@ export function mapActionPlan(
     assetId: p.assetId,
     workOrderId: p.workOrderId ?? undefined,
     reportId: p.reportId ?? undefined,
+    generatedAt: p.generatedAt ?? undefined,
   };
 }
 

@@ -8,6 +8,7 @@ MODEL_SMALL="${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}"
 WARMUP_RETRIES="${OLLAMA_WARMUP_RETRIES:-8}"
 WARMUP_RETRY_SECS="${OLLAMA_WARMUP_RETRY_SECS:-10}"
 PULL_TIMEOUT_SECS="${OLLAMA_PULL_TIMEOUT_SECS:-1800}"
+WARM_MAX_TIME="${OLLAMA_WARM_MAX_TIME:-600}"
 
 keep_alive_json() {
   case "${OLLAMA_KEEP_ALIVE:--1}" in
@@ -59,9 +60,10 @@ warm_model() {
   while [ "${attempt}" -le "${WARMUP_RETRIES}" ]; do
     echo "[ollama-warmup] loading ${model} (attempt ${attempt}/${WARMUP_RETRIES})"
     tmp=$(mktemp)
-    code=$(curl -sS -o "${tmp}" -w "%{http_code}" --max-time 300 -X POST "${OLLAMA_HOST}/api/chat" \
+    # /api/generate with num_predict 0 = "just load the model" (lighter than a chat turn).
+    code=$(curl -sS -o "${tmp}" -w "%{http_code}" --max-time "${WARM_MAX_TIME}" -X POST "${OLLAMA_HOST}/api/generate" \
       -H "Content-Type: application/json" \
-      -d "{\"model\":\"${model}\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"stream\":false,\"think\":false,\"keep_alive\":${KEEP},\"options\":{\"num_predict\":1}}" \
+      -d "{\"model\":\"${model}\",\"prompt\":\"\",\"stream\":false,\"keep_alive\":${KEEP},\"options\":{\"num_predict\":0}}" \
       2>/dev/null || echo "000")
     rm -f "${tmp}"
     if [ "${code}" = "200" ]; then
@@ -89,10 +91,26 @@ done
 
 sleep 2
 
-pull_model "${MODEL_MAIN}"
+# Pull is required — models must be present for the stack to function.
 pull_model "${MODEL_SMALL}"
+pull_model "${MODEL_MAIN}"
 
-warm_model "${MODEL_MAIN}"
-warm_model "${MODEL_SMALL}"
+# Warm small (fast) first, then the large supervisor. Warm is best-effort: a flaky cold load must
+# NOT block the whole stack from starting (the backend re-warms on start and on first chat). The
+# sidecar still ALWAYS attempts the warm and warns loudly if it can't complete.
+warm_ok=1
+if ! warm_model "${MODEL_SMALL}"; then
+  echo "[ollama-warmup] WARNING: ${MODEL_SMALL} did not warm — will load on demand" >&2
+  warm_ok=0
+fi
+if ! warm_model "${MODEL_MAIN}"; then
+  echo "[ollama-warmup] WARNING: ${MODEL_MAIN} did not warm — will load on demand" >&2
+  warm_ok=0
+fi
 
-echo "[ollama-warmup] done — ${MODEL_MAIN} + ${MODEL_SMALL} ready"
+if [ "${warm_ok}" = "1" ]; then
+  echo "[ollama-warmup] done — ${MODEL_SMALL} + ${MODEL_MAIN} warmed and ready"
+else
+  echo "[ollama-warmup] done — models pulled; warm incomplete (see warnings above), continuing" >&2
+fi
+exit 0

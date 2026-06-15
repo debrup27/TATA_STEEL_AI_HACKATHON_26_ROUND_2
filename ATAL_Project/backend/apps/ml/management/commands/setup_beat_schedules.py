@@ -142,8 +142,8 @@ class Command(BaseCommand):
             defaults={
                 "interval": consolidation_interval,
                 "task": "apps.consolidation.run_critical_consolidation",
-                "enabled": True,
-                "description": "Run LangGraph consolidation for high/critical health assets every 15 min",
+                "enabled": False,  # DISABLED — ran the LLM inside a Celery worker.
+                "description": "Disabled — LLM must not run in Celery; intelligence regen is inline on anomaly",
             },
         )
 

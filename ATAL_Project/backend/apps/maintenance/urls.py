@@ -10,6 +10,7 @@ from apps.maintenance.action_plans_views import (
     ActionPlanRegenerateView,
     MaintenanceRegenerationStatusView,
     MaintenanceTaskStatusView,
+    WorkOrderGenerateView,
 )
 
 router = DefaultRouter()
@@ -18,6 +19,7 @@ router.register("delay-logs", DelayLogViewSet, basename="delay-logs")
 router.register("work-orders", WorkOrderViewSet, basename="work-orders")
 
 urlpatterns = router.urls + [
+    path("work-orders/<uuid:asset_id>/generate/", WorkOrderGenerateView.as_view()),
     path("action-plans/", ActionPlansListView.as_view()),
     path("action-plans/regeneration-status/", MaintenanceRegenerationStatusView.as_view()),
     path("action-plans/task-status/<str:task_id>/", MaintenanceTaskStatusView.as_view()),

@@ -196,6 +196,33 @@ class BottleneckInsightView(APIView):
         })
 
 
+class PlantCostAnalysisView(APIView):
+    """GET — factory-level predictive cost analysis (loss-if-no-action vs PdM savings, ₹ lakhs)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.assets.models import Factory
+        from apps.assets.pareto_maintenance import compute_factory_cost_analysis
+
+        factory_id = request.query_params.get("factory_id")
+        factories = (
+            Factory.objects.filter(id=factory_id) if factory_id else Factory.objects.all()
+        )
+        results = []
+        for factory in factories:
+            try:
+                results.append(compute_factory_cost_analysis(factory))
+            except Exception as exc:  # never 500 the dashboard
+                results.append({"factory_id": str(factory.id), "factory": factory.name, "error": str(exc)})
+
+        totals = {
+            "predicted_loss_lakhs": round(sum(r.get("predicted_loss_lakhs", 0) for r in results), 2),
+            "pdm_savings_lakhs": round(sum(r.get("pdm_savings_lakhs", 0) for r in results), 2),
+        }
+        return Response({"factories": results, "plant_totals": totals})
+
+
 class PlantKPIView(APIView):
     permission_classes = [IsAuthenticated]
 

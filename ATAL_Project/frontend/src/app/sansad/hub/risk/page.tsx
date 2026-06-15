@@ -6,6 +6,7 @@ import { useHubManasNotify } from "../components/HubManasNotify";
 import { fetchRiskAssets, fetchRiskBottleneckInsight } from "@/services/prediction";
 import { usePlantSnapshot } from "@/hooks/usePlantSnapshot";
 import AssetSensorPills, { AssetLiveSummary } from "../components/AssetSensorPills";
+import CostAnalysisPanel from "../components/CostAnalysisPanel";
 import type { RiskAsset } from "@/services/types";
 import type { RiskLevel } from "@/services/sansadOutputs";
 import { riskLevelColor } from "@/services/sansadOutputs";
@@ -32,33 +33,8 @@ function sparesLabel(asset: RiskAsset): string {
   return asset.sparesAvailable ? "In stock" : "Not available";
 }
 
-function InsightPanel({
-  title,
-  text,
-  loading,
-}: {
-  title: string;
-  text?: string;
-  loading?: boolean;
-}) {
-  if (loading) {
-    return (
-      <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3 flex items-center gap-2 text-orange-700">
-        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-        <p className="text-[10px] font-bold uppercase tracking-wider">Generating MANAS insight…</p>
-      </div>
-    );
-  }
-  if (!text?.trim()) return null;
-  return (
-    <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50/60 p-3">
-      <p className="text-[9px] font-black uppercase text-orange-700 tracking-wider">{title}</p>
-      <p className="text-xs text-zinc-800 mt-1.5 leading-relaxed" style={{ fontFamily: "var(--font-questrial)" }}>
-        {text}
-      </p>
-    </div>
-  );
-}
+// MANAS insight card with pop-out modal (shared) — handles long responses that overflow inline.
+import InsightPanel from "../components/ManasInsightPanel";
 
 export default function RiskPriorityPage() {
   const { runManasCall } = useHubManasNotify();
@@ -207,6 +183,8 @@ export default function RiskPriorityPage() {
         ) : insight && insightTargetId === plantBottleneck.id ? (
           <InsightPanel title={`MANAS — ${insight.angle}`} text={insight.text} />
         ) : null}
+
+        <CostAnalysisPanel />
 
         <div className="grid grid-cols-12 gap-5">
           <div className="col-span-12 lg:col-span-5 bg-white border border-zinc-200 rounded-2xl overflow-hidden">

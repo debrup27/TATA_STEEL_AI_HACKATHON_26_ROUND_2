@@ -143,14 +143,17 @@ if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ]; then
     ensure_ollama_model "${MAIN_MODEL}" "supervisor model"
     ensure_ollama_model "${SMALL_MODEL}" "worker model"
     echo "[entrypoint] Models ready."
-    echo "[entrypoint] Warming Ollama models into memory..."
+    echo "[entrypoint] Warming Ollama models into memory (best-effort)..."
+    # Best-effort: a cold 9B load can exceed the warm timeout under GPU pressure. Do NOT crash
+    # the backend on a flaky warm — the deterministic dashboard needs no LLM, and the final
+    # server re-warms post-start (below) and on first chat. This removes a brittle startup gate.
     for attempt in 1 2 3; do
         if $RUN_AS python manage.py warm_ollama --skip-rag; then
             break
         fi
         if [ "${attempt}" -eq 3 ]; then
-            echo "[entrypoint] ERROR: Ollama warmup failed after 3 attempts" >&2
-            exit 1
+            echo "[entrypoint] WARNING: Ollama warmup did not complete — continuing; will warm on demand." >&2
+            break
         fi
         echo "[entrypoint] Ollama warmup retry ${attempt}/3 in 10s..." >&2
         sleep 10
@@ -189,6 +192,13 @@ $RUN_AS python manage.py seed_spares --sync --force \
 echo "[entrypoint] Seeding initial synthetic telemetry..."
 $RUN_AS python manage.py seed_initial_telemetry --samples=30 \
   || echo "[entrypoint] WARNING: seed_initial_telemetry failed — check logs."
+
+# ── Calibrate sensor thresholds to actual nominal generator output ──────────
+# Aligns normal/alert/trip bands with what the generators emit so healthy assets read
+# healthy and fault data still breaches (fixes synthetic threshold scale mismatches).
+echo "[entrypoint] Calibrating sensor thresholds from nominal telemetry..."
+$RUN_AS python manage.py calibrate_sensors \
+  || echo "[entrypoint] WARNING: calibrate_sensors failed — check logs."
 
 # ── Optional RAG corpus ingest (off by default — user picks library docs in MANAS) ─
 if [ "${INGEST_CORPUS_ON_START:-0}" = "1" ]; then

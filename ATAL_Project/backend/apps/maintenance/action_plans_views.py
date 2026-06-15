@@ -36,7 +36,27 @@ class ActionPlanRegenerateView(APIView):
     asset = get_object_or_404(Asset, pk=asset_id)
     try:
       result = regenerate_asset_plan_sync(str(asset.id), trigger="manual")
-      return Response({**result, "status": "complete"}, status=status.HTTP_200_OK)
+      plan = build_action_plan(asset)
+      return Response({**result, "status": "complete", "plan": plan}, status=status.HTTP_200_OK)
+    except Exception as exc:
+      return Response(
+        {"status": "error", "error": str(exc)},
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+      )
+
+
+class WorkOrderGenerateView(APIView):
+  """POST — generate a qwen-drafted maintenance work order for the asset from live SANSAD feeds."""
+
+  permission_classes = [IsAuthenticated]
+
+  def post(self, request, asset_id):
+    asset = get_object_or_404(Asset, pk=asset_id)
+    try:
+      from apps.maintenance.work_order_gen import generate_work_order_sync
+
+      wo = generate_work_order_sync(str(asset.id), user=request.user)
+      return Response({"status": "complete", "work_order": wo}, status=status.HTTP_200_OK)
     except Exception as exc:
       return Response(
         {"status": "error", "error": str(exc)},

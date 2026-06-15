@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 MODEL_ARTIFACT_ROOT = getattr(settings, "MODEL_ARTIFACT_ROOT", Path("/tmp/atal_models"))
 
-# Simulation RUL ceiling — values above this are treated as model scale errors.
-MAX_SANE_RUL_HOURS = 300.0
+# Simulation RUL ceiling — single source of truth in rul_calculator (now 600 h).
+# Imported lazily-safe at module load; values above this are treated as model scale errors.
+from apps.assets.rul_calculator import SIM_MAX_RUL_HOURS as MAX_SANE_RUL_HOURS
 
 # Minimum samples required to compute meaningful stats; below this inference won't run
 MIN_SAMPLES_FOR_INFERENCE = 10

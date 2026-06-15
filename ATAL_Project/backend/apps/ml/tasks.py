@@ -92,19 +92,19 @@ def run_asset_inference_task(self, asset_id: str, model_type: str):
 @shared_task(name="apps.ml.run_all_asset_models", bind=True)
 def run_all_asset_models(self, asset_id: str):
     """
-    Run all three trained model types for an asset and compute composite health_score.
-    Saves a consolidated prediction record with rul_hours, anomaly_score, fault_classification,
-    and composite health_score. Updates AssetTwinState.health_score.
+    Authoritative asset state via the DETERMINISTIC engine (apps.ml.deterministic).
+
+    The deterministic engine is the single source of truth for health / anomaly / RUL — it always
+    obeys the abnormality toggle and criticality. The pickled XGBoost/IsolationForest models are
+    attempted only as a sanity-gated fallback: if they run and look plausible, their raw RUL is
+    stashed under `_ml_rul_raw` for rul_calculator's gate; otherwise we proceed without them.
+    Writes MLPrediction.prediction_output + AssetTwinState.health_score, never raises on missing
+    telemetry / model.
     """
     from apps.assets.models import Asset
     from apps.twins.models import AssetTwinState
     from apps.ml.models import MLPrediction, MLModel
-    from apps.ml.inference import (
-        compute_features_for_inference,
-        run_asset_inference,
-        compute_composite_health,
-        compute_shap_values,
-    )
+    from apps.ml.deterministic import compute_asset_state
 
     try:
         asset = Asset.objects.get(id=asset_id)
@@ -112,50 +112,24 @@ def run_all_asset_models(self, asset_id: str):
         logger.error("run_all_models error=Asset not found asset_id=%s", asset_id)
         raise
 
-    features = compute_features_for_inference(asset_id)
-    if not features:
-        logger.warning(
-            "run_all_models skipped=no_telemetry asset_id=%s asset_type=%s",
-            asset_id, asset.asset_type,
-        )
-        return {"status": "skipped", "reason": "no_telemetry"}
+    # Best-effort pickled-ML attempt (gated fallback only) — never fatal.
+    ml_rul_raw = None
+    features = {}
+    try:
+        from apps.ml.inference import compute_features_for_inference, run_asset_inference
 
-    results: dict[str, dict] = {}
-    for mt in INFERENCE_MODEL_TYPES:
-        try:
-            results[mt] = run_asset_inference(str(asset.id), mt, features)
-        except Exception as exc:
-            logger.error(
-                "inference_failed asset_id=%s model_type=%s error=%s", asset_id, mt, str(exc)
-            )
-            results[mt] = {"source": "error", "error": str(exc)}
+        features = compute_features_for_inference(asset_id) or {}
+        if features:
+            rul_try = run_asset_inference(str(asset.id), "rul_predictor", features)
+            ml_rul_raw = rul_try.get("rul_hours")
+    except Exception as exc:
+        logger.info("ml_fallback_unavailable asset_id=%s reason=%s", asset_id, str(exc))
 
-    rul_res = results.get("rul_predictor", {})
-    anomaly_res = results.get("anomaly_detector", {})
-    cls_res = results.get("classifier", {})
+    # Deterministic authoritative state.
+    consolidated = compute_asset_state(asset)
+    if ml_rul_raw is not None:
+        consolidated["_ml_rul_raw"] = ml_rul_raw
 
-    composite_health = compute_composite_health(rul_res, anomaly_res, cls_res)
-
-    # Build consolidated output
-    consolidated = {
-        "source": "ml_model",
-        "model_type": "consolidated",
-        "health_score": composite_health,
-        "rul_hours": rul_res.get("rul_hours"),
-        "anomaly_score": anomaly_res.get("anomaly_score"),
-        "fault_classification": cls_res.get("fault_classification"),
-        "fault_confidence": cls_res.get("confidence"),
-        "rul_health": rul_res.get("health_score"),
-        "anomaly_health": anomaly_res.get("health_score"),
-        "classifier_health": cls_res.get("health_score"),
-        "rul_version": rul_res.get("model_version"),
-        "model_errors": {k: v.get("error") for k, v in results.items() if "error" in v},
-    }
-
-    # SHAP for RUL (most actionable for maintenance)
-    shap_vals = compute_shap_values(str(asset.id), "rul_predictor", features)
-
-    # Use rul_predictor model record as FK (most important model for reports)
     model_rec = MLModel.objects.filter(
         name=f"{asset.asset_type}_rul_predictor", status="production"
     ).order_by("-created_at").first()
@@ -165,20 +139,20 @@ def run_all_asset_models(self, asset_id: str):
         asset=asset,
         input_features=features,
         prediction_output=consolidated,
-        confidence=rul_res.get("confidence"),
-        shap_values=shap_vals,
-        celery_task_id=self.request.id,
+        confidence=consolidated.get("fault_confidence"),
+        shap_values=None,
+        celery_task_id=getattr(self.request, "id", None),
     )
 
-    # Update twin health
+    # Update twin health from the authoritative deterministic value.
     twin, _ = AssetTwinState.objects.get_or_create(asset=asset)
-    twin.health_score = composite_health
+    twin.health_score = consolidated["health_score"]
     twin.save(update_fields=["health_score", "updated_at"])
 
     logger.info(
-        "ml_inference_complete asset=%s health=%.1f rul_h=%s anomaly=%s fault=%s",
+        "deterministic_state asset=%s health=%.1f rul_h=%s anomaly=%s fault_cls=%s",
         asset.asset_type,
-        composite_health,
+        consolidated["health_score"],
         consolidated.get("rul_hours"),
         consolidated.get("anomaly_score"),
         consolidated.get("fault_classification"),

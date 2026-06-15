@@ -15,7 +15,7 @@ def _call_small_model(system: str, user: str) -> str:
     import time
     import httpx
     from django.conf import settings
-    from apps.agents.ollama_warmup import ollama_keep_alive_value
+    from apps.agents.ollama_warmup import ollama_keep_alive_value, OLLAMA_SMALL_LOCK
 
     url = f"{settings.OLLAMA_BASE_URL}/api/chat"
     payload = {
@@ -32,9 +32,11 @@ def _call_small_model(system: str, user: str) -> str:
     last_exc: Exception | None = None
     for attempt in range(1, 4):
         try:
-            with httpx.Client(timeout=90) as client:
-                resp = client.post(url, json=payload)
-                resp.raise_for_status()
+            # Serialize against the prompt optimizer + other workers (parallel 0.8b crashes Ollama).
+            with OLLAMA_SMALL_LOCK:
+                with httpx.Client(timeout=90) as client:
+                    resp = client.post(url, json=payload)
+                    resp.raise_for_status()
             content = (resp.json().get("message") or {}).get("content") or ""
             return content.strip()
         except Exception as exc:

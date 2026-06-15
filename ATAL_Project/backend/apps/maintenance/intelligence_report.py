@@ -345,8 +345,17 @@ def _merge_polish(base: dict, polished: dict | None) -> dict:
             continue
         if key == "report_text" and isinstance(val, str):
             val = _normalize_report_markdown(val)
-        if key == "immediate_actions" and (not isinstance(val, list) or not val):
+        if key in ("immediate_actions", "recommendations", "long_term_monitoring") and (
+            not isinstance(val, list) or not val
+        ):
             continue
+        if key == "spare_strategy":
+            if not isinstance(val, dict):
+                continue
+            strategy = str(val.get("strategy") or "").strip()
+            parts = val.get("parts") or val.get("required_parts") or []
+            if not strategy and not parts:
+                continue
         if key == "risk_level" and str(val).lower() not in {"low", "medium", "high", "critical"}:
             continue
         out[key] = val
