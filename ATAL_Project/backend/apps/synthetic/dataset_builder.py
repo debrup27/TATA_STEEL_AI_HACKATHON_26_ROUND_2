@@ -190,16 +190,18 @@ def _sample_scenarios_CGP(n: int, rich: bool) -> List[Tuple[dict, float, int]]:
 def _sample_scenarios_HPAK(n: int, rich: bool) -> List[Tuple[dict, float, int]]:
     rng = _rng()
     scenarios = []
+    # p_drop crosses the 95 mbar alarm at t_alarm ≈ 4700 min, so the blockage time
+    # MUST be sampled past that point or no scenario is ever a fault (the previous
+    # 0–1200 min range capped p_drop at ~42 mbar → HPAK classifier saw zero faults).
+    t_alarm = -np.log(0.625) / 0.0001  # ≈ 4700 min
     for _ in range(n):
-        blockage_t = rng.uniform(0, 2000 if rich else 1200)
-        inject_cryst = rng.random() < 0.3
+        blockage_t = rng.uniform(0, 9000 if rich else 8000)
+        inject_cryst = rng.random() < 0.45
         block_factor = 1.0 - np.exp(-0.0001 * blockage_t) if inject_cryst else 0.0
         p_drop = 20.0 + block_factor * 200.0
-        is_fault = int(inject_cryst and p_drop > 95)
-        # RUL: minutes until p_drop > 95 mbar (blockage time to alarm)
-        # 20 + (1-e^{-0.0001t})*200 = 95 → e^{-0.0001t} = (1-75/200) → t = -ln(0.625)/0.0001
-        t_alarm = -np.log(0.625) / 0.0001  # ≈ 4700 min
-        rul = max(0, (t_alarm - blockage_t) / 60)  # in hours
+        # Fault when crystallization drives p_drop past the alarm, or on heavy blockage.
+        is_fault = int((inject_cryst and p_drop > 95) or blockage_t > 7500)
+        rul = max(0, (t_alarm - blockage_t) / 60)  # in hours; 0 once past alarm
         scenarios.append((
             {"blockage_time_min": blockage_t, "inject_crystallization": inject_cryst},
             rul, is_fault,

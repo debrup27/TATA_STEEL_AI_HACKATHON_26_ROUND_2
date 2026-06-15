@@ -3,12 +3,11 @@
 # Build the ATAL hackathon submission ZIP.
 #
 # Layout inside the ZIP:
-#   README.md            ← at the ZIP root
-#   docs/                ← system architecture, API reference, user guide, deliverable
-#   docker-compose.yml   ← one-command stack
-#   scripts/             ← setup_assets.sh (BGE + corpus) + this script
-#   ATAL_Project/        ← full frontend + backend source
-#   snapshots/           ← screenshots (add your own)
+#   README.md             ← at the ZIP root
+#   INSTRUCTIONS_TO_RUN.md ← step-by-step run guide at the ZIP root
+#   docker-compose.yml    ← one-command stack
+#   scripts/              ← setup_assets.sh (BGE + corpus) + this script
+#   ATAL_Project/         ← full frontend + backend source
 #
 # Excluded (re-fetched by scripts/setup_assets.sh or on first `docker compose up`):
 #   secrets (.env*), Git/IDE/agent dirs, BGE model weights, RAG corpus,
@@ -37,17 +36,29 @@ zip -r "${OUT}" "${STAGING_NAME}" \
   -x "${STAGING_NAME}/.git/**/*" \
   -x "${STAGING_NAME}/.env" \
   -x "${STAGING_NAME}/.env.*" \
+  -x "${STAGING_NAME}/**/.env" \
+  -x "${STAGING_NAME}/**/.env.local" \
+  -x "${STAGING_NAME}/**/.env.development" \
+  -x "${STAGING_NAME}/**/.env.production" \
   -x "${STAGING_NAME}/.cursor/*" \
   -x "${STAGING_NAME}/.cursor/**/*" \
   -x "${STAGING_NAME}/.claude/*" \
   -x "${STAGING_NAME}/.claude/**/*" \
   -x "${STAGING_NAME}/graphify-out/*" \
   -x "${STAGING_NAME}/graphify-out/**/*" \
+  -x "${STAGING_NAME}/**/graphify-out/*" \
+  -x "${STAGING_NAME}/**/graphify-out/**/*" \
+  -x "${STAGING_NAME}/**/.gitignore" \
   -x "${STAGING_NAME}/Docs/*" \
   -x "${STAGING_NAME}/Docs/**/*" \
   -x "${STAGING_NAME}/Planning/*" \
   -x "${STAGING_NAME}/Planning/**/*" \
   -x "${STAGING_NAME}/CLAUDE.md" \
+  -x "${STAGING_NAME}/**/CLAUDE.md" \
+  -x "${STAGING_NAME}/**/.cursor/*" \
+  -x "${STAGING_NAME}/**/.claude/*" \
+  -x "${STAGING_NAME}/.gitignore" \
+  -x "${STAGING_NAME}/.gitattributes" \
   -x "${STAGING_NAME}/*/node_modules/*" \
   -x "${STAGING_NAME}/*/*/node_modules/*" \
   -x "${STAGING_NAME}/*/*/*/node_modules/*" \
@@ -69,6 +80,8 @@ zip -r "${OUT}" "${STAGING_NAME}" \
   -x "${STAGING_NAME}/ATAL_Project/backend/models/bge-reranker-v2-m3/**/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/**/*" \
+  -x "${STAGING_NAME}/ATAL_Project/backend/artifacts/*" \
+  -x "${STAGING_NAME}/ATAL_Project/backend/artifacts/**/*" \
   -x "${STAGING_NAME}/data/corpus/*" \
   -x "${STAGING_NAME}/data/corpus/**/*" \
   -x "${STAGING_NAME}/*.log" \
@@ -79,8 +92,7 @@ SIZE=$(du -h "${OUT}" | cut -f1)
 echo ""
 echo "Done: ${OUT} (${SIZE})"
 echo ""
-echo "ZIP root:  README.md"
-echo "docs/:     SYSTEM_ARCHITECTURE.md, API_REFERENCE.md, USER_GUIDE.md, PROBLEM_STATEMENT_DELIVERABLE.md"
+echo "ZIP root:  README.md, INSTRUCTIONS_TO_RUN.md, docker-compose.yml"
 echo ""
 echo "NOT bundled (fetched on setup):"
 echo "  - BGE models + corpus  → bash scripts/setup_assets.sh"

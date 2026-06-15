@@ -7,6 +7,14 @@ set -e
 BACKEND_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MODELS_DIR="${BACKEND_DIR}/models"
 
+# Pin the HF cache to a writable path and disable the Xet transfer backend. Under
+# `gosu appuser` in the container HOME may be unset, so HF's default cache (and the
+# Xet downloader's temp store) land in a non-writable dir → Permission denied.
+export HF_HOME="${HF_HOME:-${MODELS_DIR}/.hf_cache}"
+export HF_HUB_DISABLE_XET=1
+export HF_HUB_ENABLE_HF_TRANSFER=0
+mkdir -p "${HF_HOME}" 2>/dev/null || true
+
 echo "[download_models] Installing huggingface_hub..."
 uv pip install -q huggingface_hub 2>/dev/null || python3 -m pip install -q huggingface_hub
 

@@ -10,6 +10,17 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+def _run_with_db_cleanup(fn, *args, **kwargs):
+    """Run fn in the current thread, then release its DB connection. Use as a
+    thread target so background LLM work cannot leak PostgreSQL connections."""
+    import django.db
+
+    try:
+        fn(*args, **kwargs)
+    finally:
+        django.db.connections.close_all()
+
+
 class ChatSessionListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -176,10 +187,10 @@ class ChatCompactView(APIView):
 
         sid = str(session.id)
 
-        def _run():
-            compact_history(sid, force=True)
-
-        threading.Thread(target=_run, daemon=True, name=f"manas-compact-{sid[:8]}").start()
+        threading.Thread(
+            target=_run_with_db_cleanup, args=(compact_history, sid),
+            kwargs={"force": True}, daemon=True, name=f"manas-compact-{sid[:8]}",
+        ).start()
         return Response({"status": "compacting"}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -202,10 +213,10 @@ class ChatSansadModeActivateView(APIView):
 
         sid = str(session.id)
 
-        def _run():
-            activate_sansad_mode(sid)
-
-        threading.Thread(target=_run, daemon=True, name=f"sansad-activate-{sid[:8]}").start()
+        threading.Thread(
+            target=_run_with_db_cleanup, args=(activate_sansad_mode, sid),
+            daemon=True, name=f"sansad-activate-{sid[:8]}",
+        ).start()
         return Response({"status": "syncing"}, status=status.HTTP_202_ACCEPTED)
 
 
@@ -255,6 +266,7 @@ class ChatSansadModeUpdateView(APIView):
         sid = str(session.id)
 
         def _run():
+            import django.db
             try:
                 update_sansad_context(sid)
             except Exception as exc:
@@ -268,6 +280,8 @@ class ChatSansadModeUpdateView(APIView):
                     "refresh": True,
                     "replace": True,
                 })
+            finally:
+                django.db.connections.close_all()
 
         threading.Thread(target=_run, daemon=True, name=f"sansad-update-{sid[:8]}").start()
         return Response({"status": "syncing"}, status=status.HTTP_202_ACCEPTED)

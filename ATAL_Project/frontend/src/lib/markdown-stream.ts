@@ -91,6 +91,8 @@ export function repairCollapsedMarkdownTables(text: string): string {
   // "| cell ||---|" or "| cell || next row |"
   out = out.replace(/\|\s*\|(?=-)/g, "|\n|");
   out = out.replace(/\|\s*\|(?=\|)/g, "|\n|");
+  // "|---|---|| SRF |" — a doubled pipe glued onto the next row's first cell value.
+  out = out.replace(/\|\s*\|(?=\s*[A-Za-z0-9])/g, "|\n|");
   // "events | |---" missing newline before separator
   out = out.replace(/\|\s+\|(-{3,})/g, "|\n|$1");
   return out;
@@ -106,7 +108,7 @@ export function normalizeTechnicalMarkdown(text: string): string {
   t = repairSplitChemistryMath(t);
   t = repairFinishingStandNotation(t);
   t = mergeSplitMathSubscripts(t);
-  return mapOutsideProtected(t, (segment) => {
+  const mapped = mapOutsideProtected(t, (segment) => {
     let s = segment;
     s = repairStandRangeNotation(s);
     s = wrapUnicodeSubscriptFormulas(s);
@@ -116,6 +118,14 @@ export function normalizeTechnicalMarkdown(text: string): string {
     s = normalizeTechnicalSegment(s);
     return s;
   });
+  return collapseDoubledInlineMath(mapped);
+}
+
+/** A later wrapping pass can re-wrap `$X$` → `$$X$$`, which KaTeX renders as a
+ *  centered display block mid-sentence. Collapse such single-token doubles back
+ *  to inline. Real display equations contain spaces/operators and are untouched. */
+function collapseDoubledInlineMath(s: string): string {
+  return s.replace(/\$\$([A-Za-z0-9_^{}\\+\-.]+)\$\$/g, (_, inner: string) => `$${inner}$`);
 }
 
 function latexGreek(char: string): string {
@@ -262,8 +272,22 @@ function wrapScientificExpressions(s: string): string {
   );
 
   out = out.replace(
-    /\b(\d+(?:\.\d+)?)\^([0-9+-]+)/g,
-    (full, base: string, exp: string) => (full.includes("$") ? full : `$${base}^{${exp}}$`),
+    /\b(\d+(?:\.\d+)?)\^(\{?[0-9+\-]+\}?)/g,
+    (full, base: string, exp: string) =>
+      full.includes("$") ? full : `$${base}^{${exp.replace(/[{}]/g, "")}}$`,
+  );
+
+  // Caret superscript on letters / units: x^2, m/s^2, cm^3, e^x. F^n is a
+  // finishing-stand label → subscript, not superscript.
+  out = out.replace(
+    /([A-Za-zμ]{1,4})\^(\{?[0-9a-zA-Z+\-]+\}?)/g,
+    (full, base: string, exp: string) => {
+      if (full.includes("$")) return full;
+      const e = exp.replace(/[{}]/g, "");
+      if (base === "F" && /^\d+$/.test(e)) return `$F_{${e}}$`;
+      const latexBase = base === "μ" ? "\\mu" : base;
+      return `$${latexBase}^{${e}}$`;
+    },
   );
 
   out = out.replace(
@@ -439,7 +463,12 @@ function fixBrokenChemBrackets(s: string): string {
 /** Prevent markdown `_` emphasis on ISO_15156, NACE_MR0175, etc. */
 function escapeTechnicalUnderscores(s: string): string {
   return s
-    .replace(/\b([A-Z]{2,}(?:_[A-Z0-9]+)+)\b/g, (m) => m.replace(/_/g, "\\_"))
+    // Standard codes: ISO_15156, NACE_MR0175 — underscore group must contain a
+    // letter or be 3+ digits, so chemical subscripts (CO_2, SO_3) are left alone.
+    .replace(
+      /\b([A-Z]{2,}(?:_(?:[A-Z0-9]*[A-Z][A-Z0-9]*|\d{3,}))+)\b/g,
+      (m) => m.replace(/_/g, "\\_"),
+    )
     .replace(/\b([A-Z]+)_(\d{3,6})\b/g, "$1\\_$2");
 }
 
@@ -458,6 +487,10 @@ function wrapBareChemicalFormulas(s: string): string {
       if (full.includes("$")) return full;
       if (/^[A-Z]{3,}$/.test(elems)) return full;
       if (elems.length === 1 && sub.length > 1) return full;
+      // Bare "F1"/"F2" are factory labels (F1=Horizon, F2=Zephyr), not chemistry.
+      // Finishing-stand ranges (F1–F7) are already handled by repairStandRangeNotation;
+      // leave a standalone F# as plain text instead of a stray subscript.
+      if (elems === "F") return full;
       return `$${elems}_{${sub}}$`;
     },
   );

@@ -905,8 +905,18 @@ def start_chat_thread(
     deep_thinking: bool = False,
 ) -> threading.Thread:
     """Spawn a daemon thread to run the chat pipeline outside Celery."""
+
+    def _target(*args, **kwargs):
+        import django.db
+        try:
+            run_chat_logic(*args, **kwargs)
+        finally:
+            # Release this thread's PostgreSQL connection so high chat concurrency
+            # cannot exhaust max_connections (threads aren't request-scoped).
+            django.db.connections.close_all()
+
     t = threading.Thread(
-        target=run_chat_logic,
+        target=_target,
         args=(session_id, user_message_id, rag_collections),
         kwargs={
             "rag_document_titles": rag_document_titles,

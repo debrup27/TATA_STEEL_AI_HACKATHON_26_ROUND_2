@@ -17,21 +17,25 @@ interface MarkdownProps {
 }
 
 const defaultComponents: Partial<Components> = {
-  code: ({ children, ...props }) => {
-    const isInline = (props as { inline?: boolean }).inline;
-    if (isInline) {
-      return (
-        <code className="bg-zinc-100 text-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">
-          {children}
-        </code>
-      );
+  // react-markdown v10 no longer passes an `inline` prop; emitting <pre> here put
+  // block code inside <p> (hydration error) and rendered inline values as big boxes.
+  // Never emit <pre> from code — block <pre> is handled by the `pre` override below.
+  code: ({ className, children, ...props }) => {
+    const isBlock = /language-/.test(className || "") || String(children).includes("\n");
+    if (isBlock) {
+      return <code className={`${className || ""} font-mono`} {...props}>{children}</code>;
     }
     return (
-      <pre className="bg-zinc-900 text-zinc-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
-        <code>{children}</code>
-      </pre>
+      <code className="bg-zinc-100 text-zinc-800 px-1.5 py-0.5 rounded text-xs font-mono">
+        {children}
+      </code>
     );
   },
+  pre: ({ children }) => (
+    <pre className="bg-zinc-900 text-zinc-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
+      {children}
+    </pre>
+  ),
   h1: ({ children }) => (
     <h1 className="text-xl font-bold mt-5 mb-2">{children}</h1>
   ),

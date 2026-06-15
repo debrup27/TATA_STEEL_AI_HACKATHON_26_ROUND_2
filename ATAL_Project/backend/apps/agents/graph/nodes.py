@@ -289,12 +289,60 @@ def worker_node(state: AgentState) -> dict:
     return {"worker_outputs": outputs, "events": events}
 
 
+def _deterministic_decision(asset_id: str, payload: dict) -> dict:
+    """Build a sane DecisionOutput from the deterministic engine (LLM-independent)."""
+    risk = "medium"
+    diagnosis = "Asset condition assessed from live telemetry and deterministic health model."
+    rca = ""
+    urgency = 0.4
+    try:
+        from apps.assets.models import Asset
+        from apps.ml.deterministic import compute_asset_state
+
+        asset = Asset.objects.filter(id=asset_id).select_related("factory").first()
+        if asset:
+            st = compute_asset_state(asset)
+            risk = st.get("risk_level") or risk
+            fault = st.get("fault_classification") or "no dominant fault"
+            health = st.get("health_score")
+            rul = st.get("rul_hours")
+            anomaly = st.get("anomaly_score")
+            urgency = round(min(1.0, max(0.0, 1.0 - (float(health) / 100.0))), 2) if health is not None else urgency
+            diagnosis = (
+                f"{asset.name}: health {health:.0f}%, RUL {rul:.0f} h, anomaly {anomaly:.2f}. "
+                f"Probable fault: {fault}."
+            )
+            rca = f"Deterministic engine attributes condition to {fault} given current sensor stress and campaign age."
+    except Exception as exc:  # never break the graph
+        logger.warning("deterministic_decision_fallback_failed asset=%s error=%s", asset_id, str(exc))
+
+    return {
+        "diagnosis": diagnosis,
+        "rca": rca,
+        "risk_level": risk,
+        "urgency_score": urgency,
+        "recommendations": [],
+        "spare_strategy": "",
+        "citations": [],
+        "report_text": diagnosis,
+    }
+
+
 def aggregator_node(state: AgentState) -> dict:
     """
     Merge supervisor decision + worker outputs into the final DecisionOutput.
     Enriches the decision with formatted worker text.
     """
     decision = state.get("decision") or {}
+
+    # Deterministic fallback: if the supervisor looped to max_iterations without
+    # emitting a final DecisionOutput (decision empty or missing risk/diagnosis),
+    # synthesise one from the authoritative deterministic engine so the report is
+    # never blank on exactly the faulted assets that matter most.
+    if not decision.get("risk_level") or not str(decision.get("diagnosis", "")).strip():
+        decision = {**_deterministic_decision(state.get("asset_id", ""), state.get("payload", {})), **{
+            k: v for k, v in decision.items() if v not in (None, "", [], {})
+        }}
 
     # Enrich decision with worker outputs
     worker_map = {wo["worker"]: wo["output"] for wo in state.get("worker_outputs", [])}

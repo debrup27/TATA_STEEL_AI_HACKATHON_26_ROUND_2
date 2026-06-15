@@ -15,7 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Upgrade pip first; install lang stack before heavy ML/RAG deps to avoid resolver backtracking.
+RUN pip install --upgrade pip setuptools wheel \
+    && pip install \
+        "langchain-core==0.3.86" \
+        "langchain==0.3.30" \
+        "langchain-community==0.3.30" \
+        "langchain-ollama==0.2.3" \
+        "langgraph==0.4.10" \
+    && pip install -r requirements.txt
 
 # ── Stage 2: App image ────────────────────────────────────────────────────────
 FROM python:3.12-slim AS app

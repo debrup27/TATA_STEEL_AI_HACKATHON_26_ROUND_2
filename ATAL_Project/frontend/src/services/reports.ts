@@ -41,14 +41,6 @@ export async function fetchPlantKpis(): Promise<PlantKpis> {
   return apiJson<PlantKpis>("/api/v1/plant/kpis/");
 }
 
-export async function triggerConsolidationAsync(assetId: string): Promise<{ task_id: string }> {
-  return apiJson(`/api/v1/consolidate/${assetId}/async/`, { method: "POST", body: "{}" });
-}
-
-export async function fetchConsolidationResult(taskId: string) {
-  return apiJson(`/api/v1/consolidate/result/${taskId}/`);
-}
-
 export async function fetchCrossStageData(assetId: string) {
   return apiJson(`/api/v1/ml/cross-stage/${assetId}/`);
 }

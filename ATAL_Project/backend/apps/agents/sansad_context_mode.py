@@ -668,8 +668,15 @@ def increment_sansad_turn_and_maybe_refresh(session_id: str) -> None:
     _patch_session_metadata(session, {"sansad_turn_count": count})
 
     if count > 0 and count % refresh_every == 0:
+        def _refresh(sid: str):
+            import django.db
+            try:
+                maybe_refresh_sansad_context(sid)
+            finally:
+                django.db.connections.close_all()
+
         threading.Thread(
-            target=maybe_refresh_sansad_context,
+            target=_refresh,
             args=(session_id,),
             daemon=True,
             name=f"sansad-refresh-{session_id[:8]}",

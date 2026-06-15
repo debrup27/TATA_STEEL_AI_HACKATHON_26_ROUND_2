@@ -9,6 +9,7 @@ import {
 } from "@/services/telemetry";
 import { connectWebSocket } from "@/lib/ws";
 import { getAccessToken } from "@/lib/api";
+import { deferEffect } from "@/lib/defer-effect";
 import { getDemoTelemetryCells, tickDemoTelemetryCells } from "@/lib/landing-demo";
 import type { TelemetryCell } from "@/services/types";
 
@@ -25,11 +26,13 @@ export function useTelemetryCells(intervalMs = CELL_TICK_INTERVAL): TelemetryCel
   const [cells, setCells] = useState<TelemetryCell[]>(() =>
     SSR_PLACEHOLDER.map((c) => ({ ...c })),
   );
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode, setDemoMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !getAccessToken();
+  });
 
   useEffect(() => {
     const syncDemoMode = () => setDemoMode(!getAccessToken());
-    syncDemoMode();
     window.addEventListener("storage", syncDemoMode);
     window.addEventListener("user-state-change", syncDemoMode);
     return () => {
@@ -40,14 +43,14 @@ export function useTelemetryCells(intervalMs = CELL_TICK_INTERVAL): TelemetryCel
 
   useEffect(() => {
     if (demoMode) {
-      setCells(getDemoTelemetryCells());
+      deferEffect(() => setCells(getDemoTelemetryCells()));
       const tick = setInterval(() => {
         setCells((prev) => tickDemoTelemetryCells(prev));
       }, intervalMs);
       return () => clearInterval(tick);
     }
 
-    setCells(getInitialTelemetryCells());
+    deferEffect(() => setCells(getInitialTelemetryCells()));
 
     let cancelled = false;
 

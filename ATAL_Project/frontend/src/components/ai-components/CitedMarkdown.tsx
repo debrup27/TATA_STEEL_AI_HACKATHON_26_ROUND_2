@@ -405,21 +405,25 @@ export function CitedMarkdown({
 
   const markdownComponents = useMemo<Partial<Components>>(
     () => ({
-      code: ({ children, ...props }) => {
-        const isInline = (props as { inline?: boolean }).inline;
-        if (isInline) {
-          return (
-            <code className="bg-stone-100 text-stone-800 px-1.5 py-0.5 rounded text-xs font-mono">
-              {children}
-            </code>
-          );
+      // react-markdown v10 drops the `inline` prop; emitting <pre> from code put
+      // block code inside <p> (hydration error) and turned inline values into big
+      // boxes. Never emit <pre> from code — handled by the `pre` override below.
+      code: ({ className, children, ...props }) => {
+        const isBlock = /language-/.test(className || "") || String(children).includes("\n");
+        if (isBlock) {
+          return <code className={`${className || ""} font-mono`} {...props}>{children}</code>;
         }
         return (
-          <pre className="bg-[#1b253c] text-stone-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
-            <code>{children}</code>
-          </pre>
+          <code className="bg-stone-100 text-stone-800 px-1.5 py-0.5 rounded text-xs font-mono">
+            {children}
+          </code>
         );
       },
+      pre: ({ children }) => (
+        <pre className="bg-[#1b253c] text-stone-100 rounded-lg p-4 overflow-x-auto text-xs leading-relaxed my-2">
+          {children}
+        </pre>
+      ),
       h1: ({ children }) => (
         <h1 className="text-xl font-bold mt-5 mb-2">{children}</h1>
       ),

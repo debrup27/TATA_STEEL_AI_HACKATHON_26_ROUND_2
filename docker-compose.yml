@@ -125,7 +125,11 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     networks:
+      # backend-net (internal) for app comms; frontend-net (bridge, NAT) gives
+      # outbound internet so Ollama can PULL model weights from registry.ollama.ai
+      # on a fresh install. Without a non-internal network the pull DNS-fails.
       - backend-net
+      - frontend-net
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
@@ -169,9 +173,9 @@ services:
       - staticfiles:/app/staticfiles
       - chroma-data:/chroma_data
       - model-artifacts:/model-artifacts
-      - ./ATAL_Project/backend/models/bge-m3:/models/bge-m3:ro
-      - ./ATAL_Project/backend/models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
-      - ./ATAL_Project/backend/data/corpus:/app/data/corpus:ro
+      # BGE models (/app/models) + corpus (/app/data/corpus) come through the /app
+      # bind mount above (writable), so the entrypoint can auto-download them on
+      # first boot. No separate read-only mounts — those shadowed the corpus dir.
     command: >
       uvicorn backend.asgi:application
       --host 0.0.0.0
@@ -217,9 +221,8 @@ services:
       - ./ATAL_Project/backend:/app:cached
       - chroma-data:/chroma_data
       - model-artifacts:/model-artifacts
-      - ./ATAL_Project/backend/models/bge-m3:/models/bge-m3:ro
-      - ./ATAL_Project/backend/models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3:ro
-      - ./ATAL_Project/backend/data/corpus:/app/data/corpus:ro
+      # BGE models + corpus arrive via the /app bind mount above (writable), populated
+      # by the django-backend entrypoint on first boot.
     command: >
       sh -c "chown -R appuser:appuser /model-artifacts /chroma_data 2>/dev/null || true &&
       exec gosu appuser celery -A backend worker

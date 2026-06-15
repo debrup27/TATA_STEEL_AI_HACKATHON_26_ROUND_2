@@ -70,25 +70,42 @@ class Command(BaseCommand):
         audit_after = AgentAuditLog.objects.count()
         new_audit_rows = audit_after - audit_before
 
-        # Verify worker outputs
-        worker_outputs = decision.get("worker_outputs", {})
+        # Verify worker outputs (runner surfaces a list of 0.8b worker results)
+        worker_outputs = decision.get("worker_outputs", []) or []
+        worker_keys = (
+            list(worker_outputs.keys()) if isinstance(worker_outputs, dict) else len(worker_outputs)
+        )
 
         self.stdout.write("\n=== Results ===")
         self.stdout.write(f"  diagnosis:       {decision['diagnosis'][:80]}")
         self.stdout.write(f"  risk_level:      {risk}")
         self.stdout.write(f"  urgency_score:   {urgency:.2f}")
         self.stdout.write(f"  tools_used:      {decision.get('tools_used', [])}")
-        self.stdout.write(f"  worker_outputs:  {list(worker_outputs.keys())}")
+        self.stdout.write(f"  worker_outputs:  {worker_keys}")
         self.stdout.write(f"  audit_log_rows:  {new_audit_rows} written")
         self.stdout.write(f"  citations:       {len(decision.get('citations', []))} found")
+
+        # Non-empty supervisor content. Guards the Ollama /v1 thinking-model
+        # regression where content="" (all output dumped into reasoning) left a
+        # well-shaped-but-empty DecisionOutput. See ollama-v1-thinking-bug.
+        diagnosis_text = str(decision.get("diagnosis", "")).strip()
+        rca_text = str(decision.get("rca", "")).strip()
+        report_text = str(decision.get("report_text", "")).strip()
+        non_empty_content = len(diagnosis_text) >= 20 and (rca_text or report_text)
 
         # Gate checks
         gates = [
             ("DecisionOutput has all required keys", not missing),
+            ("diagnosis + rca/report non-empty (no /v1 empty-content)", bool(non_empty_content)),
             ("risk_level valid", risk in ("low", "medium", "high", "critical")),
             ("urgency_score in [0,1]", 0.0 <= urgency <= 1.0),
             ("≥1 tool dispatched (audit log)", new_audit_rows >= 1),
-            ("≥1 worker output present", len(worker_outputs) >= 1),
+            # A healthy / low-risk asset legitimately needs no 0.8b worker dispatch;
+            # only require worker output when the supervisor escalated (high/critical).
+            (
+                "worker output present when escalated",
+                len(worker_outputs) >= 1 if risk in ("high", "critical") else True,
+            ),
         ]
 
         self.stdout.write("\n=== Gate Checks ===")

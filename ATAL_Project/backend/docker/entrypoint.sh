@@ -209,6 +209,33 @@ echo "[entrypoint] Calibrating sensor thresholds from nominal telemetry..."
 $RUN_AS python manage.py calibrate_sensors \
   || echo "[entrypoint] WARNING: calibrate_sensors failed — check logs."
 
+# ── Auto-download RAG assets (BGE models + corpus) if missing — idempotent ────
+# Models/corpus live under /app (writable bind mount), so a clean checkout/unzip
+# with no host assets self-provisions on first boot. Re-runs skip existing files.
+if [ "${ATAL_DOWNLOAD_ASSETS:-1}" = "1" ]; then
+    # On a fresh checkout/unzip the host model+corpus dirs don't exist, so Docker
+    # bind-mounts them as empty root-owned dirs. Make them writable by appuser (who
+    # runs the download) — otherwise snapshot_download fails with Permission denied.
+    mkdir -p /app/models /app/data/corpus 2>/dev/null || true
+    chown appuser:appuser /app/models /app/data /app/data/corpus 2>/dev/null || true
+    if [ ! -s /app/models/bge-m3/config.json ] || [ ! -s /app/models/bge-reranker-v2-m3/config.json ]; then
+        echo "[entrypoint] BGE models missing — downloading (~6.5 GB, first boot only)..."
+        $RUN_AS bash /app/scripts/download_models.sh \
+            || echo "[entrypoint] WARNING: BGE model download failed — RAG embeddings may be degraded."
+    else
+        echo "[entrypoint] BGE models present — skipping download."
+    fi
+    if [ -z "$(ls -A /app/data/corpus 2>/dev/null | grep -v '^$' || true)" ]; then
+        echo "[entrypoint] RAG corpus missing — downloading..."
+        $RUN_AS bash /app/scripts/download_corpus.sh \
+            || echo "[entrypoint] WARNING: corpus download failed — check logs."
+    else
+        echo "[entrypoint] RAG corpus present — skipping download."
+    fi
+else
+    echo "[entrypoint] Skipping RAG asset download (ATAL_DOWNLOAD_ASSETS=0)."
+fi
+
 # ── Optional RAG corpus ingest (off by default — user picks library docs in MANAS) ─
 if [ "${INGEST_CORPUS_ON_START:-0}" = "1" ]; then
     echo "[entrypoint] Ingesting RAG corpus (INGEST_CORPUS_ON_START=1)..."

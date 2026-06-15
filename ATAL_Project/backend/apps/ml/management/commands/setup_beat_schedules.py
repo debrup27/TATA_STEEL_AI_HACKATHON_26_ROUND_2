@@ -133,19 +133,10 @@ class Command(BaseCommand):
             },
         )
 
-        # ── Consolidation + LangGraph analysis every 15 minutes for critical assets ─
-        consolidation_interval, _ = IntervalSchedule.objects.get_or_create(
-            every=15, period=IntervalSchedule.MINUTES
-        )
-        PeriodicTask.objects.update_or_create(
-            name="consolidation-critical-assets",
-            defaults={
-                "interval": consolidation_interval,
-                "task": "apps.consolidation.run_critical_consolidation",
-                "enabled": False,  # DISABLED — ran the LLM inside a Celery worker.
-                "description": "Disabled — LLM must not run in Celery; intelligence regen is inline on anomaly",
-            },
-        )
+        # ── Consolidation: NO periodic Celery task ──────────────────────────────
+        # The agentic LangGraph consolidation must never run in a Celery worker; it
+        # executes inline (request-spawned thread) only. Remove any legacy schedule.
+        PeriodicTask.objects.filter(name="consolidation-critical-assets").delete()
 
         # ── Ollama keep-alive ping every 15 minutes ─────────────────────────────
         ollama_keepalive_interval, _ = IntervalSchedule.objects.get_or_create(
@@ -181,5 +172,5 @@ class Command(BaseCommand):
             "weekly-ml-retrain, weekly-synthetic-dataset-refresh, "
             "telemetry-ws-broadcast(10s), synthetic-telemetry-live(10s), model-drift-check, "
             "weekly-feedback-training-export, ml-inference-all-assets(5m), "
-            "consolidation-critical-assets, maintenance-plans-regenerate(disabled), ollama-keepalive"
+            "maintenance-plans-regenerate(disabled), ollama-keepalive"
         ))

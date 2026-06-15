@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Loader2, MessageCircle } from "lucide-react";
 import type { LogEntry } from "@/services/types";
 import { fetchLogInsight } from "@/services/telemetry";
@@ -21,10 +21,15 @@ export default function LogDetailModal({
   const [logInsight, setLogInsight] = useState<{ angle: string; text: string; router?: string } | null>(null);
   const [logInsightLoading, setLogInsightLoading] = useState(false);
 
-  useEffect(() => {
+  // Reset insight when the selected log changes — done during render (React's
+  // "adjust state on prop change" pattern) rather than in an effect, which avoids
+  // a cascading-render lint error and an extra paint.
+  const prevLogIdRef = React.useRef<LogEntry["id"] | null | undefined>(log?.id);
+  if (prevLogIdRef.current !== log?.id) {
+    prevLogIdRef.current = log?.id;
     setLogInsight(null);
     setLogInsightLoading(false);
-  }, [log?.id]);
+  }
 
   if (!log) return null;
 

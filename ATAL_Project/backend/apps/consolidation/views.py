@@ -1,10 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from apps.assets.models import Asset
-from apps.consolidation.models import ConsolidationResult
 
 
 class ConsolidationSyncView(APIView):
@@ -21,38 +19,6 @@ class ConsolidationSyncView(APIView):
             "asset_id": str(asset_id),
             "consolidated_payload": payload,
             "decision_output": decision,
-        })
-
-
-class ConsolidationAsyncView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, asset_id):
-        from apps.consolidation.tasks import run_consolidation
-        get_object_or_404(Asset, pk=asset_id)
-        task = run_consolidation.apply_async(args=[str(asset_id)])
-        return Response({"task_id": task.id, "status": "queued"}, status=status.HTTP_202_ACCEPTED)
-
-
-class ConsolidationResultView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, task_id):
-        from celery.result import AsyncResult
-        result = AsyncResult(task_id)
-        db_rec = ConsolidationResult.objects.filter(celery_task_id=task_id).first()
-        celery_status = result.status
-        db_status = db_rec.status if db_rec else None
-        done = celery_status in ("SUCCESS",) or db_status == ConsolidationResult.Status.COMPLETE
-        failed = celery_status in ("FAILURE",) or db_status == ConsolidationResult.Status.FAILED
-        return Response({
-            "task_id": task_id,
-            "status": "SUCCESS" if done else "FAILURE" if failed else celery_status,
-            "celery_status": celery_status,
-            "db_status": db_status,
-            "result": result.result if result.ready() else None,
-            "decision_output": db_rec.decision_output if db_rec else None,
-            "error": db_rec.error_message if db_rec and failed else None,
         })
 
 

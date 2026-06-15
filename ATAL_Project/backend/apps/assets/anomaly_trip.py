@@ -57,10 +57,16 @@ def _queue_synthetic_and_ml(asset: Asset) -> None:
         import threading
         from apps.maintenance.tasks import regenerate_intelligence_on_anomaly_sync
 
+        def _regen(aid: str):
+            import django.db
+            try:
+                regenerate_intelligence_on_anomaly_sync(aid, trigger="anomaly")
+            finally:
+                django.db.connections.close_all()
+
         threading.Thread(
-            target=regenerate_intelligence_on_anomaly_sync,
+            target=_regen,
             args=(str(asset.id),),
-            kwargs={"trigger": "anomaly"},
             daemon=True,
             name=f"intel-regen-{str(asset.id)[:8]}",
         ).start()

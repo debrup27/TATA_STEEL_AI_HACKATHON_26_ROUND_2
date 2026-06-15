@@ -1,0 +1,22 @@
+# CPU fallback when Docker GPU/CDI is not configured.
+# Use: docker compose -f docker-compose.yml -f docker-compose.cpu.yml up atal -d
+# Ollama runs on CPU (slower). BGE embeddings use CPU. No nvidia-container-toolkit required.
+
+services:
+  ollama:
+    gpus: !reset []
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ""
+      OLLAMA_NUM_GPU: "0"
+
+  django-backend:
+    gpus: !reset []
+    environment:
+      EMBEDDING_DEVICE: cpu
+      NVIDIA_VISIBLE_DEVICES: ""
+
+  celery-worker:
+    gpus: !reset []
+    environment:
+      EMBEDDING_DEVICE: cpu
+      NVIDIA_VISIBLE_DEVICES: ""

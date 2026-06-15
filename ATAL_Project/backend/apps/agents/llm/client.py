@@ -746,7 +746,15 @@ def invoke_openai_compat(
     temperature: float = 0.1,
     think: bool = False,
 ) -> dict:
-    """OpenAI-compatible /v1/chat/completions — tool-calling paths (consolidation supervisor)."""
+    """Tool-calling path (consolidation supervisor), normalized to OpenAI-compat shape.
+
+    Uses native /api/chat — NOT the OpenAI-compat /v1 endpoint. /v1 ignores
+    think=false for qwen3.5 thinking models, so it dumps the whole answer into the
+    reasoning channel and returns content="" (supervisor then parses nothing and the
+    DecisionOutput JSON is lost). /api/chat honors think=false, supports `tools`, and
+    returns message.tool_calls — so we adapt its response into the choices[] shape the
+    caller expects. When content is still empty we salvage prose from reasoning.
+    """
     import httpx
 
     if _ollama_mock():
@@ -755,20 +763,38 @@ def invoke_openai_compat(
     payload: dict[str, Any] = {
         "model": _model_name(model_size),
         "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
         "stream": False,
-        "think": think,
+        "think": bool(think),
         "keep_alive": ollama_keep_alive_value(),
+        "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     if tools:
         payload["tools"] = tools
 
     with httpx.Client(timeout=180) as client:
         resp = client.post(
-            f"{settings.OLLAMA_BASE_URL}/v1/chat/completions",
+            f"{settings.OLLAMA_BASE_URL}/api/chat",
             json=payload,
             headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+
+    message = data.get("message", {}) or {}
+    content = str(message.get("content") or "")
+    reasoning = str(
+        message.get("reasoning")
+        or message.get("reasoning_content")
+        or message.get("thinking")
+        or ""
+    )
+    tool_calls = message.get("tool_calls") or []
+
+    # No tool calls and empty body → recover the JSON/prose the model put in reasoning.
+    if not content.strip() and not tool_calls and reasoning.strip():
+        content = salvage_qwen_output("", reasoning)
+
+    norm_msg: dict[str, Any] = {"role": "assistant", "content": content}
+    if tool_calls:
+        norm_msg["tool_calls"] = tool_calls
+    return {"choices": [{"message": norm_msg, "finish_reason": data.get("done_reason", "stop")}]}

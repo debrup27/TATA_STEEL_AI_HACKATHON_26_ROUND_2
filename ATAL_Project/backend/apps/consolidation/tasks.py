@@ -1,5 +1,4 @@
 import logging
-from celery import shared_task
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -60,8 +59,13 @@ def _normalise_spare_strategy(decision: dict, asset) -> dict:
     return {"strategy": "Maintain critical spares per OEM lead times.", "parts": parts}
 
 
-@shared_task(name="apps.consolidation.run", bind=True, time_limit=120)
-def run_consolidation(self, asset_id: str):
+def run_consolidation_inline(asset_id: str, *, celery_task_id: str = "") -> dict:
+    """Run the agentic consolidation graph + persist results. NOT a Celery task.
+
+    The 9B+0.8B orchestration must never execute inside a Celery worker (project
+    rule). This plain function is called from a request-spawned daemon thread; the
+    Celery wrapper below exists only for the dormant async/beat API surface.
+    """
     from apps.consolidation.orchestrator import assemble_consolidated_payload
     from apps.consolidation.models import ConsolidationResult
     from apps.reports.models import MaintenanceReport
@@ -72,7 +76,7 @@ def run_consolidation(self, asset_id: str):
 
     result_rec = ConsolidationResult.objects.create(
         asset_id=asset_id,
-        celery_task_id=self.request.id,
+        celery_task_id=celery_task_id,
         status=ConsolidationResult.Status.RUNNING,
     )
 
@@ -130,7 +134,7 @@ def run_consolidation(self, asset_id: str):
                 {
                     "type": "decision.done",
                     "data": {
-                        "task_id": self.request.id,
+                        "task_id": celery_task_id,
                         "decision_output": decision,
                         "report_id": str(report.id),
                     },
@@ -153,21 +157,8 @@ def run_consolidation(self, asset_id: str):
         logger.error("consolidation_error asset_id=%s error=%s", asset_id, str(exc))
         raise
 
-
-@shared_task(name="apps.consolidation.run_critical_consolidation")
-def run_critical_consolidation():
-    """
-    Periodic task: trigger consolidation analysis for assets below health threshold.
-    Beat: every 15 minutes. Targets assets with health_score < 70 (warning/critical state).
-    """
-    from apps.twins.models import AssetTwinState
-    dispatched = 0
-    # Assets below 70% health get full LangGraph analysis
-    for twin in AssetTwinState.objects.filter(health_score__lt=70.0).select_related("asset"):
-        run_consolidation.apply_async(args=[str(twin.asset.id)], queue="default")
-        dispatched += 1
-        logger.info(
-            "critical_consolidation_triggered asset=%s health=%.1f",
-            twin.asset.asset_type, twin.health_score,
-        )
-    return {"dispatched": dispatched}
+# NOTE: there is intentionally NO Celery task wrapping the consolidation graph.
+# The agentic supervisor (qwen3.5:9b) + workers (0.8b) must never run inside a
+# Celery worker — every live caller invokes run_consolidation_inline() from a
+# request-spawned daemon thread instead. See apps/assets/diagnostics_views.py and
+# apps/consolidation/views.py (ConsolidationSyncView).

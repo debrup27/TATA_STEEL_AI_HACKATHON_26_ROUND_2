@@ -71,6 +71,12 @@ def run_sansad_orchestration(asset_id: str, trigger: str = "manual") -> Optional
 
         decision = final_state.get("decision")
         if decision:
+            # Surface graph execution detail so consumers/tests can see the two-tier
+            # path (which tools ran, which 0.8b workers produced output).
+            decision.setdefault("tools_used", [
+                r.get("name") for r in final_state.get("tool_results", []) if isinstance(r, dict) and r.get("name")
+            ])
+            decision.setdefault("worker_outputs", final_state.get("worker_outputs", []))
             push_event({"type": "decision.done", "data": decision})
             logger.info(
                 "sansad_orchestration_complete asset_id=%s risk=%s urgency=%.2f tools=%s",

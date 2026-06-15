@@ -33,17 +33,35 @@ class DiagnosticsRefreshView(APIView):
   permission_classes = [IsAuthenticated]
 
   def post(self, request, asset_id):
+    import threading
+
     from apps.ml.tasks import run_all_asset_models
-    from apps.consolidation.tasks import run_consolidation
 
     get_object_or_404(Asset, pk=asset_id)
+    # ML refresh is deterministic (no LLM) → safe in Celery.
     ml_task = run_all_asset_models.apply_async(args=[str(asset_id)])
-    cons_task = run_consolidation.apply_async(args=[str(asset_id)])
+
+    # Consolidation runs the 9B+0.8B agentic graph. LLM work must NEVER run in a
+    # Celery worker (project rule) — run it in a daemon thread instead.
+    aid = str(asset_id)
+
+    def _run_consolidation_inline() -> None:
+      import django.db
+      try:
+        from apps.consolidation.tasks import run_consolidation_inline
+        run_consolidation_inline(aid)
+      except Exception:
+        pass
+      finally:
+        django.db.connections.close_all()
+
+    threading.Thread(target=_run_consolidation_inline, daemon=True).start()
+
     return Response(
       {
-        "asset_id": str(asset_id),
+        "asset_id": aid,
         "ml_task_id": ml_task.id,
-        "consolidation_task_id": cons_task.id,
+        "consolidation_task_id": None,
         "status": "queued",
       },
       status=202,

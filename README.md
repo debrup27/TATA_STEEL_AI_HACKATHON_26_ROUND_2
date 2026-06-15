@@ -22,18 +22,53 @@ orchestration, and a RAG-grounded conversational assistant behind a single Docke
 
 ---
 
+## Demo Video
+
+📹 **Walkthrough:** _<!-- VIDEO_LINK -->_ &nbsp;`(link to be added)`
+
+<!-- Paste the demo video URL above, replacing the VIDEO_LINK placeholder. -->
+
+---
+
+## Get the Code
+
+Two equivalent ways to obtain the project — both land the same tree and use the same setup below.
+
+**A · Clone from GitHub**
+```bash
+git clone https://github.com/debrup27/TATA_STEEL_AI_HACKATHON_26_ROUND_2.git
+cd TATA_STEEL_AI_HACKATHON_26_ROUND_2
+```
+
+**B · Unzip the submission package**
+```bash
+unzip ATAL_Submission.zip
+cd TATA_STEEL_AI_HACKATHON_26_ROUND_2
+```
+
+`ATAL_Submission.zip` (built with `bash scripts/create_submission_zip.sh`) carries the
+submission-ready `docker-compose.yml`, `README.md`, and `INSTRUCTIONS_TO_RUN.md` at its root,
+plus all source. Model weights, RAG corpus and build artifacts are excluded and re-fetched on
+setup (so both paths converge after Step 1 below).
+
+---
+
 ## Documentation
 
 | Document | Contents |
 |----------|----------|
-| [docs/SYSTEM_ARCHITECTURE.md](./docs/SYSTEM_ARCHITECTURE.md) | Full architecture — topology, intelligence engine, RAG, agents, boot pipeline |
-| [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) | All REST endpoints + WebSocket channels |
-| [docs/USER_GUIDE.md](./docs/USER_GUIDE.md) | Operator walkthrough of SANSAD, MANAS, and the live demo |
-| [docs/PROBLEM_STATEMENT_DELIVERABLE.md](./docs/PROBLEM_STATEMENT_DELIVERABLE.md) | Problem-statement technical deliverable |
+| [README.md](./README.md) | This overview — architecture summary, setup, tech stack |
+| [INSTRUCTIONS_TO_RUN.md](./INSTRUCTIONS_TO_RUN.md) | Step-by-step run guide (prerequisites, boot, verify, reset) |
+
+Deeper architecture, REST/WebSocket API, and the boot pipeline are documented inline in the
+backend (`ATAL_Project/backend/`) and in `CLAUDE.md` at the repo root.
 
 ---
 
 ## Quick Start
+
+> Works identically whether you cloned from GitHub or unzipped the submission — run from the
+> `TATA_STEEL_AI_HACKATHON_26_ROUND_2/` directory.
 
 ### Prerequisites
 - Docker + Docker Compose
@@ -44,7 +79,6 @@ orchestration, and a RAG-grounded conversational assistant behind a single Docke
 One script fetches the Hugging Face BGE models (~6.5 GB) and the RAG corpus:
 
 ```bash
-cd TATA_STEEL_AI_HACKATHON_26_ROUND_2
 bash scripts/setup_assets.sh
 ```
 
@@ -105,9 +139,9 @@ Images are kept — only volumes are removed.
 bash scripts/create_submission_zip.sh
 ```
 
-Produces `ATAL_Submission.zip` in the repo root — `README.md` at the zip root, all reference docs
-under `docs/`, full source, excluding secrets, model weights, corpus, and build artifacts (each
-re-fetched by `setup_assets.sh` / first boot).
+Produces `ATAL_Submission.zip` in the repo root — `README.md` and `INSTRUCTIONS_TO_RUN.md` at the
+zip root next to `docker-compose.yml`, plus full source, excluding secrets, model weights, corpus,
+and build artifacts (each re-fetched by `setup_assets.sh` / first boot).
 
 ---
 
@@ -131,12 +165,11 @@ re-fetched by `setup_assets.sh` / first boot).
 ```
 TATA_STEEL_AI_HACKATHON_26_ROUND_2/
 ├── README.md                      ← you are here
+├── INSTRUCTIONS_TO_RUN.md         ← step-by-step run guide
 ├── docker-compose.yml             ← one-command stack
-├── docs/                          ← architecture, API, user guide, deliverable
 ├── scripts/
 │   ├── setup_assets.sh            ← one-time: BGE models + corpus
 │   └── create_submission_zip.sh   ← build submission ZIP
-├── snapshots/                     ← place screenshots here
 └── ATAL_Project/
     ├── frontend/                  ← Next.js dashboard
     └── backend/                   ← Django + Celery + RAG + ML
