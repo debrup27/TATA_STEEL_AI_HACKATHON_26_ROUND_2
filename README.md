@@ -24,9 +24,7 @@ orchestration, and a RAG-grounded conversational assistant behind a single Docke
 
 ## Demo Video
 
-📹 **Walkthrough:** _<!-- VIDEO_LINK -->_ &nbsp;`(link to be added)`
-
-<!-- Paste the demo video URL above, replacing the VIDEO_LINK placeholder. -->
+📹 Walkthrough: https://drive.google.com/file/d/19yQ-LpyjAJNR0XuzP9CIXiQdPnDc4sOE/view?usp=sharing
 
 ---
 
