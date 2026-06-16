@@ -98,42 +98,26 @@ export default function RiskPriorityPage() {
     setInsightLoading(false);
   };
 
-  if (loading) {
-    return (
-      <HubShell title="Risk & Priority" subtitle="Loading bottleneck scores…">
-        <div className="flex items-center justify-center py-24 text-zinc-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm font-mono uppercase">Computing plant bottleneck ranking</span>
-        </div>
-      </HubShell>
-    );
-  }
-
-  if (error && !asset) {
-    return (
-      <HubShell title="Risk & Priority" subtitle="Risk classification · urgency · bottleneck">
-        <div className="text-center py-24 text-zinc-500 text-sm">{error ?? "No ranked assets available."}</div>
-      </HubShell>
-    );
-  }
-
-  if (!asset || !plantBottleneck) {
-    return (
-      <HubShell title="Risk & Priority" subtitle="Risk classification · urgency · bottleneck">
-        <div className="text-center py-24 text-zinc-500 text-sm">No ranked assets available.</div>
-      </HubShell>
-    );
-  }
-
   const assetHealth = liveDiag?.health;
-  const assetLevel = displayRiskLevel(asset, assetHealth);
-  const plantLevel = displayRiskLevel(plantBottleneck, bottleneckLive?.health);
+  const assetLevel = asset ? displayRiskLevel(asset, assetHealth) : "low";
+  const plantLevel = plantBottleneck ? displayRiskLevel(plantBottleneck, bottleneckLive?.health) : "low";
 
+  // Single stable shell rendered in every state — never swap the HubShell, so the
+  // back button, header and marquees don't flicker/jump on first load. Title and
+  // subtitle stay constant (no "Loading…" variant); only the body below changes.
   return (
     <HubShell
       title="Risk & Priority"
       subtitle="Risk classification · urgency · bottleneck · spares & lead time"
     >
+      {loading ? (
+        <div className="flex items-center justify-center py-24 text-zinc-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-mono uppercase">Computing plant bottleneck ranking</span>
+        </div>
+      ) : !asset || !plantBottleneck ? (
+        <div className="text-center py-24 text-zinc-500 text-sm">{error ?? "No ranked assets available."}</div>
+      ) : (
       <div className="max-w-7xl mx-auto space-y-6">
         {error ? (
           <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
@@ -281,6 +265,7 @@ export default function RiskPriorityPage() {
           </div>
         </div>
       </div>
+      )}
     </HubShell>
   );
 }

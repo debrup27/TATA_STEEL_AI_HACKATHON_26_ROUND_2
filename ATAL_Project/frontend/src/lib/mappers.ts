@@ -196,10 +196,13 @@ export function mapFactoryHealth(
 export function mapRiskAsset(r: BackendRankedAsset, index = 0): RiskAsset {
   const score = Math.min(100, Math.round(r.urgency_score));
   const riskLevel = (r.risk_level ?? "").toLowerCase();
+  // Fall back to the asset's criticality when the backend didn't send an explicit
+  // risk_level, so a high/critical asset never reads as LOW just because its score is low.
+  const crit = (r.criticality_level ?? "").toLowerCase();
   let urgency: RiskAsset["urgency"] = "LOW";
-  if (score >= 80 || riskLevel === "critical") urgency = "CRITICAL";
-  else if (score >= 60 || riskLevel === "high") urgency = "HIGH";
-  else if (score >= 40 || riskLevel === "medium") urgency = "MEDIUM";
+  if (score >= 80 || riskLevel === "critical" || crit === "critical") urgency = "CRITICAL";
+  else if (score >= 60 || riskLevel === "high" || crit === "high") urgency = "HIGH";
+  else if (score >= 40 || riskLevel === "medium" || crit === "medium") urgency = "MEDIUM";
 
   return {
     id: r.asset_id,

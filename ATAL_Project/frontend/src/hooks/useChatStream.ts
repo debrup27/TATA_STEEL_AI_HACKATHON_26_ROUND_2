@@ -95,6 +95,22 @@ export function useChatStream({
     const ws = connectWebSocket(
       `/ws/chat/${sessionId}/`,
       (data) => {
+        // Inactivity timer: fire the "no response" error only when the backend has
+        // gone silent. Any progress signal (phase change, context compaction, SANSAD
+        // sync) re-arms it — those steps legitimately emit no tokens for a while, and
+        // previously tripped a false error that flashed just before the answer streamed.
+        const armErrorTimeout = (ms: number = timeoutMs) => {
+          clearStreamTimeout();
+          timeoutRef.current = setTimeout(() => {
+            setIsStreaming(false);
+            setAwaitingFirstToken(false);
+            setStreamPhase("idle");
+            onDoneRef.current?.({
+              error: "No response from model — it may still be loading. Try again in a moment.",
+            });
+          }, ms);
+        };
+
         if (data.type === "blocked" && typeof data.message === "string") {
           clearStreamTimeout();
           setAwaitingFirstToken(false);
@@ -104,16 +120,11 @@ export function useChatStream({
           onTokenRef.current?.(data.message);
         }
         if (data.type === "started") {
-          clearStreamTimeout();
           setStreamPhase("waiting");
-          timeoutRef.current = setTimeout(() => {
-            setIsStreaming(false);
-            setAwaitingFirstToken(false);
-            setStreamPhase("idle");
-            onDoneRef.current?.({ error: "No response from model — it may still be loading. Try again in a moment." });
-          }, timeoutMs);
+          armErrorTimeout();
         }
         if (data.type === "phase" && typeof data.phase === "string") {
+          armErrorTimeout(); // progress — keep the no-response timer from firing mid-pipeline
           const phase = data.phase as string;
           if (phase === "guard") setStreamPhase("guard");
           else if (phase === "guard_done") setStreamPhase("waiting");
@@ -141,21 +152,25 @@ export function useChatStream({
           onTokenRef.current?.(data.token);
         }
         if (data.type === "compacting") {
+          armErrorTimeout(timeoutMs * 3); // compaction is a slow summarise step — no tokens
           onCompactingRef.current?.();
         }
         if (data.type === "compacted") {
+          armErrorTimeout(); // back to normal; the answer should stream shortly
           onCompactedRef.current?.({
             compacted_count: (data.compacted_count as number) ?? 0,
             skipped: Boolean(data.skipped),
           });
         }
         if (data.type === "sansad_syncing") {
+          armErrorTimeout(timeoutMs * 3); // SANSAD context harvest is slow — keep waiting
           onSansadSyncingRef.current?.({
             refresh: Boolean(data.refresh),
             replace: Boolean(data.replace),
           });
         }
         if (data.type === "sansad_synced") {
+          armErrorTimeout();
           onSansadSyncedRef.current?.({
             updated_at: data.updated_at as string | undefined,
             preview: data.preview as string | undefined,

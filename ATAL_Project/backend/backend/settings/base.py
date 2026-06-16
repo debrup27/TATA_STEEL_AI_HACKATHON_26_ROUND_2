@@ -207,6 +207,10 @@ OLLAMA_BASE_URL = config("OLLAMA_BASE_URL", default="http://ollama:11434")
 OLLAMA_MODEL = config("OLLAMA_MODEL", default="qwen3.5:9b")
 OLLAMA_SMALL_MODEL = config("OLLAMA_SMALL_MODEL", default="qwen3.5:0.8b")
 OLLAMA_KEEP_ALIVE = config("OLLAMA_KEEP_ALIVE", default="-1")
+# Low-VRAM tier: route EVERY LLM role (supervisor, orchestration, SANSAD, chat) to
+# the 0.8b model so the stack fits small GPUs. The 9b is never loaded. One flag,
+# resolved centrally in apps.agents.llm.client.effective_model_size().
+ATAL_LOW_VRAM = config("ATAL_LOW_VRAM", default=False, cast=bool)
 GUARDRAILS_ENABLED = config("GUARDRAILS_ENABLED", default=True, cast=bool)
 GUARDRAILS_LLM_CLASSIFIER = config("GUARDRAILS_LLM_CLASSIFIER", default=True, cast=bool)
 

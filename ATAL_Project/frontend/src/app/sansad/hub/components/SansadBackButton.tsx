@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
-/** Back control — morph/expand on hover, matches Zephyr Sinter factory pages. */
+/** Back control — morph/expand on hover; parent column must be fixed w-1/4 so header stays put. */
 export default function SansadBackButton({ href }: { href: string }) {
   return (
-    <Link href={href} className="flex items-center select-none">
+    <Link href={href} className="flex items-center select-none shrink-0">
       <div
         className="h-10 px-4 bg-[#1b253c] hover:bg-[#f97316] text-white rounded-xl flex items-center justify-center gap-0 hover:gap-2 transition-all duration-300 ease-out overflow-hidden group/btn cursor-pointer shadow-xs font-bold"
         style={{ fontFamily: "var(--font-pixeloid)" }}

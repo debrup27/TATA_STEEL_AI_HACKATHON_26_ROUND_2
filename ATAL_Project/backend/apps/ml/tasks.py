@@ -106,11 +106,22 @@ def run_all_asset_models(self, asset_id: str):
     from apps.ml.models import MLPrediction, MLModel
     from apps.ml.deterministic import compute_asset_state
 
+    # Resolve by UUID; tolerate a non-UUID/unknown id (e.g. a hallucinated tool arg)
+    # without crashing the Celery worker — fall back to asset_type/name, else skip.
+    import uuid as _uuid
+
+    asset = None
     try:
-        asset = Asset.objects.get(id=asset_id)
-    except Asset.DoesNotExist:
-        logger.error("run_all_models error=Asset not found asset_id=%s", asset_id)
-        raise
+        _uuid.UUID(str(asset_id))
+        asset = Asset.objects.filter(id=asset_id).first()
+    except (ValueError, TypeError):
+        asset = (
+            Asset.objects.filter(asset_type__iexact=str(asset_id)).first()
+            or Asset.objects.filter(name__iexact=str(asset_id)).first()
+        )
+    if asset is None:
+        logger.warning("run_all_models skipped: unresolved asset_id=%r", asset_id)
+        return {"status": "skipped", "reason": "asset not found", "asset_id": str(asset_id)}
 
     # Best-effort pickled-ML attempt (gated fallback only) — never fatal.
     ml_rul_raw = None

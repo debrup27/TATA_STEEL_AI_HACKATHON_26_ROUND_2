@@ -72,30 +72,21 @@ export default function IntelligenceReportsPage() {
   const active = filtered.find((r) => r.id === activeId) ?? filtered[0];
   const liveAsset = active?.assetId ? diagById.get(active.assetId) : undefined;
 
-  if (loading) {
-    return (
-      <HubShell title="Intelligence Reports" subtitle="Loading reports…">
-        <div className="flex items-center justify-center py-24 text-zinc-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm font-mono uppercase">Fetching maintenance reports</span>
-        </div>
-      </HubShell>
-    );
-  }
-
-  if (error) {
-    return (
-      <HubShell title="Intelligence Reports" subtitle="Structured reports">
-        <div className="text-center py-24 text-zinc-500 text-sm">{error}</div>
-      </HubShell>
-    );
-  }
-
+  // Single stable shell across loading/error/loaded — keeps the back button and
+  // header from flickering on first load (constant title/subtitle, body swaps only).
   return (
     <HubShell
       title="Intelligence Reports"
       subtitle="Structured reports · abnormal alerts · decision summaries · digital logbook"
     >
+      {loading ? (
+        <div className="flex items-center justify-center py-24 text-zinc-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-mono uppercase">Fetching maintenance reports</span>
+        </div>
+      ) : error ? (
+        <div className="text-center py-24 text-zinc-500 text-sm">{error}</div>
+      ) : (
       <div className="max-w-7xl mx-auto h-[calc(100vh-12rem)] flex flex-col gap-4">
         <div className="flex flex-wrap gap-2 items-center">
           {(["all", "maintenance", "abnormal_alert", "decision_summary", "digital_log"] as const).map((t) => (
@@ -194,6 +185,7 @@ export default function IntelligenceReportsPage() {
           </div>
         </div>
       </div>
+      )}
     </HubShell>
   );
 }

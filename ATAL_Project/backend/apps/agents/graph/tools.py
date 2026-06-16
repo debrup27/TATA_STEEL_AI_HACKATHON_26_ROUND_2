@@ -65,9 +65,16 @@ def dispatch_tool(name: str, args: dict, asset_id: str = "") -> dict:
         return {"result": None, "error": f"Unknown tool '{name}'. Allowed: {list(TOOL_REGISTRY)}"}
 
     entry = TOOL_REGISTRY[name]
+    schema = entry["arg_schema"]
+
+    # Tools operate on the asset currently under analysis. NEVER trust an LLM-provided
+    # asset_id — small models (low-VRAM 0.8b tier) hallucinate codes like "ASSET-001",
+    # which then crash run_all_asset_models with a bad-UUID error. Force the graph's
+    # real asset_id whenever the tool accepts one.
+    if asset_id and "asset_id" in schema.get("properties", {}):
+        args = {**args, "asset_id": str(asset_id)}
 
     # Validate args against schema (basic required-field check)
-    schema = entry["arg_schema"]
     required = schema.get("required", [])
     missing = [r for r in required if r not in args]
     if missing:

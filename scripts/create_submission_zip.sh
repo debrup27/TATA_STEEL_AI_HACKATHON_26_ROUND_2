@@ -5,13 +5,16 @@
 # Layout inside the ZIP:
 #   README.md             ← at the ZIP root
 #   INSTRUCTIONS_TO_RUN.md ← step-by-step run guide at the ZIP root
-#   docker-compose.yml    ← one-command stack
-#   scripts/              ← setup_assets.sh (BGE + corpus) + this script
+#   TROUBLESHOOTING.md    ← common-problem fixes at the ZIP root
+#   docker-compose.yml    ← one-command stack (full tier)
+#   docker-compose.low.yml ← low-VRAM override (0.8b serves all roles)
+#   scripts/              ← setup_assets.sh, doctor.sh, this script
 #   ATAL_Project/         ← full frontend + backend source
 #
-# Excluded (re-fetched by scripts/setup_assets.sh or on first `docker compose up`):
-#   secrets (.env*), Git/IDE/agent dirs, BGE model weights, RAG corpus,
-#   node_modules, .next, __pycache__, venvs, logs, prior zips.
+# Bundled: docs/, snapshots/. Excluded (auto-fetched on first `docker compose up`):
+# secrets (.env*), Git/IDE/agent dirs, BGE model weights, Ollama weights, RAG corpus
+# (auto-downloaded + seeded at runtime), node_modules, .next, __pycache__, venvs,
+# logs, prior zips.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -78,10 +81,10 @@ zip -r "${OUT}" "${STAGING_NAME}" \
   -x "${STAGING_NAME}/ATAL_Project/backend/models/bge-m3/**/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/models/bge-reranker-v2-m3/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/models/bge-reranker-v2-m3/**/*" \
-  -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/*" \
-  -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/**/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/artifacts/*" \
   -x "${STAGING_NAME}/ATAL_Project/backend/artifacts/**/*" \
+  -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/*" \
+  -x "${STAGING_NAME}/ATAL_Project/backend/data/corpus/**/*" \
   -x "${STAGING_NAME}/data/corpus/*" \
   -x "${STAGING_NAME}/data/corpus/**/*" \
   -x "${STAGING_NAME}/*.log" \
@@ -95,6 +98,6 @@ echo ""
 echo "ZIP root:  README.md, INSTRUCTIONS_TO_RUN.md, docker-compose.yml"
 echo ""
 echo "NOT bundled (fetched on setup):"
-echo "  - BGE models + corpus  → bash scripts/setup_assets.sh"
+echo "  - BGE models + corpus  → auto-downloaded + seeded on first 'docker compose up'"
 echo "  - Ollama LLM weights   → auto-pulled on first 'docker compose up'"
 echo "  - node_modules / .next → auto-installed on ui-console boot"

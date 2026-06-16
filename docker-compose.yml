@@ -39,6 +39,8 @@ x-django-env: &django-env
   OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
   OLLAMA_SMALL_MODEL: ${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}
   OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+  # Low-VRAM tier (set 1, e.g. via docker-compose.low.yml): 0.8b serves every role.
+  ATAL_LOW_VRAM: ${ATAL_LOW_VRAM:-0}
   EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-cuda}
   RAG_USE_RERANKER: ${RAG_USE_RERANKER:-0}
   INGEST_CORPUS_ON_START: ${INGEST_CORPUS_ON_START:-0}
@@ -55,13 +57,14 @@ x-django-env: &django-env
 # Strategy: keep weights on GPU (Ollama + BGE); trim host-RAM caps on app services.
 # VRAM: qwen3.5:9b≈6GB + 0.8b≈0.8GB + BGE≈1.7GB + KV headroom ≈ 16GB total.
 # Host: ollama 10g | django 2.5g | celery 4g | postgres 2g | ui 2.5g | redis/nginx ≈ 1g
+# NOTE: only mem_limit here — no top-level mem_reservation. GPU services declare a
+# `deploy.resources.reservations.devices` block, and Compose rejects a project that
+# sets mem_reservation at top level AND a deploy.resources.reservations section.
 x-mem-django: &mem-django
   mem_limit: 4g
-  mem_reservation: 768m
 
 x-mem-celery: &mem-celery
   mem_limit: 4g
-  mem_reservation: 1g
 
 services:
 
@@ -110,8 +113,16 @@ services:
     image: ollama/ollama:latest
     restart: unless-stopped
     mem_limit: 10g
-    mem_reservation: 1536m
-    gpus: all
+    # Standard Compose GPU reservation — routes through the nvidia-container
+    # runtime hook instead of `gpus: all`, which on newer Docker forces CDI
+    # discovery and fails ("no known GPU vendor found") when no CDI spec exists.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -145,6 +156,7 @@ services:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
       OLLAMA_SMALL_MODEL: ${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}
+      ATAL_LOW_VRAM: ${ATAL_LOW_VRAM:-0}
     volumes:
       - ./ATAL_Project/backend/scripts/ollama-warmup.sh:/warmup.sh:ro
     entrypoint: ["/bin/sh", "/warmup.sh"]
@@ -160,7 +172,16 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     <<: *mem-django
-    gpus: all
+    # Standard Compose GPU reservation — routes through the nvidia-container
+    # runtime hook instead of `gpus: all`, which on newer Docker forces CDI
+    # discovery and fails ("no known GPU vendor found") when no CDI spec exists.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       <<: *django-env
       BGE_M3_MODEL_PATH: /app/models/bge-m3
@@ -208,7 +229,16 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     <<: *mem-celery
-    gpus: all
+    # Standard Compose GPU reservation — routes through the nvidia-container
+    # runtime hook instead of `gpus: all`, which on newer Docker forces CDI
+    # discovery and fails ("no known GPU vendor found") when no CDI spec exists.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       <<: *django-env
       CELERY_LIGHT_ENTRYPOINT: "1"

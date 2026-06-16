@@ -149,8 +149,14 @@ if [ "${SKIP_OLLAMA_WAIT:-0}" != "1" ]; then
     done
     MAIN_MODEL="${OLLAMA_MODEL:-qwen3.5:9b}"
     SMALL_MODEL="${OLLAMA_SMALL_MODEL:-qwen3.5:0.8b}"
-    ensure_ollama_model "${MAIN_MODEL}" "supervisor model"
-    ensure_ollama_model "${SMALL_MODEL}" "worker model"
+    # Low-VRAM tier: the 0.8b model serves every role, so never pull/load the 9b.
+    if [ "${ATAL_LOW_VRAM:-0}" = "1" ]; then
+        echo "[entrypoint] LOW-VRAM tier — using ${SMALL_MODEL} for all roles; skipping ${MAIN_MODEL}."
+        ensure_ollama_model "${SMALL_MODEL}" "all-role model"
+    else
+        ensure_ollama_model "${MAIN_MODEL}" "supervisor model"
+        ensure_ollama_model "${SMALL_MODEL}" "worker model"
+    fi
     echo "[entrypoint] Models ready."
     echo "[entrypoint] Warming Ollama models into memory (best-effort)..."
     # Best-effort: a cold 9B load can exceed the warm timeout under GPU pressure. Do NOT crash

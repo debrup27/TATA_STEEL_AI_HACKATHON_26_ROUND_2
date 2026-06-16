@@ -1,0 +1,31 @@
+# Low-VRAM override — the 0.8b model serves EVERY role (supervisor, orchestration,
+# SANSAD mode, chat). The 9b is never pulled, loaded, or warmed.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.low.yml up -d --build
+#
+# Still GPU-only (BGE-M3 + 0.8b run on CUDA) — this trims VRAM, not the GPU itself.
+# Fits ~6–8 GB cards. Quality is lower than the 9b supervisor; the deterministic
+# engine remains the source of truth for health/RUL/anomaly regardless of tier.
+services:
+  ollama:
+    environment:
+      ATAL_LOW_VRAM: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    mem_limit: 6g
+
+  ollama-warmup:
+    environment:
+      ATAL_LOW_VRAM: "1"
+
+  django-backend:
+    environment:
+      ATAL_LOW_VRAM: "1"
+
+  celery-worker:
+    environment:
+      ATAL_LOW_VRAM: "1"
+
+  celery-beat:
+    environment:
+      ATAL_LOW_VRAM: "1"

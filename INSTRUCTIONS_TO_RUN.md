@@ -35,6 +35,15 @@ are pulled automatically by the `ollama-warmup` service on the first `docker com
 docker compose up atal -d --build
 ```
 
+**Low-VRAM GPUs (~6–8 GB):** the 0.8b model serves every role; the 9b is never loaded:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.low.yml up atal -d --build
+```
+
+GPU (CUDA) is required in both tiers — no CPU mode. Stuck? Run `bash scripts/doctor.sh`
+(diagnoses GPU/CDI, models, ports, etc.) or see `TROUBLESHOOTING.md`.
+
 On the first boot the backend automatically runs the full pipeline: migrations, TimescaleDB
 hypertables, demo users, ChromaDB, asset/spares/telemetry seeding, sensor calibration, ML
 training + inference, and intelligence-report generation. No manual steps. Allow 15–25 minutes
@@ -72,6 +81,15 @@ docker compose up atal -d --build           # fresh install (re-pulls LLM weight
 
 Host BGE models + corpus (downloaded in Step 1) are not in Docker volumes, so they survive a reset.
 
+## Troubleshooting
+- `bash scripts/doctor.sh` — diagnostics (Docker, GPU/CDI, models, corpus, ports) with fixes
+- `bash scripts/doctor.sh -i` — same, then prompt to download missing BGE models / corpus
+- `bash scripts/doctor.sh --download-all` — diagnose, then download models + corpus on the host
+- `TROUBLESHOOTING.md` — full guide (GPU/CDI error, low-VRAM tier, missing assets, resets)
+
 ## Documentation
 - `README.md` — project overview, architecture summary, tech stack
-- `CLAUDE.md` — repo-root engineering reference (services, env vars, test gates)
+- `docs/` — full documentation: architecture, API, user/backend/frontend guides, methodology,
+  and `docs/deliverables/` (data flow, model design, alerting & prediction, equipment physics,
+  assumptions & limitations, sample I/O)
+- `snapshots/` — product screenshots

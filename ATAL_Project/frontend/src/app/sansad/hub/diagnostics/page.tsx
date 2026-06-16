@@ -193,43 +193,23 @@ export default function DiagnosticsPage() {
     setDefectLoading(false);
   };
 
-  if (loading) {
-    return (
-      <HubShell title="Diagnostics & Prediction" subtitle="Loading live asset diagnostics…">
+  const isNormal = asset?.isNormalOperation ?? false;
+  const hasDiagnosis = Boolean(asset?.probableFault?.trim());
+  const hasConfidence = (asset?.faultConfidence ?? 0) > 0 && !isNormal;
+  const rul = asset ? formatRul(asset) : { value: "—", unit: "" };
+
+  // Single stable shell across loading/empty/loaded — keeps the back button and
+  // header from flickering on first load; constant subtitle, only the body swaps.
+  return (
+    <HubShell title="Diagnostics & Prediction" subtitle="Live ML inference · RCA · RUL · cross-stage defects">
+      {loading || (!asset && activeId) ? (
         <div className="flex-1 flex items-center justify-center text-zinc-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span className="text-sm font-mono uppercase">Fetching ML inference & health data</span>
         </div>
-      </HubShell>
-    );
-  }
-
-  if (!asset && activeId) {
-    return (
-      <HubShell title="Diagnostics & Prediction" subtitle="Loading component detail…">
-        <div className="flex-1 flex items-center justify-center text-zinc-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm font-mono uppercase">Refreshing selected asset</span>
-        </div>
-      </HubShell>
-    );
-  }
-
-  if (!asset) {
-    return (
-      <HubShell title="Diagnostics & Prediction" subtitle="Fault diagnosis · root cause · RUL">
+      ) : !asset ? (
         <p className="text-center text-zinc-500 text-sm py-24">No assets available.</p>
-      </HubShell>
-    );
-  }
-
-  const isNormal = asset.isNormalOperation ?? false;
-  const hasDiagnosis = Boolean(asset.probableFault?.trim());
-  const hasConfidence = asset.faultConfidence > 0 && !isNormal;
-  const rul = formatRul(asset);
-
-  return (
-    <HubShell title="Diagnostics & Prediction" subtitle="Live ML inference · RCA · RUL · cross-stage defects">
+      ) : (
       <div className="flex flex-col gap-4 h-full min-h-0">
       <div className="flex-1 min-h-0 flex gap-5">
         {/* Left — component list */}
@@ -464,6 +444,7 @@ export default function DiagnosticsPage() {
         </div>
       </div>
       </div>
+      )}
     </HubShell>
   );
 }

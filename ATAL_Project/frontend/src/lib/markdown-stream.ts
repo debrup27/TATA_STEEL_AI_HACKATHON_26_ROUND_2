@@ -68,19 +68,6 @@ const CMP_TO_LATEX: Record<string, string> = {
   ">=": "\\geq",
 };
 
-const CHEM_UNICODE: Record<string, string> = {
-  "H\u2082S": "$H_{2}S$",
-  "H\u2082": "$H_{2}$",
-  "CO\u2082": "$CO_{2}$",
-  "O\u2082": "$O_{2}$",
-  "N\u2082": "$N_{2}$",
-  "FeCl\u2082": "$FeCl_{2}$",
-  "Fe\u2082": "$Fe_{2}$",
-};
-
-/** e.g. FeCl₂ → $FeCl_{2}$ (must run before bare digit substitution). */
-const UNICODE_SUB_FORMULA = /((?:[A-Z][a-z]?)+)([₀₁₂₃₄₅₆₇₈₉]+)/g;
-
 /** $FeCl$ with subscript digits outside the math delimiters. */
 const SPLIT_MATH_SUB = /\$([^$\n]+)\$\s*_?(\d{1,2})\b/g;
 
@@ -101,21 +88,19 @@ export function repairCollapsedMarkdownTables(text: string): string {
 /** Full pipeline for MANAS assistant text (chemistry, ISO codes, broken LLM markup). */
 export function normalizeTechnicalMarkdown(text: string): string {
   if (!text) return text;
+  // Conservative: unicode super/subscripts (H₂S, FeCl₃, Nm³, 10⁶, β₁₀) already render
+  // perfectly as plain text — converting them to KaTeX makes them italic, detached and
+  // worse. We only touch what renders BADLY raw: ASCII carets/underscores, content the
+  // model already put in $...$, and finishing-stand ranges. Everything else stays plain.
   let t = text;
-  for (const [raw, math] of Object.entries(CHEM_UNICODE)) {
-    t = t.split(raw).join(math);
-  }
-  t = repairSplitChemistryMath(t);
-  t = repairFinishingStandNotation(t);
+  t = repairSplitChemistryMath(t);      // fixes $FeCl$_2 / $FeCl$₂ glued onto math
+  t = repairFinishingStandNotation(t);  // $F^1$ → $F_{1}$ (and F¹ stand label)
   t = mergeSplitMathSubscripts(t);
   const mapped = mapOutsideProtected(t, (segment) => {
     let s = segment;
-    s = repairStandRangeNotation(s);
-    s = wrapUnicodeSubscriptFormulas(s);
-    s = wrapScientificExpressions(s);
-    s = wrapGreekUnicodeScripts(s);
-    s = wrapUnicodeSuperscripts(s);
-    s = normalizeTechnicalSegment(s);
+    s = repairStandRangeNotation(s);    // F1–F7 → $F_{1}$–$F_{7}$
+    s = wrapScientificExpressions(s);   // ASCII x^2, m/s^2, 10^6, β_10, H_2 etc.
+    s = normalizeTechnicalSegment(s);   // bracket fixes, ISO underscore escapes
     return s;
   });
   return collapseDoubledInlineMath(mapped);
@@ -178,72 +163,12 @@ function repairSplitChemistryMath(s: string): string {
   return out;
 }
 
-/** β₁₀, μₘ, x₂ — unicode subscripts on greek or single letters. */
-function wrapGreekUnicodeScripts(s: string): string {
-  let out = s.replace(
-    /([αβγδμλθσπφΩω])([₀₁₂₃₄₅₆₇₈₉]+)/g,
-    (_, g: string, subs: string) => {
-      const d = unicodeSubDigits(subs);
-      return d ? `$${latexGreek(g)}_{${d}}$` : `${g}${subs}`;
-    },
-  );
-  out = out.replace(
-    /([A-Za-z])([₀₁₂₃₄₅₆₇₈₉]+)/g,
-    (full, base: string, subs: string) => {
-      if (full.includes("$")) return full;
-      const d = unicodeSubDigits(subs);
-      return d ? `$${base}_{${d}}$` : full;
-    },
-  );
-  return out;
-}
-
-/** m², 10⁶, cm³ — unicode superscripts. */
-function wrapUnicodeSuperscripts(s: string): string {
-  let out = s.replace(
-    /(\d+(?:\.\d+)?)([⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾]+)/g,
-    (full, base: string, sup: string) => {
-      if (full.includes("$")) return full;
-      const exp = unicodeSupDigits(sup);
-      return exp ? `$${base}^{${exp}}$` : full;
-    },
-  );
-  out = out.replace(
-    /([A-Za-zμ]+)([⁰¹²³⁴⁵⁶⁷⁸⁹]+)/g,
-    (full, base: string, sup: string) => {
-      if (full.includes("$")) return full;
-      const exp = unicodeSupDigits(sup);
-      if (!exp) return full;
-      // Finishing stand F¹ → subscript, not superscript
-      if (base === "F" && /^\d+$/.test(exp)) return `$F_{${exp}}$`;
-      const latexBase = base === "μ" ? "\\mu" : base;
-      return `$${latexBase}^{${exp}}$`;
-    },
-  );
-  return out;
-}
-
 /** β₁₀(c) ≥ 200, β_10(c), 10^6, x^2 — scientific / filtration notation. */
 function wrapScientificExpressions(s: string): string {
   let out = s;
 
-  out = out.replace(
-    /([αβγδμλθσπφΩω])([₀₁₂₃₄₅₆₇₈₉]+)\s*\(\s*([a-zA-Z])\s*\)\s*(≥|<=|≤|>=)\s*(\d+(?:\.\d+)?)/g,
-    (_, g: string, subs: string, arg: string, cmp: string, val: string) => {
-      const d = unicodeSubDigits(subs);
-      const op = CMP_TO_LATEX[cmp] ?? cmp;
-      return `$${latexGreek(g)}_{${d}}(${arg}) ${op} ${val}$`;
-    },
-  );
-
-  out = out.replace(
-    /([αβγδμλθσπφΩω])([₀₁₂₃₄₅₆₇₈₉]+)\s*\(\s*([a-zA-Z])\s*\)/g,
-    (_, g: string, subs: string, arg: string) => {
-      const d = unicodeSubDigits(subs);
-      return `$${latexGreek(g)}_{${d}}(${arg})$`;
-    },
-  );
-
+  // Unicode greek subscripts (β₁₀(c)) render fine as plain text — not converted.
+  // Only ASCII underscore forms (β_10(c)) and carets are wrapped below.
   out = out.replace(
     /([αβγδμλθσπφΩω])_(\d+)\s*\(\s*([a-zA-Z])\s*\)\s*(≥|<=|≤|>=)\s*(\d+(?:\.\d+)?)/g,
     (_, g: string, sub: string, arg: string, cmp: string, val: string) => {
@@ -372,17 +297,12 @@ function repairFinishingStandNotation(s: string): string {
 
 function normalizeTechnicalSegment(segment: string): string {
   let s = segment;
-
-  for (const [raw, math] of Object.entries(CHEM_UNICODE)) {
-    s = s.split(raw).join(math);
-  }
-
-  s = normalizeUnicodeSubscripts(s);
-  s = fixBrokenChemBrackets(s);
+  // Unicode subscript formulas (FeCl₂, H₂S) are left as-is — they render fine plain.
+  s = normalizeUnicodeSubscripts(s);   // flatten orphan digit subs (17945₂ → 179452)
+  s = fixBrokenChemBrackets(s);        // [H_2S → (H_2S)
   s = fixSpacedChemTokens(s);
-  s = escapeTechnicalUnderscores(s);
-  s = wrapBareChemicalFormulas(s);
-
+  s = escapeTechnicalUnderscores(s);   // ISO_15156 → ISO\_15156
+  s = wrapBareChemicalFormulas(s);     // ASCII underscore forms only (H_2S, FeCl_2)
   return s;
 }
 
@@ -405,18 +325,6 @@ function repairStandRangeNotation(s: string): string {
     (_, a: string, b: string) => `$F_{${a}}$–$F_{${b}}$`,
   );
   return out;
-}
-
-function wrapUnicodeSubscriptFormulas(s: string): string {
-  return s.replace(UNICODE_SUB_FORMULA, (_, elems: string, subs: string) => {
-    const digits = [...subs]
-      .map((ch) => {
-        const i = UNICODE_SUBSCRIPTS.indexOf(ch);
-        return i >= 0 ? String(i) : "";
-      })
-      .join("");
-    return digits ? `$${elems}_{${digits}}$` : `${elems}${subs}`;
-  });
 }
 
 function mergeSplitMathSubscripts(s: string): string {
@@ -481,19 +389,9 @@ function wrapBareChemicalFormulas(s: string): string {
     /\b((?:[A-Z][a-z]?)+)_(\d{1,2})([A-Za-z]{0,4})(?![0-9a-zA-Z_])/g,
     (_, elems: string, sub: string, tail: string) => `$${elems}_{${sub}}${tail}$`,
   );
-  out = out.replace(
-    /\b((?:[A-Z][a-z]?)+)(\d{1,2})(?![0-9a-zA-Z_])/g,
-    (full, elems: string, sub: string) => {
-      if (full.includes("$")) return full;
-      if (/^[A-Z]{3,}$/.test(elems)) return full;
-      if (elems.length === 1 && sub.length > 1) return full;
-      // Bare "F1"/"F2" are factory labels (F1=Horizon, F2=Zephyr), not chemistry.
-      // Finishing-stand ranges (F1–F7) are already handled by repairStandRangeNotation;
-      // leave a standalone F# as plain text instead of a stray subscript.
-      if (elems === "F") return full;
-      return `$${elems}_{${sub}}$`;
-    },
-  );
+  // NOTE: no bare-digit rule. "FeCl2", "Nm3", "F1", "10m3" are ambiguous (units,
+  // factory labels, plain numbers) and were rendering as stray italic subscripts.
+  // Only explicit underscore/brace forms (the model's intent) become math.
   return out;
 }
 

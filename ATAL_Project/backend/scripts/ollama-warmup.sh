@@ -91,25 +91,30 @@ done
 
 sleep 2
 
+# Low-VRAM tier: the 0.8b serves every role — never pull or warm the 9b.
+LOW_VRAM="${ATAL_LOW_VRAM:-0}"
+
 # Pull is required — models must be present for the stack to function.
 pull_model "${MODEL_SMALL}"
-pull_model "${MODEL_MAIN}"
+[ "${LOW_VRAM}" = "1" ] || pull_model "${MODEL_MAIN}"
 
-# Warm small (fast) first, then the large supervisor. Warm is best-effort: a flaky cold load must
-# NOT block the whole stack from starting (the backend re-warms on start and on first chat). The
-# sidecar still ALWAYS attempts the warm and warns loudly if it can't complete.
+# Warm small (fast) first, then the large supervisor (skipped in low-VRAM mode). Warm is
+# best-effort: a flaky cold load must NOT block the whole stack from starting (the backend
+# re-warms on start and on first chat). The sidecar still ALWAYS attempts the warm.
 warm_ok=1
 if ! warm_model "${MODEL_SMALL}"; then
   echo "[ollama-warmup] WARNING: ${MODEL_SMALL} did not warm — will load on demand" >&2
   warm_ok=0
 fi
-if ! warm_model "${MODEL_MAIN}"; then
+if [ "${LOW_VRAM}" = "1" ]; then
+  echo "[ollama-warmup] LOW-VRAM tier — ${MODEL_MAIN} skipped; ${MODEL_SMALL} serves all roles"
+elif ! warm_model "${MODEL_MAIN}"; then
   echo "[ollama-warmup] WARNING: ${MODEL_MAIN} did not warm — will load on demand" >&2
   warm_ok=0
 fi
 
 if [ "${warm_ok}" = "1" ]; then
-  echo "[ollama-warmup] done — ${MODEL_SMALL} + ${MODEL_MAIN} warmed and ready"
+  echo "[ollama-warmup] done — models warmed and ready"
 else
   echo "[ollama-warmup] done — models pulled; warm incomplete (see warnings above), continuing" >&2
 fi

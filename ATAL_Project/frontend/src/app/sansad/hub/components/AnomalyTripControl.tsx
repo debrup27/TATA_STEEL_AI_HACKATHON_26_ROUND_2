@@ -143,8 +143,12 @@ export default function AnomalyTripControl({ compact = false }: { compact?: bool
 
   if (!assets.length) {
     return (
-      <div className="flex items-center gap-2 flex-wrap opacity-70 pointer-events-auto">
-        <span className="text-[10px] font-mono text-zinc-500">
+      <div
+        className={`relative z-[60] flex items-center justify-end gap-1.5 pointer-events-auto ${
+          compact ? "min-w-[280px]" : "min-w-[360px]"
+        }`}
+      >
+        <span className="text-[10px] font-mono text-zinc-500 whitespace-nowrap">
           {loading ? "Loading equipment…" : "Equipment list unavailable"}
         </span>
       </div>
@@ -156,8 +160,8 @@ export default function AnomalyTripControl({ compact = false }: { compact?: bool
 
   return (
     <div
-      className={`relative z-[60] flex items-center gap-1.5 pointer-events-auto ${
-        compact ? "flex-wrap justify-end" : "flex-nowrap"
+      className={`relative z-[60] flex items-center gap-1.5 pointer-events-auto justify-end ${
+        compact ? "flex-wrap min-w-[280px]" : "flex-nowrap min-w-[360px]"
       }`}
       onClick={(e) => e.stopPropagation()}
     >

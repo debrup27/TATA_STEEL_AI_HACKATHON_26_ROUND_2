@@ -24,8 +24,23 @@ logger = logging.getLogger(__name__)
 ModelSize = Literal["large", "small"]
 
 
+def low_vram_mode() -> bool:
+    """Low-VRAM tier — collapse every role onto the 0.8b model. Env wins over settings."""
+    env = os.environ.get("ATAL_LOW_VRAM")
+    if env is not None:
+        return env == "1"
+    return bool(getattr(settings, "ATAL_LOW_VRAM", False))
+
+
+def effective_model_size(size: ModelSize) -> ModelSize:
+    """Resolve the model tier actually used. In low-VRAM mode 'large' → 'small'
+    so the supervisor / orchestration / SANSAD / chat all run on the 0.8b model."""
+    return "small" if (size == "large" and low_vram_mode()) else size
+
+
 def _model_name(size: ModelSize) -> str:
-    return settings.OLLAMA_MODEL if size == "large" else settings.OLLAMA_SMALL_MODEL
+    eff = effective_model_size(size)
+    return settings.OLLAMA_MODEL if eff == "large" else settings.OLLAMA_SMALL_MODEL
 
 
 def _ollama_mock() -> bool:
@@ -497,33 +512,25 @@ def invoke_raw(
     if _ollama_mock():
         return ""
 
-    if model_size == "small":
-        def _small_call() -> str:
-            return _invoke_ollama_chat_completions(
-                model_size=model_size,
-                system=system,
-                user=user,
-                history=history,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                think=think,
-            )
+    def _call() -> str:
+        return _invoke_ollama_chat_completions(
+            model_size=model_size,
+            system=system,
+            user=user,
+            history=history,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            think=think,
+        )
 
+    # Serialize on the effective tier: in low-VRAM mode a 'large' request runs on the
+    # 0.8b model and must take the same lock as real small calls (parallel 0.8b calls
+    # crash Ollama). In full mode only 'small' takes the lock.
+    if effective_model_size(model_size) == "small":
         with OLLAMA_SMALL_LOCK:
-            text = _retry_invoke(_small_call)
+            text = _retry_invoke(_call)
     else:
-        def _large_call() -> str:
-            return _invoke_ollama_chat_completions(
-                model_size=model_size,
-                system=system,
-                user=user,
-                history=history,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                think=think,
-            )
-
-        text = _retry_invoke(_large_call)
+        text = _retry_invoke(_call)
 
     if not skip_output_guard:
         out_verdict = check_output_guard(text)

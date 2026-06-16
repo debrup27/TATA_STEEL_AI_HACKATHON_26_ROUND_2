@@ -55,10 +55,19 @@ setup (so both paths converge after Step 1 below).
 
 ## Documentation
 
-| Document | Contents |
-|----------|----------|
-| [README.md](./README.md) | This overview — architecture summary, setup, tech stack |
-| [INSTRUCTIONS_TO_RUN.md](./INSTRUCTIONS_TO_RUN.md) | Step-by-step run guide (prerequisites, boot, verify, reset) |
+Full documentation lives in **[`docs/`](./docs/)** (see [docs/README.md](./docs/README.md) for the index):
+
+| Area | Document |
+|---|---|
+| Full description | [docs/PROJECT_DESCRIPTION.md](./docs/PROJECT_DESCRIPTION.md) — functions, deliverables, realistic-dataset mapping |
+| Setup / run | [INSTRUCTIONS_TO_RUN.md](./INSTRUCTIONS_TO_RUN.md) · [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
+| Architecture | [docs/SYSTEM_ARCHITECTURE.md](./docs/SYSTEM_ARCHITECTURE.md) · [docs/TECH_STACK.md](./docs/TECH_STACK.md) · [docs/METHODOLOGY.md](./docs/METHODOLOGY.md) |
+| Interfaces | [docs/API_REFERENCE.md](./docs/API_REFERENCE.md) · [docs/USER_GUIDE.md](./docs/USER_GUIDE.md) |
+| Engineering | [docs/BACKEND_GUIDE.md](./docs/BACKEND_GUIDE.md) · [docs/FRONTEND_GUIDE.md](./docs/FRONTEND_GUIDE.md) · [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) |
+| Deliverables | [docs/deliverables/](./docs/deliverables/) — data/system flow, model design, alerting & prediction, **equipment physics**, assumptions & limitations, sample I/O |
+
+> Hit a problem? Run `bash scripts/doctor.sh` — it diagnoses Docker, GPU/CDI, models,
+> corpus, disk, ports and Ollama, and prints the exact fix command for each.
 
 Deeper architecture, REST/WebSocket API, and the boot pipeline are documented inline in the
 backend (`ATAL_Project/backend/`) and in `CLAUDE.md` at the repo root.
@@ -91,6 +100,16 @@ bash scripts/setup_assets.sh
 ```bash
 docker compose up atal -d --build
 ```
+
+**Low-VRAM GPUs (~6–8 GB):** run the low tier — the 0.8b model serves every role
+(supervisor, orchestration, SANSAD, chat); the 9b is never loaded:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.low.yml up atal -d --build
+```
+
+> GPU required either way (CUDA) — there is no CPU mode. If `docker compose up` fails
+> with a GPU/CDI error, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) §1 or run `bash scripts/doctor.sh`.
 
 The `django-backend` entrypoint runs the full boot pipeline automatically: migrations, TimescaleDB
 hypertables, demo users, ChromaDB, asset/spares/telemetry seeding, sensor calibration, ML training +
@@ -166,9 +185,14 @@ and build artifacts (each re-fetched by `setup_assets.sh` / first boot).
 TATA_STEEL_AI_HACKATHON_26_ROUND_2/
 ├── README.md                      ← you are here
 ├── INSTRUCTIONS_TO_RUN.md         ← step-by-step run guide
-├── docker-compose.yml             ← one-command stack
+├── TROUBLESHOOTING.md             ← fixes for common setup problems
+├── docker-compose.yml             ← one-command stack (full tier)
+├── docker-compose.low.yml         ← low-VRAM override (0.8b serves all roles)
+├── docs/                          ← full documentation + deliverables/
+├── snapshots/                     ← product screenshots
 ├── scripts/
 │   ├── setup_assets.sh            ← one-time: BGE models + corpus
+│   ├── doctor.sh                  ← diagnose env issues + print fixes
 │   └── create_submission_zip.sh   ← build submission ZIP
 └── ATAL_Project/
     ├── frontend/                  ← Next.js dashboard
