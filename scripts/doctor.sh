@@ -108,10 +108,18 @@ run_diagnostics() {
 
   echo "  ${cyan}Step 3 — GPU passthrough (docker run --gpus all)${rst}"
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    # Probe with a tiny alpine image (~4 MB), NOT nvidia/cuda (~300 MB). The big pull
+    # happens silently inside $(...) and looks like a frozen script on a slow/Arch host.
+    # --gpus all still exercises the nvidia runtime hook, so CDI / driver errors surface.
+    echo "  ${dim}(testing — pulls a ~4 MB alpine image on first run; up to 90s)${rst}"
+    docker pull -q alpine:latest >/dev/null 2>&1 || true
     gpu_test_rc=0
-    gpu_test_out=$(docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi 2>&1) || gpu_test_rc=$?
-    if [ "$gpu_test_rc" -eq 0 ] && echo "$gpu_test_out" | grep -qi 'NVIDIA-SMI'; then
-      ok "GPU passthrough works (nvidia/cuda container nvidia-smi succeeded)"
+    gpu_test_out=$(timeout 90 docker run --rm --gpus all alpine:latest true 2>&1) || gpu_test_rc=$?
+    if [ "$gpu_test_rc" -eq 0 ]; then
+      ok "GPU passthrough works (--gpus all accepted by the nvidia runtime)"
+    elif [ "$gpu_test_rc" -eq 124 ]; then
+      wn "GPU passthrough test timed out after 90s — skipped (not a failure)"
+      hint "Docker may be slow or pulling. Just start the stack (menu 4/5) and watch for a GPU error."
     elif echo "$gpu_test_out" | grep -qi 'could not select device driver\|CDI\|no known GPU vendor'; then
       wn "GPU passthrough test failed (NVIDIA container runtime not wired into Docker)"
       hint "This is host/distro-specific — don't blind-run a fix. First just try starting the stack"
@@ -120,12 +128,9 @@ run_diagnostics() {
     elif echo "$gpu_test_out" | grep -qi 'permission denied'; then
       bad "docker permission denied during GPU test" "add your user to the docker group and re-login"
     else
-      if docker run --rm --gpus all alpine:latest true >/dev/null 2>&1; then
-        ok "GPU passthrough works (--gpus all alpine test)"
-      else
-        wn "GPU passthrough test failed" "$(gpu_toolkit_install_hint)"
-        [ -n "$gpu_test_out" ] && hint "Last error: $(echo "$gpu_test_out" | tail -1)"
-      fi
+      wn "GPU passthrough test failed"
+      [ -n "$gpu_test_out" ] && hint "Last error: $(echo "$gpu_test_out" | tail -1)"
+      hint "Try starting the stack (menu 4/5); see TROUBLESHOOTING.md if it errors on GPU."
     fi
   else
     wn "skipped — docker daemon not reachable"
@@ -166,8 +171,8 @@ run_diagnostics() {
 
   # ── Ollama (live) ───────────────────────────────────────────────────────────
   sec "Ollama models (only meaningful when the stack is up)"
-  if curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
-    tags=$(curl -s http://localhost:11434/api/tags 2>/dev/null)
+  if curl -sf --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
+    tags=$(curl -s --max-time 3 http://localhost:11434/api/tags 2>/dev/null)
     echo "$tags" | grep -q "qwen3.5:0.8b" && ok "qwen3.5:0.8b loaded" || wn "qwen3.5:0.8b not pulled yet" "wait for ollama-warmup"
     echo "$tags" | grep -q "qwen3.5:9b" && ok "qwen3.5:9b loaded" || wn "qwen3.5:9b not pulled (normal in low-VRAM tier)" "full tier pulls it on first boot"
   else
@@ -226,7 +231,7 @@ stack_status() {
   sec "Stack status"
   ( cd "$ROOT" && docker compose ps ) || true
   echo ""
-  if curl -sf http://localhost:8000/health/ready/ >/dev/null 2>&1; then
+  if curl -sf --max-time 5 http://localhost:8000/health/ready/ >/dev/null 2>&1; then
     ok "backend readiness: http://localhost:8000/health/ready/ → ok"
     echo "  UI: http://localhost:3000   ·   login: tech_demo / TechDemo@123"
   else
@@ -240,7 +245,8 @@ gpu_triage() {
   echo ""
   echo "${dim}\$ docker info | grep -i runtime${rst}";    docker info 2>/dev/null | grep -i runtime || echo "  (none / docker unreachable)"
   echo ""
-  echo "${dim}\$ $(gpu_verify_hint)${rst}";               docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi 2>&1 | head -15 || true
+  echo "${dim}\$ $(gpu_verify_hint)  (timeout 120s — pulls ~300 MB on first run)${rst}"
+  timeout 120 docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi 2>&1 | head -15 || true
   echo ""
   echo "Fix for 'could not select device driver' / CDI errors:"
   echo "  $(gpu_toolkit_install_hint)"
