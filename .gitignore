@@ -14,6 +14,8 @@ CLAUDE.md
 # Ignores bge-m3 and bge-reranker weight directories anywhere in tree
 ATAL_Project/backend/models/bge-m3/
 ATAL_Project/backend/models/bge-reranker-v2-m3/
+# Hugging Face download cache (auto-fetched on setup)
+ATAL_Project/backend/models/.hf_cache/
 
 # Corpus PDFs/HTMLs (downloaded at runtime — not committed)
 ATAL_Project/backend/data/corpus/

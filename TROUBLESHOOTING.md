@@ -61,6 +61,13 @@ request can't be satisfied. Fix:
 #    Arch:    sudo pacman -S nvidia-container-toolkit
 #    Ubuntu:  sudo apt install -y nvidia-container-toolkit
 #    Fedora:  sudo dnf install -y nvidia-container-toolkit
+#
+#    NOTE (Fedora 40+, incl. 44): the legacy `nvidia-docker`/`$DIST` repo has no
+#    package for newer Fedora ("Unsupported distribution!") — add the modern
+#    distro-agnostic libnvidia-container repo FIRST, then install:
+#      curl -sL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+#        | sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+#      sudo dnf install -y nvidia-container-toolkit
 
 # 2. Register the nvidia runtime with Docker (this is the missing step)
 sudo nvidia-ctk runtime configure --runtime=docker
@@ -74,6 +81,23 @@ docker compose up atal -d --build
 A CUDA driver (`nvidia-smi` on the host) must already be installed. The doctor (menu **1**)
 tests GPU passthrough and flags it as a WARN — it won't auto-run the fix above (it's
 distro-specific). Try starting the stack first; apply the matching step only if it errors.
+
+### 1b. SELinux: bind-mounted files give `Permission denied` (Fedora/RHEL enforcing)
+
+On an enforcing-SELinux host you may see containers crash-loop with `Permission denied`
+on a mounted file even though the file is world-readable — e.g.
+`can't open '/warmup.sh'`, nginx `open() "/etc/nginx/nginx.conf" failed (13)`, or
+`can't open '/app/docker/entrypoint.sh'`. SELinux blocks the container from reading host
+bind mounts that aren't labeled `container_file_t`.
+
+The compose bind mounts now carry the `:z` flag, which makes Docker relabel them on
+`up` — so a normal `docker compose up` handles this automatically. If you still hit it
+(older checkout, or mounts added by hand), relabel the tree manually:
+
+```bash
+chcon -Rt container_file_t .          # from the repo root
+# verify enforcing state with: getenforce
+```
 
 ## 2. GPU too small (low VRAM) — use the low tier
 
