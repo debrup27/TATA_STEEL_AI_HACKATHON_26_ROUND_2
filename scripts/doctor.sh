@@ -98,8 +98,9 @@ run_diagnostics() {
     if docker info 2>/dev/null | grep -qi 'nvidia'; then
       ok "nvidia runtime listed in docker info"
     else
-      wn "nvidia runtime NOT listed in docker info" "$(gpu_toolkit_install_hint)"
-      hint "Expected: Runtimes: ... nvidia ... runc"
+      wn "nvidia runtime NOT listed in docker info"
+      hint "This may be fine — try starting the stack (menu 4/5). If you hit a GPU error,"
+      hint "configure the nvidia container runtime for YOUR distro, then retry. See TROUBLESHOOTING.md."
     fi
   else
     wn "skipped — docker daemon not reachable"
@@ -111,14 +112,11 @@ run_diagnostics() {
     gpu_test_out=$(docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi 2>&1) || gpu_test_rc=$?
     if [ "$gpu_test_rc" -eq 0 ] && echo "$gpu_test_out" | grep -qi 'NVIDIA-SMI'; then
       ok "GPU passthrough works (nvidia/cuda container nvidia-smi succeeded)"
-    elif echo "$gpu_test_out" | grep -qi 'could not select device driver'; then
-      bad "could not select device driver \"nvidia\" with capabilities: [[gpu]]" "$(gpu_toolkit_install_hint)"
-      hint "Docker is requesting GPU access but the NVIDIA Container Runtime is not installed/configured."
-      hint "Verify: $(gpu_verify_hint)"
-    elif echo "$gpu_test_out" | grep -qi 'CDI\|no known GPU vendor'; then
-      bad "GPU passthrough fails via CDI (no known GPU vendor / CDI spec missing)" \
-          "sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml && sudo systemctl restart docker"
-      hint "Also run: sudo nvidia-ctk runtime configure --runtime=docker"
+    elif echo "$gpu_test_out" | grep -qi 'could not select device driver\|CDI\|no known GPU vendor'; then
+      wn "GPU passthrough test failed (NVIDIA container runtime not wired into Docker)"
+      hint "This is host/distro-specific — don't blind-run a fix. First just try starting the stack"
+      hint "(menu 4/5). If it errors on GPU, configure the nvidia container runtime for YOUR distro"
+      hint "and regenerate the CDI spec if needed, then retry. Full guide: TROUBLESHOOTING.md"
     elif echo "$gpu_test_out" | grep -qi 'permission denied'; then
       bad "docker permission denied during GPU test" "add your user to the docker group and re-login"
     else

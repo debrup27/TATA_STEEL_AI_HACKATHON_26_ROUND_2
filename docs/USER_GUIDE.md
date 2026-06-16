@@ -4,11 +4,12 @@
 
 | URL | What |
 |---|---|
-| http://localhost:3000 | UI (SANSAD + MANAS) |
-| http://localhost/ | Same, via nginx |
-| http://localhost:8000/health/ready/ | Backend readiness |
+| http://localhost:3000 | **UI** (SANSAD + MANAS) — open this |
+| http://localhost/api , /health , /ws , /admin | Backend API + WebSocket, via nginx (:80) |
+| http://localhost:8000/health/ready/ | Backend readiness (direct) |
 
-Login: **`tech_demo` / `TechDemo@123`**.
+Logins: **`tech_demo`/`TechDemo@123`** (technician) · **`supervisor_demo`/`SuperDemo@123`** ·
+**`admin_demo`/`AdminDemo@123`** (admin). All seeded automatically on first boot.
 
 ## The two suites
 

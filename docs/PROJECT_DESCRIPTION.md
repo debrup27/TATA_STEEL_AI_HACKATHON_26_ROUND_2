@@ -453,9 +453,11 @@ LangGraph, LangChain, BAAI/bge-m3, bge-reranker-v2-m3, BM25, XGBoost, scikit-lea
   (`docker-compose.low.yml`, 0.8b for every role, ~6–8 GB) — the 9b is never pulled. The
   deterministic engine is identical in both, so dashboard correctness is tier-independent.
 - **GPU-only** — no CPU mode by design.
-- **doctor.sh** — a read-only pre-flight (also usable post-boot) that checks Docker,
-  GPU/CDI, models, corpus, disk, RAM and ports and prints the exact fix for each issue,
-  including the Fedora/Arch CDI fix (`nvidia-ctk runtime configure` / `cdi generate`).
+- **doctor.sh** — an interactive, menu-driven helper (no flags) that runs diagnostics
+  (Docker, GPU/CDI, models, corpus, disk, RAM, ports) and also downloads assets, starts the
+  stack (full or low-VRAM), watches logs and resets. For most issues it prints the exact fix;
+  GPU runtime/passthrough warnings are flagged but left to the user to fix per-distro
+  (host-specific) rather than auto-running `nvidia-ctk` blind.
 - **Auto-download portability:** the entrypoint chowns the bind-mounted dirs and disables
   HF Xet so a fresh checkout/unzip self-provisions BGE + corpus on any host.
 

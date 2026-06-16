@@ -15,11 +15,19 @@ It runs diagnostics first, then drops into a menu:
 ```
 
 Diagnostics check Docker, the GPU/NVIDIA stack (driver → runtime → passthrough), models,
-corpus, disk, RAM, ports and Ollama, and print the exact fix command for each issue.
+corpus, disk, RAM, ports and Ollama. For most issues it prints an exact fix. GPU runtime /
+passthrough warnings are **host- and distro-specific**, so the doctor does NOT auto-push a
+fix there — it tells you to try starting the stack first and, only if you hit a real GPU
+error, apply the matching fix below for your distro. Menu option **8) GPU triage** dumps the
+raw `nvidia-smi` / `docker info` / passthrough output to help you decide.
 
 ---
 
 ## 1. GPU: `failed to discover GPU vendor from CDI: no known GPU vendor found`
+
+> Don't run these blind. First try `docker compose up atal -d --build` (or doctor menu 4/5).
+> Only if the stack actually errors on GPU do you need the steps below — and pick the package
+> line for YOUR distro.
 
 Seen on newer Docker (Fedora, Arch, etc.). Docker tried to resolve the GPU through
 **CDI** but no CDI spec exists. This repo's `docker-compose.yml` already uses the
@@ -36,7 +44,7 @@ sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 sudo systemctl restart docker
 
 # 3. Verify:
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 ```
 
 Works the same on Arch (`paru -S nvidia-container-toolkit`) and Fedora
@@ -59,12 +67,13 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 
 # 3. Verify, then start
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 docker compose up atal -d --build
 ```
 
-A CUDA driver (`nvidia-smi` on the host) must already be installed. Run
-`bash scripts/doctor.sh` first — it tests GPU passthrough and prints this exact fix.
+A CUDA driver (`nvidia-smi` on the host) must already be installed. The doctor (menu **1**)
+tests GPU passthrough and flags it as a WARN — it won't auto-run the fix above (it's
+distro-specific). Try starting the stack first; apply the matching step only if it errors.
 
 ## 2. GPU too small (low VRAM) — use the low tier
 
@@ -164,5 +173,6 @@ use the latest renderer.
 
 ---
 
-Login: `tech_demo` / `TechDemo@123` · UI: http://localhost:3000 · backend health:
+Logins: `tech_demo`/`TechDemo@123` · `supervisor_demo`/`SuperDemo@123` ·
+`admin_demo`/`AdminDemo@123` · UI: http://localhost:3000 · backend health:
 http://localhost:8000/health/ready/
