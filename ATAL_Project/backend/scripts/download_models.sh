@@ -15,13 +15,23 @@ export HF_HUB_DISABLE_XET=1
 export HF_HUB_ENABLE_HF_TRANSFER=0
 mkdir -p "${HF_HOME}" 2>/dev/null || true
 
-echo "[download_models] Installing huggingface_hub..."
-uv pip install -q huggingface_hub 2>/dev/null || python3 -m pip install -q huggingface_hub
+echo "[download_models] Resolving a Python with huggingface_hub..."
+# Prefer uv's ephemeral env (no venv needed); fall back to whatever pip exists.
+if command -v uv >/dev/null 2>&1; then
+  RUN="uv run --with huggingface_hub python"
+elif python3 -c "import huggingface_hub" 2>/dev/null; then
+  RUN="python3"
+else
+  python3 -m pip install -q huggingface_hub 2>/dev/null \
+    || pip3 install -q huggingface_hub 2>/dev/null \
+    || pip install -q huggingface_hub 2>/dev/null \
+    || { echo "[download_models] ERROR: need 'uv' or a pip-enabled python3 to install huggingface_hub." >&2; \
+         echo "  Install uv (https://astral.sh/uv) or python3-pip, then re-run. Or skip this — the container auto-downloads BGE on first boot." >&2; \
+         exit 1; }
+  RUN="python3"
+fi
 
-PYTHON="python3"
-command -v uv >/dev/null && PYTHON="uv run python"
-
-$PYTHON - <<EOF
+$RUN - <<EOF
 from huggingface_hub import snapshot_download
 import os
 

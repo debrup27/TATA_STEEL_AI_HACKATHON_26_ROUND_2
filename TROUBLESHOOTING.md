@@ -3,13 +3,19 @@
 First step for any problem: run the doctor.
 
 ```bash
-bash scripts/doctor.sh          # diagnose only
-bash scripts/doctor.sh -i         # diagnose + prompt to download missing BGE models / corpus
-bash scripts/doctor.sh --download-all   # diagnose, then download models + corpus on the host
+bash scripts/doctor.sh          # interactive menu — no flags
 ```
 
-It checks Docker, the GPU/NVIDIA stack (4-step: driver → runtime → passthrough), models,
-corpus, disk, RAM, ports and Ollama, and prints the exact fix command for each issue.
+It runs diagnostics first, then drops into a menu:
+
+```
+1) Run diagnostics       4) Start stack — full tier   7) Stack status / health
+2) Download BGE models   5) Start stack — low-VRAM    8) GPU triage
+3) Download RAG corpus   6) Watch backend logs        9) Reset stack    0) Quit
+```
+
+Diagnostics check Docker, the GPU/NVIDIA stack (driver → runtime → passthrough), models,
+corpus, disk, RAM, ports and Ollama, and print the exact fix command for each issue.
 
 ---
 

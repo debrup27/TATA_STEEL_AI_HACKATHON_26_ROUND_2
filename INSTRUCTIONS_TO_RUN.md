@@ -1,70 +1,71 @@
 # ATAL — Instructions to Run
 
-Full stack runs with **one asset-download script + one `docker compose` command**.
-
-## Get the code (pick one)
-```bash
-# A · from GitHub
-git clone https://github.com/debrup27/TATA_STEEL_AI_HACKATHON_26_ROUND_2.git
-
-# B · from the submission package
-unzip ATAL_Submission.zip
-```
-Both produce the same `TATA_STEEL_AI_HACKATHON_26_ROUND_2/` directory — run everything below from inside it.
+**Everything runs through one interactive script — `scripts/doctor.sh`.** It checks your
+machine, downloads assets, starts the stack, and verifies health, all from a menu. No flags.
 
 ## Prerequisites
-- Docker + Docker Compose (with the Compose v2 plugin)
-- NVIDIA GPU + nvidia-container-toolkit recommended (16 GB VRAM for both LLMs + BGE)
-- ~32 GB RAM · ~30 GB free disk
-- Internet access on first run (downloads model weights + corpus)
+- Docker + Docker Compose (Compose v2 plugin)
+- NVIDIA GPU + nvidia-container-toolkit (16 GB VRAM for both LLMs + BGE; ~6–8 GB → low-VRAM tier)
+- ~32 GB RAM · ~30 GB free disk · internet on first run
 
-## Step 1 — Download host assets (run ONCE)
-Downloads the Hugging Face BGE models (~6.5 GB) and the RAG corpus:
+## Quick install
 
 ```bash
+# 1. Get the code (either one)
+git clone https://github.com/debrup27/TATA_STEEL_AI_HACKATHON_26_ROUND_2.git
+unzip ATAL_Submission.zip
 cd TATA_STEEL_AI_HACKATHON_26_ROUND_2
-bash scripts/setup_assets.sh
+
+# 2. Launch the doctor — do everything from its menu
+bash scripts/doctor.sh
 ```
 
-The two Ollama LLMs (`qwen3.5:9b` + `qwen3.5:0.8b`, ~7.6 GB) are **not** downloaded here — they
-are pulled automatically by the `ollama-warmup` service on the first `docker compose up`.
+Then, in the menu, **in this order**:
 
-## Step 2 — Start the stack
+| Step | Menu option | What it does |
+|---|---|---|
+| 1 | **1) Run diagnostics** | Checks Docker, GPU/CDI, ports, disk, RAM, assets. Fix any **FAIL** first. |
+| 2 | **2) Download BGE models** | Hugging Face BGE-M3 + reranker (~6.5 GB, once). |
+| 3 | **3) Download RAG corpus** | OEM manuals, SOPs, ISO, safety codes (~95 MB, once). |
+| 4 | **4) Start stack — full tier** | `docker compose up` with the 9b + 0.8b LLMs. |
+| — | **5) Start stack — low-VRAM** | Use *instead of 4* on ~6–8 GB GPUs (0.8b serves all roles). |
+| 5 | **6) Watch backend logs** | Follow the first-boot pipeline. Allow **20–30 min** the first time. |
+| 6 | **7) Stack status / health** | Confirms all services healthy + backend ready. |
 
-```bash
-docker compose up atal -d --build
-```
+The two Ollama LLMs (`qwen3.5:9b` + `qwen3.5:0.8b`, ~7.6 GB) are pulled automatically on
+first start — no separate download. GPU (CUDA) is required in both tiers; there is no CPU mode.
 
-**Low-VRAM GPUs (~6–8 GB):** the 0.8b model serves every role; the 9b is never loaded:
+First boot runs the full pipeline automatically (migrations, TimescaleDB hypertables, demo
+users, ChromaDB, asset/spares/telemetry seeding, sensor calibration, ML train + inference,
+report generation). No manual steps — just watch option 6 until the backend reports healthy.
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.low.yml up atal -d --build
-```
-
-GPU (CUDA) is required in both tiers — no CPU mode. Stuck? Run `bash scripts/doctor.sh`
-(diagnoses GPU/CDI, models, ports, etc.) or see `TROUBLESHOOTING.md`.
-
-On the first boot the backend automatically runs the full pipeline: migrations, TimescaleDB
-hypertables, demo users, ChromaDB, asset/spares/telemetry seeding, sensor calibration, ML
-training + inference, and intelligence-report generation. No manual steps. Allow 15–25 minutes
-the first time (Ollama is pulling ~7.6 GB of weights and the backend is seeding).
-
-## Step 3 — Verify
-
-```bash
-curl http://localhost/health/ready/        # -> ok
-docker compose ps                          # all services healthy
-```
+> Prefer raw commands? The doctor just wraps these:
+> ```bash
+> bash scripts/setup_assets.sh                 # = menu 2 + 3
+> docker compose up atal -d --build            # = menu 4
+> docker compose -f docker-compose.yml -f docker-compose.low.yml up atal -d --build   # = menu 5
+> ```
 
 ## Access
 
 | URL | Purpose |
 |-----|---------|
-| http://localhost:3000 | UI (SANSAD dashboard + MANAS chat) |
-| http://localhost/ | Same, via nginx proxy |
-| http://localhost:8000/health/ready/ | Backend readiness |
+| http://localhost:3000 | **UI** (SANSAD dashboard + MANAS chat) — open this |
+| http://localhost/api/… , /health/… , /ws/… , /admin/ | Backend API + WebSocket, via the nginx proxy on :80 |
+| http://localhost:8000/health/ready/ | Backend readiness (direct) |
 
-**Login:** `tech_demo` / `TechDemo@123`
+> nginx (:80) fronts the **backend** (API, WebSocket, admin, health). The Next.js UI is
+> served directly on **:3000** — that's the page to open in a browser.
+
+**Seeded logins** (created automatically on first boot — no setup):
+
+| Role | Username | Password |
+|---|---|---|
+| Technician | `tech_demo` | `TechDemo@123` |
+| Supervisor | `supervisor_demo` | `SuperDemo@123` |
+| Admin | `admin_demo` | `AdminDemo@123` |
+
+Log in, then click **Admin** for the admin view — the admin account is already seeded.
 
 ## Optional
 - To populate the MANAS document library (RAG), set `INGEST_CORPUS_ON_START=1` before `up`:
@@ -74,17 +75,17 @@ docker compose ps                          # all services healthy
 
 ## Reset / clean reinstall
 
+Use the doctor: **9) Reset stack** (runs `down -v --remove-orphans`), then **4** (or **5**) to start fresh.
+Host BGE models + corpus survive a reset (they live on disk, not in Docker volumes), so only the
+LLM weights re-pull. Raw equivalent:
+
 ```bash
-docker compose down -v --remove-orphans     # removes containers + all volumes (keeps images)
-docker compose up atal -d --build           # fresh install (re-pulls LLM weights)
+docker compose down -v --remove-orphans
+docker compose up atal -d --build
 ```
 
-Host BGE models + corpus (downloaded in Step 1) are not in Docker volumes, so they survive a reset.
-
 ## Troubleshooting
-- `bash scripts/doctor.sh` — diagnostics (Docker, GPU/CDI, models, corpus, ports) with fixes
-- `bash scripts/doctor.sh -i` — same, then prompt to download missing BGE models / corpus
-- `bash scripts/doctor.sh --download-all` — diagnose, then download models + corpus on the host
+- `bash scripts/doctor.sh` — the menu also covers **8) GPU triage** and **9) Reset** when something's wrong
 - `TROUBLESHOOTING.md` — full guide (GPU/CDI error, low-VRAM tier, missing assets, resets)
 
 ## Documentation

@@ -310,7 +310,9 @@ class Command(BaseCommand):
                 r = httpx.post(
                     f"http://localhost:8000/api/v1/consolidate/{asset_id}/",
                     headers={"Authorization": f"Bearer {token}"},
-                    timeout=15,
+                    # Runs the agentic LLM graph inline; on first boot the 9b is still
+                    # loading into VRAM, so allow generous cold-start headroom.
+                    timeout=90,
                 )
                 if r.status_code in (200, 202):
                     ok("Consolidation trigger")
