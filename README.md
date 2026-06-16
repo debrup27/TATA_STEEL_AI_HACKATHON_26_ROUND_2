@@ -126,10 +126,10 @@ bash ATAL_Project/backend/scripts/verify-deploy.sh
 
 | URL | Purpose |
 |-----|---------|
-| http://localhost:3000 | UI (SANSAD + MANAS) |
-| http://localhost/ | Same, via nginx proxy |
-| http://localhost:8000/health/ready/ | Backend readiness |
-| Login | `tech_demo` / `TechDemo@123` |
+| http://localhost:3000 | **UI** (SANSAD + MANAS) — open this |
+| http://localhost/api/… , /health/… , /ws/… , /admin/ | Backend API + WebSocket, via nginx (:80) |
+| http://localhost:8000/health/ready/ | Backend readiness (direct) |
+| Logins | `tech_demo`/`TechDemo@123` · `supervisor_demo`/`SuperDemo@123` · `admin_demo`/`AdminDemo@123` |
 
 > Optional: set `INGEST_CORPUS_ON_START=1` (in `.env` or shell) before `up` to ingest the corpus
 > into RAG so library documents appear in the MANAS document selector.
